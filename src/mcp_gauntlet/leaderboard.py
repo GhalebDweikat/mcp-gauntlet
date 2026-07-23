@@ -57,7 +57,7 @@ async def run_leaderboard(
     entries: list[ServerEntry],
     *,
     out_dir: Path,
-    llm_config: LLMConfig,
+    llm_config: LLMConfig | None,
     n_tasks: int = 3,
     repeats: int = 2,
     max_turns: int = 8,

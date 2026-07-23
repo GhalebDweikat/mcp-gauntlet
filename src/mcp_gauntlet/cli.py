@@ -42,7 +42,9 @@ def main() -> None:
 
 @app.command()
 def doctor(
-    provider: str = typer.Option("groq", "--provider", help="LLM provider preset."),
+    provider: str | None = typer.Option(
+        None, "--provider", help="LLM provider (env MCP_GAUNTLET_PROVIDER; default groq)."
+    ),
     model: str | None = typer.Option(None, "--model", help="Override the default model."),
 ) -> None:
     """Check that the configured LLM backend is reachable (verifies your API key)."""
@@ -143,7 +145,9 @@ def run(
         "--agentic/--no-agentic",
         help="Run the agentic evaluation (default: on when an LLM key is configured).",
     ),
-    provider: str = typer.Option("groq", "--provider", help="LLM provider preset."),
+    provider: str | None = typer.Option(
+        None, "--provider", help="LLM provider (env MCP_GAUNTLET_PROVIDER; default groq)."
+    ),
     model: str | None = typer.Option(None, "--model", help="Override the default model."),
     tasks: int = typer.Option(3, "--tasks", help="Tasks to generate for the agentic eval."),
     repeats: int = typer.Option(2, "--repeats", help="Times to run each task (success rate)."),
@@ -193,10 +197,10 @@ def run(
             f"[dim]Agentic eval via {llm_config.redacted()} — "
             f"{tasks} task(s) × {repeats} repeat(s) ({mode})[/dim]"
         )
-    elif probe:
-        console.print("[dim]Static checks + robustness probes — no LLM configured.[/dim]")
     else:
-        console.print("[dim]Static checks only — no LLM configured.[/dim]")
+        reason = "agentic disabled" if agentic is False else "no LLM configured"
+        checks = "Static checks + robustness probes" if probe else "Static checks only"
+        console.print(f"[dim]{checks} ({reason}).[/dim]")
 
     try:
         report = anyio.run(
@@ -238,7 +242,9 @@ def leaderboard(
     out: Path = typer.Option(
         Path("docs"), "--out", "-o", help="Output directory for the static site."
     ),
-    provider: str = typer.Option("groq", "--provider", help="LLM provider preset."),
+    provider: str | None = typer.Option(
+        None, "--provider", help="LLM provider (env MCP_GAUNTLET_PROVIDER; default groq)."
+    ),
     model: str | None = typer.Option(None, "--model", help="Override the default model."),
     tasks: int = typer.Option(3, "--tasks", help="Tasks generated per server."),
     repeats: int = typer.Option(2, "--repeats", help="Times each task is run."),
@@ -247,16 +253,22 @@ def leaderboard(
 ) -> None:
     """Evaluate many MCP servers and build a static leaderboard site."""
     entries = load_servers(servers)
+    llm_config: LLMConfig | None = None
     try:
         llm_config = LLMConfig.from_env(provider, model=model)
-    except LLMConfigError as exc:
-        console.print(f"[red]The leaderboard needs an LLM:[/red] {exc}")
-        raise typer.Exit(code=1) from exc
+    except LLMConfigError:
+        llm_config = None  # static-only leaderboard (no LLM key configured)
 
-    console.print(
-        f"[bold]Leaderboard[/bold] — {len(entries)} server(s) via "
-        f"{llm_config.redacted()} ({tasks} tasks × {repeats} repeats)"
-    )
+    if llm_config is not None:
+        console.print(
+            f"[bold]Leaderboard[/bold] — {len(entries)} server(s) via "
+            f"{llm_config.redacted()} ({tasks} tasks × {repeats} repeats)"
+        )
+    else:
+        console.print(
+            f"[bold]Leaderboard[/bold] — {len(entries)} server(s), "
+            "static + robustness checks only (no LLM configured)"
+        )
     results = anyio.run(
         functools.partial(
             run_leaderboard,

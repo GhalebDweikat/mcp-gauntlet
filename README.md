@@ -69,6 +69,35 @@ uv run mcp-gauntlet run "python -m mcp_gauntlet.fixtures.bad_server"   # capped 
 uv run mcp-gauntlet run "python -m mcp_gauntlet.fixtures.good_server"  # A
 ```
 
+## Configuration
+
+Configure via a `.env` file (copy [`.env.example`](.env.example) and fill it in)
+or real environment variables:
+
+| Variable | Purpose |
+|----------|---------|
+| `GROQ_API_KEY` / `GEMINI_API_KEY` / `OPENAI_API_KEY` / `OPENROUTER_API_KEY` | API key for the provider the agent should use (only one needed). A free Groq key: [console.groq.com/keys](https://console.groq.com/keys). |
+| `MCP_GAUNTLET_PROVIDER` | Which provider: `groq` (default), `gemini`, `openai`, `openrouter`, or `ollama` (local). |
+| `MCP_GAUNTLET_MODEL` | Model override for that provider (e.g. `gemini-flash-latest`). Defaults to a sensible per-provider model. |
+
+The `--provider` / `--model` CLI flags override these. The backend is any
+OpenAI-compatible endpoint, so the same setup covers cloud providers and a local
+Ollama / vLLM.
+
+### No API key? Static mode
+
+Everything except the live agent runs without an LLM. `mcp-gauntlet run <server>`
+with no key configured reports a **static grade** from the LLM-free checks —
+schema health, description quality, security signals, and robustness probes:
+
+```bash
+uv run mcp-gauntlet run "npx -y @modelcontextprotocol/server-everything" --no-agentic
+```
+
+Add `--no-probe` for a pure inspection that never executes any of the server's
+tools. The leaderboard behaves the same way — with no key it ranks servers on the
+static + robustness checks alone.
+
 ## License
 
 MIT © Ghaleb Dweikat

@@ -51,12 +51,15 @@ class LLMConfig:
     @classmethod
     def from_env(
         cls,
-        provider: str = DEFAULT_PROVIDER,
+        provider: str | None = None,
         *,
         model: str | None = None,
         base_url: str | None = None,
         api_key: str | None = None,
     ) -> LLMConfig:
+        # Resolution order: explicit arg → environment → provider preset default.
+        provider = provider or os.environ.get("MCP_GAUNTLET_PROVIDER") or DEFAULT_PROVIDER
+        model = model or os.environ.get("MCP_GAUNTLET_MODEL")
         preset = PROVIDERS.get(provider)
         if preset is None and base_url is None:
             known = ", ".join(sorted(PROVIDERS))

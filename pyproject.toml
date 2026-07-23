@@ -1,6 +1,6 @@
 [project]
 name = "mcp-gauntlet"
-version = "0.0.1"
+version = "0.1.0"
 description = "An agentic evaluation harness for MCP servers — can an AI agent actually accomplish real tasks with this server's tools?"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -9,12 +9,27 @@ authors = [{ name = "Ghaleb Dweikat" }]
 keywords = [
     "mcp",
     "model-context-protocol",
+    "mcp-server",
     "evaluation",
     "evals",
-    "agents",
     "llm",
-    "anthropic",
-    "claude",
+    "agents",
+    "tool-use",
+    "prompt-injection",
+    "groq",
+    "gemini",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Software Development :: Quality Assurance",
 ]
 dependencies = [
     "mcp>=1.9",
@@ -36,6 +51,12 @@ dev = [
 
 [project.scripts]
 mcp-gauntlet = "mcp_gauntlet.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/GhalebDweikat/mcp-gauntlet"
+Repository = "https://github.com/GhalebDweikat/mcp-gauntlet"
+Issues = "https://github.com/GhalebDweikat/mcp-gauntlet/issues"
+Leaderboard = "https://ghalebdweikat.github.io/mcp-gauntlet/"
 
 [build-system]
 requires = ["hatchling"]

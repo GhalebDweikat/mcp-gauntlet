@@ -5,9 +5,6 @@
 the question the static analyzers don't: **can an AI agent actually accomplish
 real tasks using this server's tools?**
 
-> 🚧 Early development. The plan lives in [PLAN.md](PLAN.md); the competitive
-> landscape and rationale are in [docs/prior-art.md](docs/prior-art.md).
-
 ## Why
 
 The existing MCP quality tools (`mcp-lighthouse`, `mcp-scorecard`, `mcp-checkup`)
@@ -20,21 +17,44 @@ complete tasks. That dynamic, agent-in-the-loop evaluation — with a real
 > mcp-gauntlet tells you your MCP server is *usable by an agent* — with a
 > task-success rate to prove it.
 
-## Quickstart (work in progress)
+## What it scores
+
+Each run produces a graded report card (JSON + Markdown) across:
+
+- **Schema Health** — valid JSON schemas, typed and described parameters.
+- **Description Quality** — can an agent tell when and how to use each tool?
+- **Security Signals** — tool-poisoning / prompt-injection markers and hidden
+  characters; a critical finding caps the overall grade.
+- **Agent Task Success** — a live LLM agent attempts generated tasks using only
+  the server's tools; LLM-judged and repeated for a success rate.
+- **Tool-Selection Accuracy** — did the agent call the tools it was expected to?
+- **Tool Reliability** — did the server's tools execute without error?
+- **Robustness** — does the server reject malformed input gracefully?
+
+## Quickstart
 
 ```bash
-# Install (from source, for now)
 uv sync --extra dev
 
-# Discover a server's tools (Day-1 slice — more to come)
+# Static + robustness checks only — no API key required
+uv run mcp-gauntlet run "python -m mcp_gauntlet.fixtures.good_server" --no-agentic
+
+# Full gauntlet, including the live agent (Groq's free tier works)
+echo "GROQ_API_KEY=gsk_..." > .env
 uv run mcp-gauntlet run "npx -y @modelcontextprotocol/server-everything"
-uv run mcp-gauntlet run https://my-server.example.com/mcp
 ```
 
-## Status
+The LLM backend is provider-agnostic — any OpenAI-compatible endpoint (Groq by
+default; also OpenRouter, Together, or a local Ollama / vLLM). Runs are safe by
+default: only read-only tools are exercised unless you pass `--allow-writes`, and
+generated task sets are cached so scores are reproducible across runs.
 
-See [PLAN.md](PLAN.md) for the full roadmap. Currently implementing the Day-1
-foundation: server connection (stdio + HTTP) and tool discovery.
+Bundled `good` / `bad` fixture servers make it easy to see the difference:
+
+```bash
+uv run mcp-gauntlet run "python -m mcp_gauntlet.fixtures.bad_server"   # capped C — tool poisoning
+uv run mcp-gauntlet run "python -m mcp_gauntlet.fixtures.good_server"  # A
+```
 
 ## License
 

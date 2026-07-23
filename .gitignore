@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Environments
+.venv/
+venv/
+.env
+.env.*
+
+# Tooling caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Generated reports / working output
+reports/
+*.log
+
+# Local task cache (pin a committable set with --tasks-file instead)
+.gauntlet/
+
+# OS
+.DS_Store
+Thumbs.db

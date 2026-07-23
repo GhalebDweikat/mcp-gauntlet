@@ -22,6 +22,11 @@ PROVIDERS: dict[str, tuple[str, str, str]] = {
         "OPENROUTER_API_KEY",
         "meta-llama/llama-3.3-70b-instruct",
     ),
+    "gemini": (
+        "https://generativelanguage.googleapis.com/v1beta/openai/",
+        "GEMINI_API_KEY",
+        "gemini-2.0-flash",
+    ),
     "ollama": ("http://localhost:11434/v1", "OLLAMA_API_KEY", "llama3.1"),
 }
 

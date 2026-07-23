@@ -70,6 +70,8 @@ class TaskResult(BaseModel):
     mean_score: float = 0.0
     selection_score: float | None = None
     tool_error: bool = False
+    errored_repeats: int = 0  # repeats where the LLM (agent or judge) failed — not counted
+    inconclusive: bool = False  # every repeat errored → no valid judgment
     sample_reasoning: str = ""
 
 
@@ -80,6 +82,7 @@ class AgenticDetail(BaseModel):
     repeats: int
     excluded_write_tools: list[str] = Field(default_factory=list)
     results: list[TaskResult] = Field(default_factory=list)
+    inconclusive: bool = False  # the whole agentic eval was inconclusive (e.g. rate-limited)
 
 
 class GauntletReport(BaseModel):
@@ -201,6 +204,12 @@ def to_markdown(report: GauntletReport) -> str:
         agentic = report.agentic
         lines.append("## Agentic evaluation")
         lines.append("")
+        if agentic.inconclusive:
+            lines.append(
+                "> ⚠️ **Inconclusive** — the LLM backend errored (e.g. rate limit) on every "
+                "run; the overall grade reflects the static checks only."
+            )
+            lines.append("")
         lines.append(f"- **Model:** {agentic.provider}:{agentic.model}")
         lines.append(f"- **Tasks:** {agentic.tasks_generated} × {agentic.repeats} repeat(s)")
         if agentic.excluded_write_tools:
@@ -214,8 +223,11 @@ def to_markdown(report: GauntletReport) -> str:
             ]
         )
         for result in agentic.results:
-            sel = f"{result.selection_score:.0f}" if result.selection_score is not None else "—"
             task_label = result.description.replace("\n", " ")[:70]
+            if result.inconclusive:
+                lines.append(f"| {task_label} | — | inconclusive | — |")
+                continue
+            sel = f"{result.selection_score:.0f}" if result.selection_score is not None else "—"
             lines.append(
                 f"| {task_label} | {result.successes}/{result.repeats} | "
                 f"{result.mean_score:.0f} | {sel} |"

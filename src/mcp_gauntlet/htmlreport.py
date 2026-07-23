@@ -108,6 +108,11 @@ def _body(report: GauntletReport) -> str:
     agentic = report.agentic
     if agentic and agentic.results:
         p.append("<h2>Agent evaluation</h2>")
+        if agentic.inconclusive:
+            p.append(
+                '<div class="banner">⚠ Inconclusive — the LLM backend errored (e.g. rate '
+                "limit) on every run; the grade reflects the static checks only.</div>"
+            )
         p.append(
             f'<div class="muted" style="margin-bottom:12px">{agentic.tasks_generated} tasks × '
             f'{agentic.repeats} repeat(s) &nbsp;<span class="chip">'
@@ -118,6 +123,13 @@ def _body(report: GauntletReport) -> str:
             '<th class="num">Score</th><th class="num">Tools</th></tr></thead><tbody>'
         )
         for r in agentic.results:
+            if r.inconclusive:
+                p.append(
+                    f"<tr><td>{_esc(r.description[:120])}</td>"
+                    '<td class="num">—</td><td class="num muted">inconclusive</td>'
+                    '<td class="num">—</td></tr>'
+                )
+                continue
             sel = f"{r.selection_score:.0f}" if r.selection_score is not None else "—"
             p.append(
                 f"<tr><td>{_esc(r.description[:120])}</td>"

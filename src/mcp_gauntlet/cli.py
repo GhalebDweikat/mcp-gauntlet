@@ -14,6 +14,7 @@ from rich.table import Table
 from mcp_gauntlet.config import ServerSpec
 from mcp_gauntlet.engine import evaluate_server
 from mcp_gauntlet.env import load_env
+from mcp_gauntlet.leaderboard import load_servers, run_leaderboard
 from mcp_gauntlet.llm import LLMConfig, LLMConfigError, list_models
 from mcp_gauntlet.report import GauntletReport, Severity, sort_findings, write_report
 
@@ -95,6 +96,9 @@ def _render_report(report: GauntletReport) -> None:
         tasks_table.add_column("Score", justify="right")
         tasks_table.add_column("Tools", justify="right")
         for result in detail.results:
+            if result.inconclusive:
+                tasks_table.add_row(result.description[:58], "—", "[dim]incon.[/dim]", "—")
+                continue
             sel = f"{result.selection_score:.0f}" if result.selection_score is not None else "—"
             tasks_table.add_row(
                 result.description[:58],
@@ -103,6 +107,11 @@ def _render_report(report: GauntletReport) -> None:
                 sel,
             )
         console.print(tasks_table)
+        if detail.inconclusive:
+            console.print(
+                "[yellow]⚠ Agent evaluation inconclusive — the LLM backend errored "
+                "(e.g. rate limit); the grade reflects static checks only.[/yellow]"
+            )
 
     notable = [
         f for f in sort_findings(report.findings) if f.severity in (Severity.HIGH, Severity.MEDIUM)
@@ -218,6 +227,52 @@ def run(
             f"[red]Overall score {report.overall_score:.1f} is below threshold {fail_under}.[/red]"
         )
         raise typer.Exit(code=1)
+
+
+@app.command()
+def leaderboard(
+    servers: Path = typer.Option(
+        ..., "--servers", help='JSON file listing servers ({"servers":[{name,spec}]}).'
+    ),
+    out: Path = typer.Option(
+        Path("docs"), "--out", "-o", help="Output directory for the static site."
+    ),
+    provider: str = typer.Option("groq", "--provider", help="LLM provider preset."),
+    model: str | None = typer.Option(None, "--model", help="Override the default model."),
+    tasks: int = typer.Option(3, "--tasks", help="Tasks generated per server."),
+    repeats: int = typer.Option(2, "--repeats", help="Times each task is run."),
+    max_turns: int = typer.Option(8, "--max-turns", help="Max agent turns per task."),
+    timeout: float = typer.Option(240.0, "--timeout", help="Per-server time budget (seconds)."),
+) -> None:
+    """Evaluate many MCP servers and build a static leaderboard site."""
+    entries = load_servers(servers)
+    try:
+        llm_config = LLMConfig.from_env(provider, model=model)
+    except LLMConfigError as exc:
+        console.print(f"[red]The leaderboard needs an LLM:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+
+    console.print(
+        f"[bold]Leaderboard[/bold] — {len(entries)} server(s) via "
+        f"{llm_config.redacted()} ({tasks} tasks × {repeats} repeats)"
+    )
+    results = anyio.run(
+        functools.partial(
+            run_leaderboard,
+            entries,
+            out_dir=out,
+            llm_config=llm_config,
+            n_tasks=tasks,
+            repeats=repeats,
+            max_turns=max_turns,
+            timeout_s=timeout,
+            log=lambda m: console.print(f"[dim]{m}[/dim]"),
+        )
+    )
+    ok = sum(1 for r in results if r.report is not None)
+    console.print(
+        f"\n[green]Done[/green] — {ok}/{len(results)} evaluated. Site: {out / 'index.html'}"
+    )
 
 
 if __name__ == "__main__":

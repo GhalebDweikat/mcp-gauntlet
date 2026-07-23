@@ -43,6 +43,7 @@ class Verdict(BaseModel):
     success: bool = False
     score: float = 0.0
     reasoning: str = ""
+    errored: bool = False  # the judge call itself failed (rate limit / bad output) — inconclusive
 
 
 def selection_score(expected_tools: list[str], called_tools: list[str]) -> float | None:
@@ -87,6 +88,6 @@ async def judge_task(client: AsyncOpenAI, model: str, task: EvalTask, trace: Age
             reasoning=str(data.get("reasoning", "")),
         )
     except (json.JSONDecodeError, ValueError, TypeError) as exc:
-        return Verdict(success=False, score=0.0, reasoning=f"judge parse error: {exc}")
+        return Verdict(errored=True, reasoning=f"judge parse error: {exc}")
     except Exception as exc:  # noqa: BLE001 - a judge/transport failure shouldn't crash the run
-        return Verdict(success=False, score=0.0, reasoning=f"judge call failed: {exc}")
+        return Verdict(errored=True, reasoning=f"judge call failed: {exc}")

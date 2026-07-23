@@ -45,7 +45,9 @@ def _tool_result(text: str, is_error: bool = False) -> Any:
 
 class ScriptedClient:
     def __init__(
-        self, agent_responses: list[Any], judge_verdict: dict[str, Any] | None = None
+        self,
+        agent_responses: list[Any],
+        judge_verdict: dict[str, Any] | BaseException | None = None,
     ) -> None:
         self._agent = iter(agent_responses)
         self._verdict = judge_verdict
@@ -53,8 +55,13 @@ class ScriptedClient:
 
     async def _create(self, **kwargs: Any) -> Any:
         if kwargs.get("response_format") and self._verdict is not None:
+            if isinstance(self._verdict, BaseException):
+                raise self._verdict
             return _completion(_msg(content=json.dumps(self._verdict)))
-        return next(self._agent)
+        response = next(self._agent)
+        if isinstance(response, BaseException):
+            raise response
+        return response
 
 
 class ScriptedSession:
@@ -68,7 +75,9 @@ class ScriptedSession:
         return result
 
 
-def _client(responses: list[Any], judge_verdict: dict[str, Any] | None = None) -> AsyncOpenAI:
+def _client(
+    responses: list[Any], judge_verdict: dict[str, Any] | BaseException | None = None
+) -> AsyncOpenAI:
     return cast(AsyncOpenAI, ScriptedClient(responses, judge_verdict))
 
 
@@ -202,3 +211,47 @@ async def test_agentic_eval_aggregates_and_attributes() -> None:
     task_success = next(d for d in dims if d.key == "task_success")
     assert any("server signal" in f.message for f in task_success.findings)
     assert detail.results[0].tool_error is True
+
+
+async def test_inconclusive_when_agent_llm_errors() -> None:
+    # The agent's own LLM call fails (rate limit): no valid judgment, no bogus 0 score.
+    client = _client([RuntimeError("Error code: 429 rate limit")])
+    dims, detail = await run_agentic_eval(
+        session=_session(lambda n, a: _tool_result("x")),
+        tools=[_ADD],
+        client=client,
+        model="m",
+        provider="test",
+        tasks=[EvalTask(description="add 1 and 2", rubric="r", expected_tools=["add"])],
+        repeats=1,
+        max_turns=4,
+        excluded_write_tools=[],
+    )
+    assert detail.inconclusive is True
+    assert detail.results[0].inconclusive is True
+    assert not any(d.key == "task_success" for d in dims)  # never blame the server
+
+
+async def test_inconclusive_when_judge_errors_keeps_reliability() -> None:
+    # The agent runs and calls a tool, but the judge call fails — inconclusive, yet the
+    # real tool call still counts toward Tool Reliability.
+    fn = build_tool_bridge([_ADD]).tools[0]["function"]["name"]
+    responses = [
+        _completion(_msg(tool_calls=[_tool_call("c1", fn, '{"a": 1, "b": 2}')])),
+        _completion(_msg(content="done")),
+    ]
+    client = _client(responses, judge_verdict=RuntimeError("Error code: 429"))
+    dims, detail = await run_agentic_eval(
+        session=_session(lambda n, a: _tool_result("3")),
+        tools=[_ADD],
+        client=client,
+        model="m",
+        provider="test",
+        tasks=[EvalTask(description="add 1 and 2", rubric="r", expected_tools=["add"])],
+        repeats=1,
+        max_turns=4,
+        excluded_write_tools=[],
+    )
+    assert detail.inconclusive is True
+    assert not any(d.key == "task_success" for d in dims)
+    assert any(d.key == "tool_reliability" for d in dims)

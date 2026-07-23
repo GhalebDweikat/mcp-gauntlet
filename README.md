@@ -1,5 +1,7 @@
 # mcp-gauntlet
 
+[![CI](https://github.com/GhalebDweikat/mcp-gauntlet/actions/workflows/ci.yml/badge.svg)](https://github.com/GhalebDweikat/mcp-gauntlet/actions/workflows/ci.yml)
+
 **An agentic evaluation harness for MCP servers.** Point it at any
 [Model Context Protocol](https://modelcontextprotocol.io) server and it answers
 the question the static analyzers don't: **can an AI agent actually accomplish
@@ -30,6 +32,17 @@ Each run produces a graded report card (JSON + Markdown) across:
 - **Tool-Selection Accuracy** — did the agent call the tools it was expected to?
 - **Tool Reliability** — did the server's tools execute without error?
 - **Robustness** — does the server reject malformed input gracefully?
+
+## Leaderboard
+
+A live leaderboard ranks popular public MCP servers by their gauntlet score:
+**[ghalebdweikat.github.io/mcp-gauntlet](https://ghalebdweikat.github.io/mcp-gauntlet/)**
+
+Generate one yourself across any set of servers listed in a JSON file:
+
+```bash
+uv run mcp-gauntlet leaderboard --servers leaderboard.servers.json --out docs
+```
 
 ## Quickstart
 

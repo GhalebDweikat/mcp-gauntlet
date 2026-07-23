@@ -210,8 +210,8 @@ def run(
     console.print()
     _render_report(report)
 
-    json_path, md_path = write_report(report, out)
-    console.print(f"\n[dim]Reports written:[/dim] {json_path}  |  {md_path}")
+    json_path, md_path, html_path = write_report(report, out)
+    console.print(f"\n[dim]Reports written:[/dim] {json_path} | {md_path} | {html_path}")
 
     if fail_under is not None and report.overall_score < fail_under:
         console.print(

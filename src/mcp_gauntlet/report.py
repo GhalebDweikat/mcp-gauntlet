@@ -225,10 +225,14 @@ def to_markdown(report: GauntletReport) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def write_report(report: GauntletReport, out_dir: Path) -> tuple[Path, Path]:
+def write_report(report: GauntletReport, out_dir: Path) -> tuple[Path, Path, Path]:
+    from mcp_gauntlet.htmlreport import to_html  # lazy: htmlreport imports this module
+
     out_dir.mkdir(parents=True, exist_ok=True)
     json_path = out_dir / "report.json"
     md_path = out_dir / "report.md"
+    html_path = out_dir / "report.html"
     json_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
     md_path.write_text(to_markdown(report), encoding="utf-8")
-    return json_path, md_path
+    html_path.write_text(to_html(report), encoding="utf-8")
+    return json_path, md_path, html_path

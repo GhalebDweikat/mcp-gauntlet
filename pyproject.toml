@@ -55,6 +55,10 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 # Typer's dependency-injection pattern puts Argument()/Option() calls in defaults.
 extend-immutable-calls = ["typer.Argument", "typer.Option"]
 
+[tool.ruff.lint.per-file-ignores]
+# Embedded CSS/HTML template — line length isn't a meaningful constraint here.
+"src/mcp_gauntlet/htmlreport.py" = ["E501"]
+
 [tool.mypy]
 python_version = "3.11"
 warn_redundant_casts = true

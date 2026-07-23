@@ -60,7 +60,8 @@ def doctor(
         raise typer.Exit(code=1) from exc
 
     console.print(f"[green]OK[/green] — backend reachable, {len(models)} models advertised")
-    if config.model in models:
+    # Some providers (Gemini) list models with a "models/" prefix.
+    if config.model in models or f"models/{config.model}" in models:
         console.print(f"[green]Model '{config.model}' is available.[/green]")
     else:
         sample = ", ".join(models[:5])

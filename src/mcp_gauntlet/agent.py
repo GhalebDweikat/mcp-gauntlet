@@ -111,17 +111,10 @@ async def run_agent_task(
             trace.completion_tokens += completion.usage.completion_tokens or 0
 
         message = completion.choices[0].message
-        assistant_entry: dict[str, Any] = {"role": "assistant", "content": message.content or ""}
-        if message.tool_calls:
-            assistant_entry["tool_calls"] = [
-                {
-                    "id": tc.id,
-                    "type": "function",
-                    "function": {"name": tc.function.name, "arguments": tc.function.arguments},
-                }
-                for tc in message.tool_calls
-            ]
-        messages.append(assistant_entry)
+        # Echo the full assistant message back into history, preserving provider-specific
+        # extras (e.g. Gemini's thought_signature on tool calls) that some models require
+        # on the follow-up turn. Reconstructing a minimal message would drop them.
+        messages.append(message.model_dump(exclude_none=True))
 
         if not message.tool_calls:
             trace.final_text = message.content or ""

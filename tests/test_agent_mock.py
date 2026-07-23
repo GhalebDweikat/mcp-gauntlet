@@ -20,8 +20,29 @@ from mcp_gauntlet.tasks import EvalTask
 from mcp_gauntlet.toolconv import build_tool_bridge
 
 
+class _FakeMessage:
+    def __init__(self, content: str | None = None, tool_calls: list[Any] | None = None) -> None:
+        self.content = content
+        self.tool_calls = tool_calls
+
+    def model_dump(self, exclude_none: bool = False) -> dict[str, Any]:
+        data: dict[str, Any] = {"role": "assistant"}
+        if self.content is not None:
+            data["content"] = self.content
+        if self.tool_calls is not None:
+            data["tool_calls"] = [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                }
+                for tc in self.tool_calls
+            ]
+        return data
+
+
 def _msg(content: str | None = None, tool_calls: list[Any] | None = None) -> Any:
-    return SimpleNamespace(content=content, tool_calls=tool_calls)
+    return _FakeMessage(content, tool_calls)
 
 
 def _tool_call(call_id: str, name: str, arguments: str) -> Any:

@@ -4,6 +4,10 @@
     { "name": "sequential-thinking", "spec": "npx -y @modelcontextprotocol/server-sequential-thinking" },
     { "name": "memory", "spec": "npx -y @modelcontextprotocol/server-memory" },
     { "name": "filesystem", "spec": "npx -y @modelcontextprotocol/server-filesystem ." },
+    { "name": "fetch", "spec": "uvx mcp-server-fetch" },
+    { "name": "time", "spec": "uvx mcp-server-time" },
+    { "name": "git", "spec": "uvx mcp-server-git --repository ." },
+    { "name": "sqlite", "spec": "uvx mcp-server-sqlite --db-path gauntlet-sqlite.db" },
     { "name": "good-fixture", "spec": "python -m mcp_gauntlet.fixtures.good_server" },
     { "name": "bad-fixture", "spec": "python -m mcp_gauntlet.fixtures.bad_server" }
   ]

@@ -24,6 +24,9 @@ reports/
 # Local task cache (pin a committable set with --tasks-file instead)
 .gauntlet/
 
+# sqlite db the leaderboard's mcp-server-sqlite creates at runtime
+gauntlet-sqlite.db
+
 # OS
 .DS_Store
 Thumbs.db

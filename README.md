@@ -40,7 +40,10 @@ Each run produces a graded report card (JSON + Markdown) across:
   list-time but poisons at call-time. Reported (and it lowers the score) but
   doesn't cap on its own, since a fetch/filesystem server may faithfully pass
   through untrusted content.
-- **Robustness** — does the server reject malformed input gracefully?
+- **Robustness** — does the server reject malformed input gracefully? A tool that
+  publishes no argument schema at all scores zero here rather than being skipped:
+  a server that declares no contract can't reject anything, and skipping it would
+  make omitting schemas a way to score higher.
 
 ## Leaderboard
 
@@ -51,6 +54,14 @@ Generate one yourself across any set of servers listed in a JSON file:
 
 ```bash
 uv run mcp-gauntlet leaderboard --servers leaderboard.servers.json --out docs
+```
+
+Each server's raw result is saved to `servers/<name>.json` alongside its page, so the
+site can be rebuilt for free after a presentation change — no re-running (or re-paying
+for) the evaluation:
+
+```bash
+uv run mcp-gauntlet leaderboard --render-only --out docs
 ```
 
 Only servers the agent actually scored share the ranked table. The overall is a weighted

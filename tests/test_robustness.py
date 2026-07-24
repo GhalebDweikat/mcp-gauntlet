@@ -162,12 +162,159 @@ async def test_timeout_is_high_severity() -> None:
     assert any(f.severity is Severity.HIGH for f in dim.findings)
 
 
-async def test_none_when_no_probeable_tools() -> None:
+async def test_zero_arg_tools_still_report_the_dimension() -> None:
+    # A zero-argument tool genuinely has nothing to violate, so it isn't penalized — but
+    # the dimension must still be REPORTED. Omitting it shrinks the weighted-mean
+    # denominator and raises the overall, which would make being unprobeable a winning move.
     unprobeable = ToolInfo(name="np", input_schema={"type": "object", "properties": {}})
     dim = await run_robustness_probes(
         _session(lambda n, a: SimpleNamespace(isError=True)), [unprobeable]
     )
-    assert dim is None
+    assert dim is not None
+    assert dim.score == 100.0
+    assert any("nothing to probe" in f.message for f in dim.findings)
+
+
+async def test_none_only_when_there_are_no_tools() -> None:
+    assert await run_robustness_probes(_session(lambda n, a: None), []) is None
+
+
+async def test_missing_schema_counts_as_a_robustness_failure() -> None:
+    # The gaming vector: publishing NO schema used to make a tool unprobeable, dropping the
+    # whole dimension and RAISING the overall. A server that declares no argument contract
+    # cannot reject anything, so it scores like one that accepts every violation.
+    no_schema = ToolInfo(name="loose", input_schema={})
+    dim = await run_robustness_probes(
+        _session(lambda n, a: SimpleNamespace(isError=True)), [no_schema]
+    )
+    assert dim is not None
+    assert dim.score == 0.0
+    assert any("no usable input schema" in f.message for f in dim.findings)
+
+
+def test_enum_and_const_are_violatable() -> None:
+    # pydantic/zod emit enums with no `type`, so a type-only prober skipped them entirely.
+    payload = malformed_args(
+        {"type": "object", "properties": {"q": {"enum": ["a", "b"]}}, "required": ["q"]}
+    )
+    assert payload is not None and payload["q"] not in ("a", "b")
+    payload = malformed_args({"type": "object", "properties": {"q": {"const": "fixed"}}})
+    assert payload is not None and payload["q"] != "fixed"
+
+
+def test_ref_is_resolved_through_defs() -> None:
+    schema = {
+        "type": "object",
+        "properties": {"who": {"$ref": "#/$defs/Person"}},
+        "$defs": {"Person": {"type": "object", "properties": {"n": {"type": "string"}}}},
+        "required": ["who"],
+    }
+    payload = malformed_args(schema)
+    assert payload is not None and not isinstance(payload["who"], dict)
+
+
+def test_cyclic_ref_terminates() -> None:
+    schema = {
+        "type": "object",
+        "properties": {"node": {"$ref": "#/$defs/Node"}},
+        "$defs": {"Node": {"$ref": "#/$defs/Node"}},
+    }
+    assert malformed_args(schema) is None  # bounded recursion, no RecursionError
+
+
+def test_any_of_violates_every_branch() -> None:
+    schema = {
+        "type": "object",
+        "properties": {"v": {"anyOf": [{"type": "string"}, {"type": "number"}]}},
+        "required": ["v"],
+    }
+    payload = malformed_args(schema)
+    assert payload is not None
+    assert not isinstance(payload["v"], str | int | float)  # violates BOTH branches
+
+
+def test_any_of_accepting_every_type_is_unviolatable() -> None:
+    branches = [{"type": t} for t in ("string", "number", "boolean", "array", "object")]
+    schema = {"type": "object", "properties": {"v": {"anyOf": branches}}}
+    assert malformed_args(schema) is None  # honestly nothing invalid to send
+
+
+async def test_loose_optional_args_are_scored_not_exempted() -> None:
+    # The dodge that scoring "nothing probeable" as 100 would have REWARDED: declare
+    # optional arguments too loosely to violate and skip the dimension entirely. A tool
+    # that takes arguments is never exempt — only a genuinely zero-argument one is.
+    loose = ToolInfo(name="loose", input_schema={"type": "object", "properties": {"q": {}}})
+    dim = await run_robustness_probes(_session(lambda n, a: SimpleNamespace(isError=True)), [loose])
+    assert dim is not None
+    assert dim.score == 0.0
+    assert any("too loose" in f.message for f in dim.findings)
+
+
+async def test_loose_args_cannot_outscore_an_honest_schema() -> None:
+    # The published-board fairness statement: no way of declaring arguments may beat a
+    # server that declares them properly, even one that then fails to enforce them.
+    honest = ToolInfo(
+        name="honest",
+        input_schema={
+            "type": "object",
+            "properties": {"a": {"type": "integer"}},
+            "required": ["a"],
+        },
+    )
+    accepts_everything = _session(lambda n, a: SimpleNamespace(isError=False))
+    honest_dim = await run_robustness_probes(accepts_everything, [honest])
+    assert honest_dim is not None
+    for dodge in (
+        {"type": "object", "properties": {"q": {}}},  # untyped optional
+        {"type": "object", "properties": {"q": {"description": "no constraints"}}},
+        {},  # no schema at all
+        {"type": "string"},  # not an object schema
+    ):
+        dim = await run_robustness_probes(
+            accepts_everything, [ToolInfo(name="d", input_schema=dodge)]
+        )
+        assert dim is not None, dodge
+        assert dim.score <= honest_dim.score, dodge
+
+
+async def test_one_honest_tool_cannot_launder_nine_dodges() -> None:
+    # Mixed servers must not hide their unprobeable tools behind one that passes.
+    honest = ToolInfo(
+        name="honest",
+        input_schema={
+            "type": "object",
+            "properties": {"a": {"type": "integer"}},
+            "required": ["a"],
+        },
+    )
+    dodges = [
+        ToolInfo(name=f"d{i}", input_schema={"type": "object", "properties": {"q": {}}})
+        for i in range(9)
+    ]
+    dim = await run_robustness_probes(
+        _session(lambda n, a: SimpleNamespace(isError=True)), [honest, *dodges]
+    )
+    assert dim is not None
+    assert dim.score == 10.0  # 1 of 10 tools actually enforced anything
+
+
+async def test_no_schema_cannot_outscore_a_declared_schema() -> None:
+    # End-to-end statement of R15: dodging the dimension must not beat publishing a real
+    # schema, even one the server then fails to enforce.
+    honest = ToolInfo(
+        name="honest",
+        input_schema={
+            "type": "object",
+            "properties": {"a": {"type": "integer"}},
+            "required": ["a"],
+        },
+    )
+    gamed = ToolInfo(name="gamed", input_schema={})
+    accepts_everything = _session(lambda n, a: SimpleNamespace(isError=False))
+    honest_dim = await run_robustness_probes(accepts_everything, [honest])
+    gamed_dim = await run_robustness_probes(accepts_everything, [gamed])
+    assert honest_dim is not None and gamed_dim is not None
+    assert gamed_dim.score <= honest_dim.score
 
 
 # --- integration: a real, well-behaved server rejects malformed input -------

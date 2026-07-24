@@ -1,7 +1,20 @@
 """Leaderboard rendering: only mutually comparable scores share a ranked table."""
 
+from pathlib import Path
+
+import pytest
+
 from mcp_gauntlet.checks import run_static_checks
-from mcp_gauntlet.leaderboard import LeaderboardResult, _unique_slug, render_index
+from mcp_gauntlet.leaderboard import (
+    LeaderboardResult,
+    ServerListError,
+    _result_payload,
+    _unique_slug,
+    load_results,
+    load_servers,
+    render_index,
+    rerender,
+)
 from mcp_gauntlet.models import DiscoveryResult, ServerInfo, ToolInfo
 from mcp_gauntlet.report import (
     AgenticDetail,
@@ -33,6 +46,77 @@ def _scored(
 
 def _dim(key: str, score: float, weight: float = 1.0) -> DimensionResult:
     return DimensionResult(key=key, title=key.title(), weight=weight, score=score)
+
+
+def test_saved_results_round_trip_and_rerender(tmp_path: Path) -> None:
+    # Running the board costs real LLM spend, so raw results are persisted next to the
+    # rendered pages: changing how results are PRESENTED must never require paying to
+    # measure them again.
+    servers_dir = tmp_path / "servers"
+    servers_dir.mkdir(parents=True)
+    scored = _scored("alpha", [_dim("schema", 90.0), _dim("task_success", 80.0, 3.0)])
+    failed = LeaderboardResult(name="omega", spec="o", error="connection refused")
+    (servers_dir / "alpha.json").write_text(_result_payload(scored), encoding="utf-8")
+    (servers_dir / "omega.json").write_text(_result_payload(failed), encoding="utf-8")
+
+    loaded = {r.name: r for r in load_results(tmp_path)}
+    assert loaded["alpha"].report is not None
+    assert loaded["alpha"].report.overall_score == scored.report.overall_score  # type: ignore[union-attr]
+    assert loaded["omega"].report is None and loaded["omega"].error == "connection refused"
+
+    rerender(tmp_path)
+    index = (tmp_path / "index.html").read_text(encoding="utf-8")
+    assert "alpha" in index and "connection refused" in index
+    assert (tmp_path / "servers" / "alpha.html").exists()  # per-server page rebuilt too
+
+
+def test_load_results_surfaces_corrupt_files_instead_of_dropping_them(tmp_path: Path) -> None:
+    # A half-written file must not make a server silently vanish from a rebuilt board.
+    servers_dir = tmp_path / "servers"
+    servers_dir.mkdir(parents=True)
+    (servers_dir / "bad.json").write_text("{not json", encoding="utf-8")
+    (servers_dir / "array.json").write_text("[1,2,3]", encoding="utf-8")
+    (servers_dir / "ok.json").write_text(
+        _result_payload(_scored("alpha", [_dim("schema", 90.0)])), encoding="utf-8"
+    )
+    by_name = {r.name: r for r in load_results(tmp_path)}
+    assert by_name["alpha"].report is not None
+    for broken in ("bad", "array"):
+        assert by_name[broken].report is None
+        assert "could not be read" in (by_name[broken].error or "")
+    assert "could not be read" in render_index(list(by_name.values()))
+
+
+def test_load_servers_accepts_utf16(tmp_path: Path) -> None:
+    # PowerShell 5.1's plain `>` redirect writes UTF-16LE — more common than the BOM case.
+    path = tmp_path / "servers.json"
+    path.write_bytes('{"servers":[{"name":"a","spec":"python -m x"}]}'.encode("utf-16"))
+    assert [e.name for e in load_servers(path)] == ["a"]
+
+
+def test_load_servers_accepts_a_utf8_bom(tmp_path: Path) -> None:
+    # PowerShell's `Out-File -Encoding utf8` writes a BOM, so the most natural way for a
+    # Windows user to author this file used to crash with a raw JSONDecodeError traceback.
+    path = tmp_path / "servers.json"
+    path.write_text('{"servers":[{"name":"a","spec":"python -m x"}]}', encoding="utf-8-sig")
+    assert [e.name for e in load_servers(path)] == ["a"]
+
+
+def test_load_servers_reports_bad_input_clearly(tmp_path: Path) -> None:
+    bad = tmp_path / "bad.json"
+    bad.write_text("{not json", encoding="utf-8")
+    with pytest.raises(ServerListError):
+        load_servers(bad)
+
+    wrong_shape = tmp_path / "wrong.json"
+    wrong_shape.write_text('["a","b"]', encoding="utf-8")
+    with pytest.raises(ServerListError):
+        load_servers(wrong_shape)
+
+    missing_key = tmp_path / "missing.json"
+    missing_key.write_text('{"servers":[{"name":"a"}]}', encoding="utf-8")
+    with pytest.raises(ServerListError):
+        load_servers(missing_key)
 
 
 def test_unique_slug_dedupes_collisions() -> None:

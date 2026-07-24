@@ -12,6 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import anyio
 
@@ -37,9 +38,89 @@ class LeaderboardResult:
     page: str | None = None
 
 
+class ServerListError(ValueError):
+    """The --servers file could not be read as a list of servers."""
+
+
+def _read_json_text(path: Path) -> str:
+    """Read a JSON file written by any of the encodings Windows shells produce.
+
+    PowerShell writes UTF-16LE from a plain ``>`` redirect and UTF-8-with-BOM from
+    ``Out-File -Encoding utf8`` — so the two most natural ways to author this file on the
+    platform both used to fail on a strict utf-8 read. Plain UTF-8 decodes unchanged.
+    """
+    raw = path.read_bytes()
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return raw.decode("utf-16")
+    return raw.decode("utf-8-sig")
+
+
 def load_servers(path: Path) -> list[ServerEntry]:
-    data = json.loads(path.read_text(encoding="utf-8"))
-    return [ServerEntry(name=str(s["name"]), spec=str(s["spec"])) for s in data["servers"]]
+    try:
+        data = json.loads(_read_json_text(path))
+    except OSError as exc:
+        raise ServerListError(f"could not read {path}: {exc}") from exc
+    except UnicodeDecodeError as exc:
+        raise ServerListError(f"{path} is not UTF-8 or UTF-16 text: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise ServerListError(f"{path} is not valid JSON: {exc}") from exc
+    if not isinstance(data, dict) or not isinstance(data.get("servers"), list):
+        raise ServerListError(f'{path} must be an object with a "servers" list')
+    try:
+        return [ServerEntry(name=str(s["name"]), spec=str(s["spec"])) for s in data["servers"]]
+    except (TypeError, KeyError) as exc:
+        raise ServerListError(f'every entry in {path} needs "name" and "spec": {exc}') from exc
+
+
+def _result_payload(result: LeaderboardResult) -> str:
+    """Serialize one evaluated server so the site can be rebuilt without re-running it."""
+    return json.dumps(
+        {
+            "name": result.name,
+            "spec": result.spec,
+            "error": result.error,
+            "report": json.loads(result.report.model_dump_json()) if result.report else None,
+        },
+        indent=2,
+    )
+
+
+def load_results(out_dir: Path) -> list[LeaderboardResult]:
+    """Reload previously evaluated servers from ``servers/*.json``.
+
+    Running the board costs real LLM spend, so the raw reports are persisted alongside the
+    rendered pages: changing how results are *presented* should never require paying to
+    measure them again.
+    """
+    results: list[LeaderboardResult] = []
+    for path in sorted((out_dir / "servers").glob("*.json")):
+        data: Any = None
+        report: GauntletReport | None = None
+        try:
+            data = json.loads(_read_json_text(path))
+            raw = data.get("report") if isinstance(data, dict) else None
+            report = GauntletReport(**raw) if isinstance(raw, dict) else None
+        except (OSError, ValueError):  # covers JSONDecodeError and pydantic ValidationError
+            data = None
+        if not isinstance(data, dict):
+            # Surface it as an unevaluable row rather than dropping it: a half-written file
+            # would otherwise make a server silently disappear from a rebuilt board.
+            results.append(
+                LeaderboardResult(
+                    name=path.stem, spec="", error=f"saved result could not be read ({path.name})"
+                )
+            )
+            continue
+        results.append(
+            LeaderboardResult(
+                name=str(data.get("name") or path.stem),
+                spec=str(data.get("spec") or ""),
+                report=report,
+                error=data.get("error") if report is None else None,
+                page=f"servers/{path.stem}.html" if report else None,
+            )
+        )
+    return results
 
 
 def _slug(name: str) -> str:
@@ -102,15 +183,28 @@ async def run_leaderboard(
             error = str(exc)[:200]
 
         result = LeaderboardResult(name=entry.name, spec=entry.spec, report=report, error=error)
+        slug = _unique_slug(entry.name, used_slugs)
         if report is not None:
-            page = servers_dir / f"{_unique_slug(entry.name, used_slugs)}.html"
+            page = servers_dir / f"{slug}.html"
             page.write_text(to_html(report), encoding="utf-8")
             result.page = f"servers/{page.name}"
             log(f"  -> {report.grade} ({report.overall_score:.1f})")
         else:
             log(f"  -> FAILED: {error}")
+        # Persist the raw result too, so the site can be re-rendered later for free.
+        (servers_dir / f"{slug}.json").write_text(_result_payload(result), encoding="utf-8")
         results.append(result)
 
+    (out_dir / "index.html").write_text(render_index(results), encoding="utf-8")
+    return results
+
+
+def rerender(out_dir: Path) -> list[LeaderboardResult]:
+    """Rebuild the site from saved results, without re-evaluating (and re-paying for) any."""
+    results = load_results(out_dir)
+    for result in results:
+        if result.report is not None and result.page:
+            (out_dir / result.page).write_text(to_html(result.report), encoding="utf-8")
     (out_dir / "index.html").write_text(render_index(results), encoding="utf-8")
     return results
 
@@ -276,7 +370,7 @@ def render_index(results: list[LeaderboardResult]) -> str:
                 if r.report.security_critical:
                     reason += " · ⚠ critical security finding in its instructions"
             else:
-                reason = f"could not evaluate: {r.error}"
+                reason = f"could not evaluate: {r.error or 'reason not recorded'}"
             name_cell = f'<a href="{_esc(r.page)}">{_esc(r.name)}</a>' if r.page else _esc(r.name)
             unranked_rows.append(
                 f'<tr class="failed"><td class="num">—</td><td>{name_cell}</td>'

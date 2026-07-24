@@ -29,23 +29,107 @@ _WRONG: dict[str, Any] = {
 }
 
 
-def _violatable_type(prop: Any) -> str | None:
-    """The JSON Schema type of ``prop`` we can violate, or None.
+# A value of each JSON type, to violate a field by sending a type it doesn't allow.
+_OF_TYPE: dict[str, Any] = {
+    "object": {"mcp_gauntlet": "invalid"},
+    "array": ["mcp-gauntlet-invalid"],
+    "string": "mcp-gauntlet-invalid",
+    "boolean": True,
+    "integer": 987654321,
+}
+_SENTINEL = "mcp-gauntlet-invalid-value"
 
-    ``type`` may be a string OR a list (the ``["string", "null"]`` nullable idiom that
-    zod-to-json-schema and many servers emit) — a list is unhashable, so guarding the
-    dict-membership test is what keeps this from crashing the whole probe run.
+
+def _resolve_ref(ref: str, defs: dict[str, Any]) -> Any:
+    """Resolve a local ``#/$defs/Name`` (or ``#/definitions/Name``) reference."""
+    if not ref.startswith("#/"):
+        return None  # remote refs aren't ours to fetch
+    node: Any = defs
+    for part in ref[2:].split("/"):
+        if not isinstance(node, dict):
+            return None
+        node = node.get(part)
+    return node
+
+
+def _wrong_for_types(allowed: set[str]) -> tuple[bool, Any]:
+    """A value whose JSON type is outside ``allowed`` (so it violates every branch)."""
+    for name, value in _OF_TYPE.items():
+        if name in allowed:
+            continue
+        # "integer" also satisfies a "number" schema, so it isn't a violation of one.
+        if name == "integer" and "number" in allowed:
+            continue
+        return True, value
+    return False, None  # the field accepts every type — nothing is invalid
+
+
+def _violating_value(prop: Any, defs: dict[str, Any], depth: int = 0) -> tuple[bool, Any]:
+    """A value that violates ``prop``, as ``(found, value)``.
+
+    Beyond a plain ``type``, this understands ``enum``/``const``, ``anyOf``/``oneOf`` and
+    local ``$ref``s — the shapes ``pydantic.model_json_schema()`` and zod-to-json-schema
+    emit for enums, unions, and nested models. Reading only ``type`` would leave those
+    tools silently unprobed, which both under-tests honest servers and hands a free pass
+    to any server that declares its arguments that way.
     """
-    if not isinstance(prop, dict):
-        return None
+    if not isinstance(prop, dict) or depth > 4:  # depth-bounded: $refs can be cyclic
+        return False, None
+
+    ref = prop.get("$ref")
+    if isinstance(ref, str):
+        target = _resolve_ref(ref, defs)
+        return _violating_value(target, defs, depth + 1) if target is not None else (False, None)
+
+    enum = prop.get("enum")
+    if isinstance(enum, list) and enum:
+        return True, _SENTINEL if _SENTINEL not in enum else _SENTINEL + "-2"
+    if "const" in prop:
+        return (True, _SENTINEL) if prop["const"] != _SENTINEL else (True, _SENTINEL + "-2")
+
+    for key in ("anyOf", "oneOf"):
+        branches = prop.get(key)
+        if isinstance(branches, list) and branches:
+            allowed: set[str] = set()
+            for branch in branches:
+                if not isinstance(branch, dict):
+                    continue
+                resolved = branch
+                branch_ref = branch.get("$ref")
+                if isinstance(branch_ref, str):
+                    target = _resolve_ref(branch_ref, defs)
+                    resolved = target if isinstance(target, dict) else branch
+                branch_type = resolved.get("type")
+                if isinstance(branch_type, str):
+                    allowed.add(branch_type)
+                elif isinstance(branch_type, list):
+                    allowed.update(t for t in branch_type if isinstance(t, str))
+                elif "enum" in resolved or "const" in resolved:
+                    allowed.add("string")  # conservative: assume the literal may be a string
+            return _wrong_for_types(allowed) if allowed else (False, None)
+
     prop_type = prop.get("type")
+    # ``type`` may be a string OR a list (the ``["string", "null"]`` nullable idiom) — a
+    # list is unhashable, so guarding the membership test keeps this from crashing.
     if isinstance(prop_type, str):
-        return prop_type if prop_type in _WRONG else None
+        return (True, _WRONG[prop_type]) if prop_type in _WRONG else (False, None)
     if isinstance(prop_type, list):
         for item in prop_type:
             if isinstance(item, str) and item != "null" and item in _WRONG:
-                return item
-    return None
+                return True, _WRONG[item]
+    return False, None
+
+
+def declares_arg_contract(schema: Any) -> bool:
+    """Whether the tool publishes an argument contract we could hold it to.
+
+    A tool with an object schema and no violatable field (a zero-argument tool) HAS a
+    contract — there is simply nothing invalid to send it. A tool with no schema at all
+    has declared nothing, so it cannot reject anything: that is a robustness failure, not
+    an exemption. Keeping the distinction matters because omitting schemas would otherwise
+    be a way to skip this dimension entirely and score higher for it.
+    """
+    return isinstance(schema, dict) and schema.get("type") == "object"
 
 
 def malformed_args(schema: dict[str, Any]) -> dict[str, Any] | None:
@@ -56,29 +140,37 @@ def malformed_args(schema: dict[str, Any]) -> dict[str, Any] | None:
     props = props if isinstance(props, dict) else {}
     required = schema.get("required")
     required = required if isinstance(required, list) else []
+    defs = {k: v for k, v in schema.items() if k in ("$defs", "definitions")}
 
-    # Strongest violation: a wrong-typed value on a required, typed field.
+    # Strongest violation: an invalid value on a required field.
     for name in required:
         if not isinstance(name, str):
             # ``required`` is server data and may hold non-strings; a dict/list entry is
             # unhashable and would crash props.get(name). A non-string can't name a real
             # JSON property anyway, so skip it.
             continue
-        prop_type = _violatable_type(props.get(name))
-        if prop_type is not None:
-            return {name: _WRONG[prop_type]}
+        found, value = _violating_value(props.get(name), defs)
+        if found:
+            return {name: value}
 
     # Otherwise: omit all required fields.
     if required:
         return {}
 
-    # No required fields: wrong-type the first typed property.
+    # No required fields: send an invalid value for the first constrained property.
     for name, prop in props.items():
-        prop_type = _violatable_type(prop)
-        if prop_type is not None:
-            return {name: _WRONG[prop_type]}
+        found, value = _violating_value(prop, defs)
+        if found:
+            return {name: value}
 
     return None
+
+
+def declares_arguments(schema: Any) -> bool:
+    """Whether the tool takes arguments at all (as opposed to being zero-argument)."""
+    if not isinstance(schema, dict):
+        return False
+    return bool(schema.get("properties")) or bool(schema.get("required"))
 
 
 async def run_robustness_probes(
@@ -87,14 +179,53 @@ async def run_robustness_probes(
     *,
     timeout_s: float = 15.0,
 ) -> DimensionResult | None:
-    """Probe each tool with malformed input. Returns None if no tool is probeable."""
+    """Probe each tool with malformed input.
+
+    Always returns a dimension when there is at least one tool — an omitted dimension
+    would shrink the weighted-mean denominator and inflate the overall. Returns None only
+    when there are no tools at all.
+    """
+    if not tools:
+        return None
     findings: list[Finding] = []
     scores: list[float] = []
 
     for tool in tools:
         payload = malformed_args(tool.input_schema)
         if payload is None:
-            continue  # nothing to violate — don't score this tool
+            if not declares_arg_contract(tool.input_schema):
+                # No usable contract: the server can't reject anything because it has said
+                # nothing is invalid. Score it like an accepted violation, so publishing no
+                # schema can't buy a better grade than publishing a real one.
+                detail = (
+                    "the schema is not an object schema"
+                    if isinstance(tool.input_schema, dict) and tool.input_schema
+                    else None
+                )
+                findings.append(
+                    Finding(
+                        tool=tool.name,
+                        severity=Severity.MEDIUM,
+                        message="no usable input schema — the server declares no argument "
+                        "contract to validate against",
+                        detail=detail,
+                    )
+                )
+                scores.append(0.0)
+            elif declares_arguments(tool.input_schema):
+                # It DOES take arguments, but nothing in the declaration is specific enough
+                # to violate. That tool is untested, not exempt — exempting it is what makes
+                # "declare arguments loosely" a better dodge than declaring none at all.
+                findings.append(
+                    Finding(
+                        tool=tool.name,
+                        severity=Severity.MEDIUM,
+                        message="argument types too loose to construct an invalid value — "
+                        "the declared contract can't be enforced",
+                    )
+                )
+                scores.append(0.0)
+            continue  # a zero-argument tool has nothing to violate — don't score it
 
         try:
             with anyio.fail_after(timeout_s):
@@ -149,7 +280,25 @@ async def run_robustness_probes(
             scores.append(0.0)
 
     if not scores:
-        return None
+        # Every tool was legitimately unprobeable (zero-argument tools with real schemas).
+        # Report the dimension anyway rather than omitting it: the overall is a weighted
+        # mean over the dimensions PRESENT, so an absent dimension shrinks the denominator
+        # and quietly RAISES the score — making "be unprobeable" the winning move.
+        findings.append(
+            Finding(
+                severity=Severity.INFO,
+                message="no tool takes arguments that could be violated — nothing to probe",
+            )
+        )
+        return DimensionResult(
+            key="robustness",
+            title="Robustness",
+            weight=1.0,
+            score=100.0,
+            summary="No tool exposes a violatable argument, so there was nothing to "
+            "probe; scored as no-evidence-of-failure rather than omitted.",
+            findings=findings,
+        )
 
     return DimensionResult(
         key="robustness",

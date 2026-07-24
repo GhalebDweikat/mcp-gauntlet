@@ -16,7 +16,7 @@ from mcp_gauntlet.config import ServerSpec
 from mcp_gauntlet.engine import evaluate_server
 from mcp_gauntlet.env import load_env
 from mcp_gauntlet.htmlreport import to_html
-from mcp_gauntlet.leaderboard import load_servers, run_leaderboard
+from mcp_gauntlet.leaderboard import ServerListError, load_servers, rerender, run_leaderboard
 from mcp_gauntlet.llm import LLMConfig, LLMConfigError, list_models
 from mcp_gauntlet.report import GauntletReport, Severity, sort_findings, to_markdown
 
@@ -329,8 +329,8 @@ def run(
 
 @app.command()
 def leaderboard(
-    servers: Path = typer.Option(
-        ..., "--servers", help='JSON file listing servers ({"servers":[{name,spec}]}).'
+    servers: Path | None = typer.Option(
+        None, "--servers", help='JSON file listing servers ({"servers":[{name,spec}]}).'
     ),
     out: Path = typer.Option(
         Path("docs"), "--out", "-o", help="Output directory for the static site."
@@ -354,9 +354,33 @@ def leaderboard(
         help="Per-tool-call limit for the agent, in seconds; a tool that exceeds it "
         "is recorded as a failed call.",
     ),
+    render_only: bool = typer.Option(
+        False,
+        "--render-only",
+        help="Rebuild the site from previously saved results in --out, without "
+        "re-evaluating anything (no LLM spend).",
+    ),
 ) -> None:
     """Evaluate many MCP servers and build a static leaderboard site."""
-    entries = load_servers(servers)
+    if render_only:
+        results = rerender(out)
+        if not results:
+            console.print(f"[red]No saved results found in[/red] {out / 'servers'}.")
+            raise typer.Exit(code=1)
+        console.print(
+            f"[green]Re-rendered[/green] {len(results)} saved result(s) — "
+            f"no evaluation run. Site: {out / 'index.html'}"
+        )
+        return
+
+    if servers is None:
+        console.print("[red]--servers is required[/red] (or use --render-only).")
+        raise typer.Exit(code=1)
+    try:
+        entries = load_servers(servers)
+    except ServerListError as exc:
+        console.print(f"[red]Could not load the server list:[/red] {escape(str(exc))}")
+        raise typer.Exit(code=1) from exc
     # The defaults are checked by a test, but these are user-supplied: if one hung call can
     # eat the per-server budget, that budget fires first and the server loses its report
     # entirely instead of being graded on the hang.

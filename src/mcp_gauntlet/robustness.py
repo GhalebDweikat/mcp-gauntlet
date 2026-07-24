@@ -18,6 +18,12 @@ from mcp.shared.exceptions import McpError
 
 from mcp_gauntlet.models import ToolInfo
 from mcp_gauntlet.report import DimensionResult, Finding, Severity
+from mcp_gauntlet.schemas import (
+    arg_surface,
+    declares_arg_contract,
+    declares_arguments,
+    resolve_ref,
+)
 
 # A value of the wrong JSON type for each schema type, to violate a typed field.
 _WRONG: dict[str, Any] = {
@@ -39,18 +45,6 @@ _OF_TYPE: dict[str, Any] = {
     "integer": 987654321,
 }
 _SENTINEL = "mcp-gauntlet-invalid-value"
-
-
-def _resolve_ref(ref: str, defs: dict[str, Any]) -> Any:
-    """Resolve a local ``#/$defs/Name`` (or ``#/definitions/Name``) reference."""
-    if not ref.startswith("#/"):
-        return None  # remote refs aren't ours to fetch
-    node: Any = defs
-    for part in ref[2:].split("/"):
-        if not isinstance(node, dict):
-            return None
-        node = node.get(part)
-    return node
 
 
 def _wrong_for_types(allowed: set[str]) -> tuple[bool, Any]:
@@ -79,7 +73,7 @@ def _violating_value(prop: Any, defs: dict[str, Any], depth: int = 0) -> tuple[b
 
     ref = prop.get("$ref")
     if isinstance(ref, str):
-        target = _resolve_ref(ref, defs)
+        target = resolve_ref(ref, defs)
         return _violating_value(target, defs, depth + 1) if target is not None else (False, None)
 
     enum = prop.get("enum")
@@ -100,7 +94,7 @@ def _violating_value(prop: Any, defs: dict[str, Any], depth: int = 0) -> tuple[b
                 resolved = branch
                 branch_ref = branch.get("$ref")
                 if isinstance(branch_ref, str):
-                    target = _resolve_ref(branch_ref, defs)
+                    target = resolve_ref(branch_ref, defs)
                     resolved = target if isinstance(target, dict) else branch
                 branch_type = resolved.get("type")
                 if isinstance(branch_type, str):
@@ -130,38 +124,6 @@ def _violating_value(prop: Any, defs: dict[str, Any], depth: int = 0) -> tuple[b
     return False, None
 
 
-def declares_arg_contract(schema: Any) -> bool:
-    """Whether the tool publishes an argument contract we could hold it to.
-
-    A tool with an object schema and no violatable field (a zero-argument tool) HAS a
-    contract — there is simply nothing invalid to send it. A tool with no schema at all
-    has declared nothing, so it cannot reject anything: that is a robustness failure, not
-    an exemption. Keeping the distinction matters because omitting schemas would otherwise
-    be a way to skip this dimension entirely and score higher for it.
-    """
-    return isinstance(schema, dict) and schema.get("type") == "object"
-
-
-def _subschemas(schema: Any, defs: dict[str, Any], depth: int = 0) -> list[dict[str, Any]]:
-    """The schema itself plus any ``allOf`` branches it composes, with local $refs resolved.
-
-    A composed schema declares its arguments one level down, so reading only the top level
-    both under-probes an ordinary ``allOf`` schema and — because an unprobed tool used to be
-    treated as argument-less — handed it an unearned perfect Robustness score.
-    """
-    if not isinstance(schema, dict) or depth > 4:  # depth-bounded: $refs/allOf can be cyclic
-        return []
-    ref = schema.get("$ref")
-    if isinstance(ref, str):
-        return _subschemas(_resolve_ref(ref, defs), defs, depth + 1)
-    out = [schema]
-    all_of = schema.get("allOf")
-    if isinstance(all_of, list):
-        for branch in all_of:
-            out.extend(_subschemas(branch, defs, depth + 1))
-    return out
-
-
 def _key_matching(pattern: str) -> str | None:
     """A property name satisfying ``pattern``, so patternProperties can be probed."""
     try:
@@ -174,30 +136,13 @@ def _key_matching(pattern: str) -> str | None:
     return None
 
 
-def _arg_surface(schema: dict[str, Any], defs: dict[str, Any]) -> tuple[dict, list, dict, Any]:
-    """The effective (properties, required, patternProperties, additionalProperties)."""
-    props: dict[str, Any] = {}
-    required: list[Any] = []
-    pattern_props: dict[str, Any] = {}
-    extra: Any = None
-    for sub in _subschemas(schema, defs):
-        if isinstance(sub.get("properties"), dict):
-            props.update(sub["properties"])
-        if isinstance(sub.get("required"), list):
-            required.extend(sub["required"])
-        if isinstance(sub.get("patternProperties"), dict):
-            pattern_props.update(sub["patternProperties"])
-        if extra is None and "additionalProperties" in sub:
-            extra = sub["additionalProperties"]
-    return props, required, pattern_props, extra
-
-
 def malformed_args(schema: dict[str, Any]) -> dict[str, Any] | None:
     """Build one schema-violating argument payload, or None if nothing can be violated."""
     if not isinstance(schema, dict) or schema.get("type") != "object":
         return None
-    defs = {k: v for k, v in schema.items() if k in ("$defs", "definitions")}
-    props, required, pattern_props, extra = _arg_surface(schema, defs)
+    surface = arg_surface(schema)
+    props, required = surface.properties, surface.required
+    pattern_props, extra, defs = surface.pattern_properties, surface.additional, surface.defs
 
     # Strongest violation: an invalid value on a required field.
     for name in required:
@@ -237,22 +182,16 @@ def malformed_args(schema: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
-def declares_arguments(schema: Any) -> bool:
-    """Whether the tool takes arguments at all (as opposed to being zero-argument).
+def is_scored(schema: Any) -> bool:
+    """Whether this tool contributes a score to the Robustness dimension at all.
 
-    Looks through ``allOf`` composition and at the arbitrary-key contracts, because the
-    zero-argument exemption is the one path that skips scoring entirely: any shape that
-    declares arguments but is missed here becomes a free perfect score.
+    Only a genuinely zero-argument tool does not: it can be probed with nothing, so it is
+    neither passed nor failed. Everything else is either probeable or penalised for an
+    unenforceable contract.
     """
-    if not isinstance(schema, dict):
-        return False
-    defs = {k: v for k, v in schema.items() if k in ("$defs", "definitions")}
-    props, required, pattern_props, extra = _arg_surface(schema, defs)
-    if props or required or pattern_props:
+    if malformed_args(schema) is not None:
         return True
-    # `additionalProperties: false` is the canonical strict zero-argument tool; anything
-    # else here (a schema, or a bare `true`) admits arguments we were never able to probe.
-    return extra is not None and extra is not False
+    return not declares_arg_contract(schema) or declares_arguments(schema)
 
 
 async def run_robustness_probes(
@@ -260,19 +199,52 @@ async def run_robustness_probes(
     tools: list[ToolInfo],
     *,
     timeout_s: float = 15.0,
+    # 60s so the pieces compose: one permitted agent hang (--tool-timeout, 60s) plus a
+    # full probe budget still fits inside the leaderboard's 240s per-server allowance.
+    budget_s: float = 60.0,
 ) -> DimensionResult | None:
     """Probe each tool with malformed input.
 
     Always returns a dimension when there is at least one tool — an omitted dimension
     would shrink the weighted-mean denominator and inflate the overall. Returns None only
     when there are no tools at all.
+
+    ``timeout_s`` bounds a single probe; ``budget_s`` bounds them all together. Without the
+    aggregate bound, many merely-slow tools (each finishing inside ``timeout_s``, so no
+    timeout ever fires) can still outrun the caller's per-server budget — and when that
+    outer bound fires the whole report is lost, which is the outcome these probes are
+    meant to survive.
     """
     if not tools:
         return None
     findings: list[Finding] = []
     scores: list[float] = []
+    started = anyio.current_time()
 
-    for tool in tools:
+    for index, tool in enumerate(tools):
+        if scores and anyio.current_time() - started >= budget_s:
+            # Count only the tools that would actually have been SCORED. A zero-argument
+            # tool contributes nothing on the normal path, so counting it as a failure here
+            # would swing the score by the same accident of ordering the 0.0s exist to
+            # prevent — just in the other direction. `is_scored` is pure and offline.
+            remaining = sum(1 for later in tools[index:] if is_scored(later.input_schema))
+            findings.append(
+                Finding(
+                    severity=Severity.HIGH,
+                    message=f"stopped probing after {budget_s:g}s — the server is too slow "
+                    f"to finish; {remaining} tool(s) went unprobed and count as failures",
+                    detail="A server this slow can't be verified within the time budget. "
+                    "Investigate the latency, or raise the budget and re-run.",
+                )
+            )
+            # Score the unprobed tools 0 rather than dropping them. Both latency and tool
+            # ORDER are server-controlled, so leaving them out would let a server put one
+            # slow-but-correct tool first and have the budget cut the probe short before
+            # its broken tools were ever reached — turning a 5.0 into a 100.0. Every other
+            # early exit in this loop scores the tool it stopped on for the same reason:
+            # stopping early must only ever lower the score, never raise it.
+            scores.extend([0.0] * remaining)
+            break
         payload = malformed_args(tool.input_schema)
         if payload is None:
             if not declares_arg_contract(tool.input_schema):

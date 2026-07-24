@@ -23,6 +23,7 @@ from mcp_gauntlet.report import (
     Severity,
     to_markdown,
 )
+from mcp_gauntlet.robustness import run_robustness_probes
 
 
 def _hostile_report() -> GauntletReport:
@@ -100,6 +101,13 @@ def test_timeout_defaults_are_mutually_coherent() -> None:
     assert per_server >= tool_timeout * 3, (
         "per-server budget must cover one hung call plus the rest of the evaluation"
     )
+
+    # The probe budget bounds a phase that runs on the SAME per-server clock, after the
+    # agent. One permitted hang plus a full probe budget must still leave room, or a slow
+    # server loses its report to the outer bound — the thing both budgets exist to prevent.
+    probe_budget = inspect.signature(run_robustness_probes).parameters["budget_s"].default
+    assert isinstance(probe_budget, float)
+    assert tool_timeout + probe_budget < per_server
     # The behavioural half of this invariant — that only ONE hang is ever paid for — is
     # pinned by test_agent_mock.py::test_hang_stops_the_whole_eval_and_is_reported.
 

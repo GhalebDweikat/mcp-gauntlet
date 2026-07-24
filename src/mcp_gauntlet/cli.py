@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+import inspect
 from pathlib import Path
 
 import anyio
@@ -19,6 +20,7 @@ from mcp_gauntlet.htmlreport import to_html
 from mcp_gauntlet.leaderboard import ServerListError, load_servers, rerender, run_leaderboard
 from mcp_gauntlet.llm import LLMConfig, LLMConfigError, list_models
 from mcp_gauntlet.report import GauntletReport, Severity, sort_findings, to_markdown
+from mcp_gauntlet.robustness import run_robustness_probes
 
 app = typer.Typer(
     add_completion=False,
@@ -381,14 +383,16 @@ def leaderboard(
     except ServerListError as exc:
         console.print(f"[red]Could not load the server list:[/red] {escape(str(exc))}")
         raise typer.Exit(code=1) from exc
-    # The defaults are checked by a test, but these are user-supplied: if one hung call can
-    # eat the per-server budget, that budget fires first and the server loses its report
-    # entirely instead of being graded on the hang.
-    if tool_timeout * 3 > timeout:
+    # The defaults are checked by a test, but these are user-supplied. The per-server clock
+    # has to cover one permitted agent hang AND a full probe budget; if it can't, the outer
+    # bound fires first and the server loses its report entirely instead of being graded.
+    probe_budget = inspect.signature(run_robustness_probes).parameters["budget_s"].default
+    if tool_timeout + probe_budget >= timeout:
         console.print(
-            f"[yellow]⚠ --tool-timeout {tool_timeout:g}s is large relative to the "
-            f"{timeout:g}s per-server budget; a slow server may be dropped as "
-            "'could not evaluate' rather than scored. Raise --timeout.[/yellow]"
+            f"[yellow]⚠ --tool-timeout {tool_timeout:g}s plus the {probe_budget:g}s probe "
+            f"budget does not fit inside the {timeout:g}s per-server budget; a slow server "
+            "may be dropped as 'could not evaluate' rather than scored. "
+            "Raise --timeout.[/yellow]"
         )
     llm_config: LLMConfig | None = None
     try:

@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 from typing import Any, cast
 
+import anyio
 from mcp import ClientSession
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData
@@ -424,3 +425,90 @@ async def test_good_fixture_rejects_malformed() -> None:
         dim = await run_robustness_probes(session, tools)
     assert dim is not None
     assert dim.score == 100.0
+
+
+class _SlowSession:
+    """A server that answers every probe correctly, just slowly."""
+
+    def __init__(self, delay: float) -> None:
+        self.delay = delay
+        self.calls = 0
+
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
+        self.calls += 1
+        await anyio.sleep(self.delay)
+        return SimpleNamespace(isError=True)
+
+
+async def test_probe_budget_stops_a_slow_server() -> None:
+    # Each call finishes well inside `timeout_s`, so no per-call timeout ever fires — yet
+    # enough of them together used to outrun the caller's per-server budget, and when THAT
+    # fired the whole report was lost. The aggregate bound is what keeps the report.
+    tools = [
+        ToolInfo(
+            name=f"t{i}",
+            input_schema={
+                "type": "object",
+                "properties": {"a": {"type": "integer"}},
+                "required": ["a"],
+            },
+        )
+        for i in range(20)
+    ]
+    session = _SlowSession(delay=0.02)
+    dim = await run_robustness_probes(
+        cast(ClientSession, session), tools, timeout_s=5.0, budget_s=0.05
+    )
+    assert dim is not None
+    assert session.calls < len(tools)  # stopped early rather than probing all 20
+    assert any("stopped probing after" in f.message for f in dim.findings)
+    assert any("unprobed" in f.message for f in dim.findings)
+    # The unprobed tools must COUNT. Latency and tool order are both server-controlled, so
+    # scoring only what got probed would let one slow-but-correct tool at the front cut the
+    # probe short before the broken ones were reached — turning a bad score into a perfect
+    # one. Stopping early must only ever lower the score.
+    assert dim.score < 100.0
+
+
+async def test_budget_stop_cannot_inflate_the_score() -> None:
+    # The concrete inversion: tool 0 answers correctly but slowly; every other tool
+    # silently accepts malformed input. Truncating after tool 0 must not report 100.
+    good = ToolInfo(name="slow_good", input_schema=_TOOL.input_schema)
+    bad = [ToolInfo(name=f"bad{i}", input_schema=_TOOL.input_schema) for i in range(19)]
+
+    class _FirstSlowThenAccepting:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
+            self.calls += 1
+            if name == "slow_good":
+                await anyio.sleep(0.06)
+                return SimpleNamespace(isError=True)  # correct rejection
+            return SimpleNamespace(isError=False)  # silently accepts
+
+    session = _FirstSlowThenAccepting()
+    dim = await run_robustness_probes(
+        cast(ClientSession, session), [good, *bad], timeout_s=5.0, budget_s=0.05
+    )
+    assert dim is not None
+    assert session.calls == 1  # budget cut it short right after the slow good tool
+    assert dim.score <= 5.0  # 1 correct out of 20 — NOT 100
+
+
+async def test_probe_budget_does_not_fire_on_a_fast_server() -> None:
+    tools = [ToolInfo(name=f"t{i}", input_schema=_TOOL.input_schema) for i in range(5)]
+    session = _SlowSession(delay=0.0)
+    dim = await run_robustness_probes(cast(ClientSession, session), tools, budget_s=30.0)
+    assert dim is not None
+    assert session.calls == len(tools)
+    assert not any("stopped probing" in f.message for f in dim.findings)
+
+
+async def test_probe_budget_always_probes_at_least_one_tool() -> None:
+    # A zero budget must not produce an empty, meaningless dimension.
+    tools = [ToolInfo(name=f"t{i}", input_schema=_TOOL.input_schema) for i in range(3)]
+    session = _SlowSession(delay=0.01)
+    dim = await run_robustness_probes(cast(ClientSession, session), tools, budget_s=0.0)
+    assert dim is not None
+    assert session.calls == 1

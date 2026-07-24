@@ -115,12 +115,18 @@ a { color:#0969da; text-decoration:none; } a:hover { text-decoration:underline; 
 
 
 def render_index(results: list[LeaderboardResult]) -> str:
+    # A zero-tool (N/A) server was not really scored, so keep it out of the ranked table
+    # (where its synthetic 0.0 would sort it below a genuinely-graded F) and list it with
+    # the unevaluable ones.
+    def _is_na(r: LeaderboardResult) -> bool:
+        return r.report is not None and r.report.grade == "N/A"
+
     ranked = sorted(
-        (r for r in results if r.report is not None),
+        (r for r in results if r.report is not None and not _is_na(r)),
         key=lambda r: r.report.overall_score,  # type: ignore[union-attr]
         reverse=True,
     )
-    failed = [r for r in results if r.report is None]
+    unranked = [r for r in results if r.report is None or _is_na(r)]
 
     model = "—"
     for r in ranked:
@@ -148,10 +154,12 @@ def render_index(results: list[LeaderboardResult]) -> str:
             f'<td class="ctr">{security}</td>'
             f'<td class="num">{rep.tool_count}</td></tr>'
         )
-    for r in failed:
+    for r in unranked:
+        reason = "exposes no tools" if r.report is not None else f"could not evaluate: {r.error}"
+        name_cell = f'<a href="{_esc(r.page)}">{_esc(r.name)}</a>' if r.page else _esc(r.name)
         rows.append(
-            f'<tr class="failed"><td class="num">—</td><td>{_esc(r.name)}</td>'
-            f'<td colspan="5">could not evaluate: {_esc(r.error)}</td></tr>'
+            f'<tr class="failed"><td class="num">—</td><td>{name_cell}</td>'
+            f'<td colspan="5">{_esc(reason)}</td></tr>'
         )
 
     generated = datetime.now(UTC).isoformat(timespec="minutes")

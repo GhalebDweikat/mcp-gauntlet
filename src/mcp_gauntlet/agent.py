@@ -32,6 +32,7 @@ class ToolCallRecord(BaseModel):
     ok: bool = True
     result_text: str = ""
     error: str | None = None
+    unknown_tool: bool = False  # model invented a tool the server never offered (agent error)
 
 
 class AgentTrace(BaseModel):
@@ -50,7 +51,8 @@ class AgentTrace(BaseModel):
 
     @property
     def had_tool_error(self) -> bool:
-        return any(not call.ok for call in self.tool_calls)
+        # A hallucinated-tool call is an agent error, not a server-reliability signal.
+        return any(not call.ok and not call.unknown_tool for call in self.tool_calls)
 
 
 def _render_tool_result(result: Any) -> tuple[bool, str]:
@@ -122,8 +124,26 @@ async def run_agent_task(
             return trace
 
         for tc in message.tool_calls:
-            original = bridge.original(tc.function.name)
             args = _parse_args(tc.function.arguments)
+            if not bridge.knows(tc.function.name):
+                # The model invented a tool this server never offered — record it as an
+                # agent error (excluded from the server's Tool Reliability) and tell the
+                # model, rather than dispatching a bogus name and blaming the server.
+                record = ToolCallRecord(
+                    tool=tc.function.name,
+                    arguments=args,
+                    ok=False,
+                    unknown_tool=True,
+                    error="unknown tool (not offered by this server)",
+                    result_text="ERROR: no such tool on this server",
+                )
+                trace.tool_calls.append(record)
+                messages.append(
+                    {"role": "tool", "tool_call_id": tc.id, "content": record.result_text}
+                )
+                continue
+
+            original = bridge.original(tc.function.name)
             record = ToolCallRecord(tool=original, arguments=args)
             try:
                 result = await session.call_tool(original, args)

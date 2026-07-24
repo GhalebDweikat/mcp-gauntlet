@@ -7,6 +7,7 @@ Supports both transports:
 
 from __future__ import annotations
 
+import logging
 import shutil
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -17,6 +18,8 @@ from mcp.types import InitializeResult
 
 from mcp_gauntlet.config import ServerSpec, TransportKind
 from mcp_gauntlet.models import DiscoveryResult, ServerInfo, ToolInfo
+
+_log = logging.getLogger(__name__)
 
 
 class MCPConnectionError(RuntimeError):
@@ -69,8 +72,31 @@ async def open_session(
 
 
 async def discover_in_session(session: ClientSession, init: InitializeResult) -> DiscoveryResult:
-    """Build a DiscoveryResult from an already-initialized session."""
-    listed = await session.list_tools()
+    """Build a DiscoveryResult from an already-initialized session.
+
+    Follows ``tools/list`` pagination so a server exposing more tools than fit in one
+    page isn't silently truncated. Bounded (max pages + repeat-cursor check) so a buggy
+    or malicious server can't loop forever.
+    """
+    raw_tools = []
+    seen_names: set[str] = set()
+    cursor: str | None = None
+    seen_cursors: set[str] = set()
+    for _ in range(100):
+        listed = await session.list_tools(cursor=cursor)
+        for tool in listed.tools:
+            # Dedup by name so a server with overlapping pages can't inflate the tool
+            # count or manufacture a phantom "name_2" tool downstream.
+            if tool.name not in seen_names:
+                seen_names.add(tool.name)
+                raw_tools.append(tool)
+        cursor = listed.nextCursor
+        if not cursor or cursor in seen_cursors:
+            break
+        seen_cursors.add(cursor)
+    else:
+        _log.warning("tools/list did not terminate within 100 pages; discovery may be truncated")
+
     tools = [
         ToolInfo(
             name=tool.name,
@@ -79,7 +105,7 @@ async def discover_in_session(session: ClientSession, init: InitializeResult) ->
             read_only_hint=getattr(tool.annotations, "readOnlyHint", None),
             destructive_hint=getattr(tool.annotations, "destructiveHint", None),
         )
-        for tool in listed.tools
+        for tool in raw_tools
     ]
     server = ServerInfo(
         name=getattr(init.serverInfo, "name", None),

@@ -16,7 +16,7 @@ from mcp import ClientSession
 from mcp.shared.exceptions import McpError
 
 from mcp_gauntlet.models import ToolInfo
-from mcp_gauntlet.report import DimensionResult, Finding, Severity, score_from_findings
+from mcp_gauntlet.report import DimensionResult, Finding, Severity
 
 # A value of the wrong JSON type for each schema type, to violate a typed field.
 _WRONG: dict[str, Any] = {
@@ -92,14 +92,18 @@ async def run_robustness_probes(
             scores.append(100.0)  # protocol-level rejection = correct handling
             continue
         except Exception as exc:  # noqa: BLE001 - transport may be compromised; stop probing
-            tool_finding = Finding(
-                tool=tool.name,
-                severity=Severity.MEDIUM,
-                message="unexpected error on malformed input",
-                detail=str(exc)[:160],
+            # An ungraceful non-protocol failure is not a clean rejection; score it 0 like
+            # accept/timeout so that stopping early can only lower the score, never inflate
+            # it (otherwise tool order would change the grade).
+            findings.append(
+                Finding(
+                    tool=tool.name,
+                    severity=Severity.MEDIUM,
+                    message="unexpected error on malformed input",
+                    detail=str(exc)[:160],
+                )
             )
-            findings.append(tool_finding)
-            scores.append(score_from_findings([tool_finding]))
+            scores.append(0.0)
             findings.append(
                 Finding(severity=Severity.INFO, message="stopped probing after an unexpected error")
             )
@@ -108,13 +112,17 @@ async def run_robustness_probes(
         if bool(getattr(result, "isError", False)):
             scores.append(100.0)  # rejected via an isError result = correct handling
         else:
-            tool_finding = Finding(
-                tool=tool.name,
-                severity=Severity.MEDIUM,
-                message="server accepted schema-violating input without error",
+            # Silently accepting schema-violating input is a validation failure, not a
+            # minor ding — score it 0 so the dimension reads as the fraction of tools
+            # that correctly reject (a server that validates nothing scores near 0, not 88).
+            findings.append(
+                Finding(
+                    tool=tool.name,
+                    severity=Severity.MEDIUM,
+                    message="server accepted schema-violating input without error",
+                )
             )
-            findings.append(tool_finding)
-            scores.append(score_from_findings([tool_finding]))
+            scores.append(0.0)
 
     if not scores:
         return None
@@ -124,7 +132,8 @@ async def run_robustness_probes(
         title="Robustness",
         weight=1.0,
         score=round(sum(scores) / len(scores), 1),
-        summary="How the server handles malformed / schema-violating tool arguments — a "
-        "well-behaved server rejects them rather than accepting, hanging, or crashing (LLM-free).",
+        summary="Fraction of probed tools that reject malformed / schema-violating "
+        "arguments — a well-behaved server rejects them rather than silently accepting, "
+        "hanging, or crashing (LLM-free).",
         findings=findings,
     )

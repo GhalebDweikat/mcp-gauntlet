@@ -74,8 +74,11 @@ async def run_agentic_eval(
                 sample_error = sample_error or (trace.error or "agent LLM error")
                 continue
 
-            total_calls += len(trace.tool_calls)
-            ok_calls += sum(1 for call in trace.tool_calls if call.ok)
+            # Tool Reliability is a SERVER signal, so it counts only real tool calls —
+            # a hallucinated (unknown) tool the model invented is an agent error.
+            server_calls = [call for call in trace.tool_calls if not call.unknown_tool]
+            total_calls += len(server_calls)
+            ok_calls += sum(1 for call in server_calls if call.ok)
             any_tool_error = any_tool_error or trace.had_tool_error
 
             verdict = await judge_task(client, model, task, trace)

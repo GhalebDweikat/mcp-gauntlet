@@ -36,6 +36,10 @@ class ToolBridge:
         """Return the real MCP tool name for a name the model called."""
         return self.name_map.get(sanitized, sanitized)
 
+    def knows(self, sanitized: str) -> bool:
+        """Whether the model called a tool this server actually offered."""
+        return sanitized in self.name_map
+
 
 def build_tool_bridge(tools: list[ToolInfo]) -> ToolBridge:
     bridge = ToolBridge()

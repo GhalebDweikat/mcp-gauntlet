@@ -61,6 +61,12 @@ _TOOL = ToolInfo(
 )
 
 
+_TOOL2 = ToolInfo(
+    name="u",
+    input_schema={"type": "object", "properties": {"b": {"type": "string"}}, "required": ["b"]},
+)
+
+
 async def test_accepted_bad_input_scores_below_100() -> None:
     dim = await run_robustness_probes(
         _session(lambda n, a: SimpleNamespace(isError=False)), [_TOOL]
@@ -68,6 +74,31 @@ async def test_accepted_bad_input_scores_below_100() -> None:
     assert dim is not None
     assert dim.score < 100
     assert any("accepted" in f.message for f in dim.findings)
+
+
+async def test_accepts_everything_scores_near_zero() -> None:
+    # A server that validates nothing must score ~0 (a robustness F), not 88.
+    dim = await run_robustness_probes(
+        _session(lambda n, a: SimpleNamespace(isError=False)), [_TOOL, _TOOL2]
+    )
+    assert dim is not None
+    assert dim.score == 0.0
+
+
+async def test_robustness_score_is_rejection_fraction() -> None:
+    # One tool rejects, one accepts -> the dimension is the % that reject.
+    handler = lambda n, a: SimpleNamespace(isError=(n == "t"))  # noqa: E731 - terse test stub
+    dim = await run_robustness_probes(_session(handler), [_TOOL, _TOOL2])
+    assert dim is not None
+    assert dim.score == 50.0
+
+
+async def test_unexpected_error_scores_zero_not_inflated() -> None:
+    # An ungraceful (non-McpError) failure scores 0, so an early error+break can only be
+    # conservative -- it must not inflate the dimension to 88 like the old MEDIUM did.
+    dim = await run_robustness_probes(_session(lambda n, a: RuntimeError("boom")), [_TOOL, _TOOL2])
+    assert dim is not None
+    assert dim.score == 0.0
 
 
 async def test_is_error_result_counts_as_rejection() -> None:

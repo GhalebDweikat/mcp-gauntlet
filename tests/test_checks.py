@@ -33,6 +33,16 @@ def test_good_tool_scores_high() -> None:
     assert report.grade in ("A", "B")
 
 
+def test_zero_tool_server_is_na_not_a() -> None:
+    # A server exposing no tools can't be evaluated; it must not average to 100/A.
+    discovery = DiscoveryResult(server=ServerInfo(name="empty"), tools=[])
+    dims = run_static_checks(discovery)  # vacuously all-100
+    report = GauntletReport.build(spec="x", server=discovery.server, tool_count=0, dimensions=dims)
+    assert report.grade == "N/A"
+    assert report.overall_score == 0.0
+    assert any("no tools" in f.message for f in report.findings)
+
+
 def test_missing_description_flagged_high() -> None:
     tool = ToolInfo(
         name="mystery", description=None, input_schema={"type": "object", "properties": {}}

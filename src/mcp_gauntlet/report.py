@@ -106,6 +106,31 @@ class GauntletReport(BaseModel):
         dimensions: list[DimensionResult],
         agentic: AgenticDetail | None = None,
     ) -> GauntletReport:
+        # A server that exposes no tools can't be evaluated — every dimension is
+        # vacuously perfect, which would otherwise average to 100/A. Report it as N/A
+        # with an explicit finding instead of a misleading top grade.
+        if tool_count == 0:
+            note = DimensionResult(
+                key="discovery",
+                title="Discovery",
+                weight=1.0,
+                score=0.0,
+                summary="The gauntlet scores a server's tools; this server exposes none, "
+                "so there is nothing to evaluate.",
+                findings=[Finding(severity=Severity.MEDIUM, message="server exposes no tools")],
+            )
+            return cls(
+                spec=spec,
+                server=server,
+                tool_count=0,
+                dimensions=[note],
+                overall_score=0.0,
+                grade="N/A",
+                generated_at=datetime.now(UTC).isoformat(timespec="seconds"),
+                security_critical=False,
+                agentic=agentic,
+            )
+
         total_weight = sum(d.weight for d in dimensions) or 1.0
         overall = round(sum(d.score * d.weight for d in dimensions) / total_weight, 1)
 

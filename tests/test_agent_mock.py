@@ -178,6 +178,31 @@ async def test_agent_loop_raised_tool_error() -> None:
     assert trace.tool_calls[0].error is not None
 
 
+async def test_hallucinated_tool_is_agent_error_not_server() -> None:
+    bridge = build_tool_bridge([_ADD])
+    responses = [
+        _completion(_msg(tool_calls=[_tool_call("c1", "nonexistent_tool", "{}")])),
+        _completion(_msg(content="gave up")),
+    ]
+    dispatched = {"n": 0}
+
+    def handler(name: str, args: dict[str, Any]) -> Any:
+        dispatched["n"] += 1
+        return _tool_result("x")
+
+    trace = await run_agent_task(
+        session=_session(handler),
+        bridge=bridge,
+        client=_client(responses),
+        model="m",
+        task="do a thing",
+    )
+    assert dispatched["n"] == 0  # a tool the server never offered is NOT dispatched
+    assert trace.tool_calls[0].unknown_tool is True
+    assert not trace.tool_calls[0].ok
+    assert not trace.had_tool_error  # agent error, not a server-reliability signal
+
+
 async def test_agent_loop_max_turns() -> None:
     loop_tool = ToolInfo(name="loop", input_schema={"type": "object", "properties": {}})
     bridge = build_tool_bridge([loop_tool])

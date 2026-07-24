@@ -1,6 +1,6 @@
 [project]
 name = "mcp-gauntlet"
-version = "0.2.0"
+version = "0.3.0"
 description = "An agentic evaluation harness for MCP servers — can an AI agent actually accomplish real tasks with this server's tools?"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -39,6 +39,9 @@ dependencies = [
     "pydantic>=2.7",
     "anyio>=4.4",
     "python-dotenv>=1.0",
+    # Imported directly by checks.py; previously only reachable as a transitive dep of
+    # `mcp`, so a resolver that dropped it would have broken Schema Health at import time.
+    "jsonschema>=4.20",
 ]
 
 [project.optional-dependencies]

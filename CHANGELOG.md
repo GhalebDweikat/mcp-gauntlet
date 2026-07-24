@@ -3,6 +3,68 @@
 All notable changes to mcp-gauntlet are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] — 2026-07-24
+
+A reliability and scoring-integrity release. A second adversarial review of the whole
+workspace found that the harness could lose a paid evaluation to an edge-case input, hang
+indefinitely on an unresponsive server, publish a ranking that favoured servers it had
+never tested, and be evaded by a poisoned description written one level below where the
+scanner looked. All four are closed, each with regression tests.
+
+### Fixed
+
+- **A hung tool can no longer hang the run.** Every agent tool call is bounded by
+  `--tool-timeout` (default 60s) and recorded as a failed call against the server's Tool
+  Reliability rather than stalling; one hang ends the agent evaluation, and a HIGH finding
+  names the limit and the flag that raises it. A new `--timeout` on `run` (default 900s,
+  `0` disables) bounds the hangs no inner timeout reaches — connect, `initialize`,
+  `tools/list`.
+- **The leaderboard no longer co-ranks scores that aren't comparable.** The overall is a
+  weighted mean over the dimensions *present*, so a server the agent never scored skipped
+  Agent Task Success (the heaviest dimension), averaged over a smaller denominator, and
+  could outrank servers that earned their number. The ranked table now holds only fully
+  agent-scored servers; the rest appear under **Partially evaluated** with the reason they
+  weren't ranked, and a run truncated by a hang is segregated too.
+- **Making a server untestable no longer raises its grade.** Robustness was skipped
+  whenever nothing was probeable, and a skipped dimension *raises* a weighted mean. It is
+  now always reported, tools that declare no enforceable argument contract score zero, and
+  the prober understands `enum`, `const`, `anyOf`/`oneOf`, `$ref`, `allOf`,
+  `patternProperties` and `additionalProperties` — the shapes pydantic and
+  zod-to-json-schema actually emit, which were previously skipped in silence.
+- **The injection scanner can no longer be evaded by nesting.** It read only top-level
+  property descriptions, so a payload behind a `$ref`, inside an `allOf`, two levels deep,
+  or in `items` was never examined. Since the whole input schema is serialized into the
+  model's prompt, *every* string in it is now scanned — titles, enums, defaults, examples,
+  `$defs` entries and unknown extension keywords included — with sample data and
+  identifiers held to a deliberately looser standard so honest servers aren't penalised
+  for naming their own credential field or pasting a sample value.
+- **A zero-tool server keeps its security findings.** The N/A branch replaced the
+  dimensions wholesale, discarding a poisoned `instructions` block along with the critical
+  flag.
+- **Reports survive a rendering failure.** The JSON/Markdown/HTML report is written before
+  the console summary is drawn, and server-controlled text is escaped, so hostile markup or
+  an unencodable glyph can no longer discard a completed evaluation.
+- **Edge-case inputs degrade instead of crashing:** nullable type arrays, non-string
+  `required` entries, wrong-shape task-cache and LLM JSON, empty `choices`, and malformed
+  judge verdicts (`NaN`, `Infinity`, a non-boolean `success`) are all handled.
+- A failed task generation is no longer cached, and now reports as inconclusive rather than
+  as a clean skip.
+
+### Added
+
+- **`leaderboard --render-only`** rebuilds the site from saved results with no LLM spend.
+  Each server's raw report is persisted to `servers/<name>.json`, so changing how results
+  are *presented* no longer means paying to measure them again.
+- **`--tool-timeout`** and **`--timeout`** flags (see above), on both `run` and
+  `leaderboard`.
+- `--servers` files may now be UTF-8, UTF-8-with-BOM, or UTF-16 — the encodings Windows
+  shells produce — and a malformed one reports a clear error instead of a traceback.
+
+### Changed
+
+- `jsonschema` is now a declared dependency. It was imported directly but only reachable
+  transitively, so a resolver that dropped it would have broken Schema Health at import.
+
 ## [0.2.0] — 2026-07-24
 
 A security-hardening and correctness release. The static and dynamic checks were

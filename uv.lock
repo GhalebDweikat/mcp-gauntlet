@@ -575,10 +575,11 @@ wheels = [
 
 [[package]]
 name = "mcp-gauntlet"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "anyio" },
+    { name = "jsonschema" },
     { name = "mcp" },
     { name = "openai" },
     { name = "pydantic" },
@@ -598,6 +599,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "anyio", specifier = ">=4.4" },
+    { name = "jsonschema", specifier = ">=4.20" },
     { name = "mcp", specifier = ">=1.9" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
     { name = "openai", specifier = ">=1.40" },

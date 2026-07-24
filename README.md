@@ -156,8 +156,11 @@ when the score drops below your threshold:
 
 ```yaml
 - name: Run the gauntlet
-  run: uvx mcp-gauntlet run "python -m your_server" --no-agentic --fail-under 70
+  run: uvx mcp-gauntlet@0.3.0 run "python -m your_server" --no-agentic --fail-under 60
 ```
+
+Pin the version, as above: an unpinned `uvx mcp-gauntlet` would let a new release move
+your gate without a commit.
 
 The static + robustness checks need no API key. To include the live agent
 evaluation, add an LLM key (e.g. `GROQ_API_KEY`) as a repository secret and drop

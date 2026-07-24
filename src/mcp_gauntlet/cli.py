@@ -105,7 +105,14 @@ def _render_report(report: GauntletReport) -> None:
         )
     )
     if report.security_critical:
-        console.print("[bold red]⚠ Critical security finding(s) — overall grade capped.[/bold red]")
+        # An N/A (zero-tool) report keeps its security findings but was never scored, so
+        # don't claim a cap that was never applied.
+        tail = (
+            "this server exposes no tools, so it was never scored"
+            if report.grade == "N/A"
+            else "overall grade capped"
+        )
+        console.print(f"[bold red]⚠ Critical security finding(s) — {tail}.[/bold red]")
 
     table = Table(title="Dimensions")
     table.add_column("Dimension", style="cyan")
@@ -115,9 +122,9 @@ def _render_report(report: GauntletReport) -> None:
         table.add_row(dimension.title, f"{dimension.score:.1f}", f"{dimension.weight:g}")
     console.print(table)
 
-    # Show when there are results OR the whole eval was inconclusive (task generation
-    # failed → empty results): an inconclusive run must never render as a clean skip.
-    if report.agentic and (report.agentic.results or report.agentic.inconclusive):
+    # Any attempted agent evaluation gets reported, results or not — an eval that couldn't
+    # run must never render as a clean skip. Mirrors the HTML report's gate exactly.
+    if report.agentic is not None:
         detail = report.agentic
         if detail.results:
             tasks_table = Table(
@@ -141,6 +148,20 @@ def _render_report(report: GauntletReport) -> None:
                     sel,
                 )
             console.print(tasks_table)
+        if not detail.results and not detail.inconclusive:
+            why = (
+                "every tool was excluded as possibly-mutating "
+                "(re-run with --allow-writes against a disposable target)"
+                if detail.excluded_write_tools
+                else "this server exposed no tools for the agent to call"
+            )
+            console.print(f"[yellow]⚠ Agent evaluation did not run — {why}.[/yellow]")
+        if report.agent_eval_truncated:
+            console.print(
+                f"[yellow]⚠ Agent evaluation stopped early after a tool hung — "
+                f"{len(detail.results)} of {detail.tasks_generated} task(s) ran; "
+                "the scores rest on a smaller sample than configured.[/yellow]"
+            )
         if detail.inconclusive:
             console.print(
                 "[yellow]⚠ Agent evaluation inconclusive — the LLM backend errored "
@@ -209,6 +230,17 @@ def run(
         "--fail-under",
         help="Exit non-zero if the overall score is below this value (for CI).",
     ),
+    timeout: float = typer.Option(
+        900.0,
+        "--timeout",
+        help="Hard wall-clock limit for the whole evaluation, in seconds (0 disables).",
+    ),
+    tool_timeout: float = typer.Option(
+        60.0,
+        "--tool-timeout",
+        help="Per-tool-call limit for the agent, in seconds; a tool that exceeds it "
+        "is recorded as a failed call.",
+    ),
 ) -> None:
     """Connect to an MCP server, run the gauntlet, and write a scored report."""
     spec = ServerSpec.parse(server)
@@ -238,21 +270,38 @@ def run(
         checks = "Static checks + robustness probes" if probe else "Static checks only"
         console.print(f"[dim]{checks} ({reason}).[/dim]")
 
+    evaluate = functools.partial(
+        evaluate_server,
+        spec,
+        llm_config=llm_config,
+        n_tasks=tasks,
+        repeats=repeats,
+        max_turns=max_turns,
+        allow_writes=allow_writes,
+        probe=probe,
+        tasks_file=tasks_file,
+        refresh_tasks=refresh_tasks,
+        tool_timeout_s=tool_timeout,
+    )
+
+    async def _bounded() -> GauntletReport:
+        # A hard outer bound so a server that hangs where no inner timeout reaches — during
+        # connect/initialize, or tools/list — can't hang the CLI indefinitely. The agent's
+        # per-call --tool-timeout handles the common case (one slow tool) without ever
+        # getting here, since that path keeps the run alive and still produces a report.
+        if timeout <= 0:
+            return await evaluate()
+        with anyio.fail_after(timeout):
+            return await evaluate()
+
     try:
-        report = anyio.run(
-            functools.partial(
-                evaluate_server,
-                spec,
-                llm_config=llm_config,
-                n_tasks=tasks,
-                repeats=repeats,
-                max_turns=max_turns,
-                allow_writes=allow_writes,
-                probe=probe,
-                tasks_file=tasks_file,
-                refresh_tasks=refresh_tasks,
-            )
+        report = anyio.run(_bounded)
+    except TimeoutError as exc:
+        console.print(
+            f"[red]Evaluation timed out[/red] after {timeout:.0f}s "
+            "(raise or disable it with --timeout)."
         )
+        raise typer.Exit(code=1) from exc
     except Exception as exc:  # noqa: BLE001 - surface any connection/eval failure
         console.print(f"[red]Evaluation failed:[/red] {exc}")
         raise typer.Exit(code=1) from exc
@@ -299,9 +348,24 @@ def leaderboard(
     repeats: int = typer.Option(2, "--repeats", help="Times each task is run."),
     max_turns: int = typer.Option(8, "--max-turns", help="Max agent turns per task."),
     timeout: float = typer.Option(240.0, "--timeout", help="Per-server time budget (seconds)."),
+    tool_timeout: float = typer.Option(
+        60.0,
+        "--tool-timeout",
+        help="Per-tool-call limit for the agent, in seconds; a tool that exceeds it "
+        "is recorded as a failed call.",
+    ),
 ) -> None:
     """Evaluate many MCP servers and build a static leaderboard site."""
     entries = load_servers(servers)
+    # The defaults are checked by a test, but these are user-supplied: if one hung call can
+    # eat the per-server budget, that budget fires first and the server loses its report
+    # entirely instead of being graded on the hang.
+    if tool_timeout * 3 > timeout:
+        console.print(
+            f"[yellow]⚠ --tool-timeout {tool_timeout:g}s is large relative to the "
+            f"{timeout:g}s per-server budget; a slow server may be dropped as "
+            "'could not evaluate' rather than scored. Raise --timeout.[/yellow]"
+        )
     llm_config: LLMConfig | None = None
     try:
         llm_config = LLMConfig.from_env(provider, model=model, base_url=base_url)
@@ -328,6 +392,7 @@ def leaderboard(
             repeats=repeats,
             max_turns=max_turns,
             timeout_s=timeout,
+            tool_timeout_s=tool_timeout,
             log=lambda m: console.print(f"[dim]{m}[/dim]"),
         )
     )

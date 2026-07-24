@@ -9,6 +9,7 @@ import json
 from types import SimpleNamespace
 from typing import Any, cast
 
+import anyio
 from mcp import ClientSession
 from openai import AsyncOpenAI
 
@@ -16,6 +17,7 @@ from mcp_gauntlet.agent import AgentTrace, ToolCallRecord, run_agent_task
 from mcp_gauntlet.evaluate import run_agentic_eval
 from mcp_gauntlet.judge import _build_prompt, _render_transcript, judge_task
 from mcp_gauntlet.models import ToolInfo
+from mcp_gauntlet.report import Severity
 from mcp_gauntlet.tasks import EvalTask
 from mcp_gauntlet.toolconv import build_tool_bridge
 
@@ -216,6 +218,36 @@ async def test_agent_empty_choices_is_errored_not_crash() -> None:
     )
     assert trace.stop_reason == "error"
     assert trace.error is not None
+
+
+async def test_hanging_tool_times_out_and_is_blamed_on_the_server() -> None:
+    # An unbounded call_tool let one hung tool hang the whole CLI forever (the MCP session
+    # has no read timeout of its own). The dispatch is now bounded: the hung call is
+    # recorded as a FAILED call — a server signal counting against Tool Reliability — and
+    # the run stops rather than keep driving a wedged session.
+    class _Hanging:
+        async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
+            await anyio.sleep(30)  # cancelled by the timeout long before this returns
+            return _tool_result("too late")
+
+    bridge = build_tool_bridge([_ADD])
+    fn = bridge.tools[0]["function"]["name"]
+    # Exactly one scripted response: if the loop wrongly continued past the timeout it
+    # would exhaust the script and fail loudly instead of silently burning turns.
+    responses = [_completion(_msg(tool_calls=[_tool_call("c1", fn, '{"a": 1, "b": 2}')]))]
+    trace = await run_agent_task(
+        session=cast(ClientSession, _Hanging()),
+        bridge=bridge,
+        client=_client(responses),
+        model="m",
+        task="add",
+        tool_timeout_s=0.05,
+    )
+    assert trace.stop_reason == "tool_timeout"  # NOT "error" (that means inconclusive)
+    assert trace.tool_calls[0].ok is False
+    assert not trace.tool_calls[0].unknown_tool  # the server hung; the agent did nothing wrong
+    assert trace.had_tool_error  # so it counts against Tool Reliability
+    assert "did not respond" in (trace.tool_calls[0].error or "")
 
 
 async def test_agent_loop_max_turns() -> None:
@@ -465,6 +497,118 @@ async def test_agentic_eval_no_tasks_is_inconclusive() -> None:
     )
     assert detail.inconclusive is True
     assert dims == []
+
+
+async def test_hang_stops_the_whole_eval_and_is_reported() -> None:
+    # A hang must not be re-learned once per repeat: N repeats x the tool timeout blows the
+    # caller's per-server budget, and blowing it loses the report entirely — the exact
+    # outcome the timeout exists to prevent. One hang ends the evaluation.
+    calls = {"n": 0}
+
+    class _Hanging:
+        async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
+            calls["n"] += 1
+            await anyio.sleep(30)
+            return _tool_result("too late")
+
+    fn = build_tool_bridge([_ADD]).tools[0]["function"]["name"]
+    # Enough scripted turns for 2 tasks x 2 repeats, if it wrongly kept going.
+    responses = [_completion(_msg(tool_calls=[_tool_call("c1", fn, '{"a": 1, "b": 2}')]))] * 8
+    client = _client(responses, judge_verdict={"success": False, "score": 0, "reasoning": "hung"})
+    dims, detail = await run_agentic_eval(
+        session=cast(ClientSession, _Hanging()),
+        tools=[_ADD],
+        client=client,
+        model="m",
+        provider="test",
+        tasks=[
+            EvalTask(description="one", rubric="r", expected_tools=["add"]),
+            EvalTask(description="two", rubric="r", expected_tools=["add"]),
+        ],
+        repeats=2,
+        max_turns=4,
+        excluded_write_tools=[],
+        tool_timeout_s=0.05,
+    )
+    assert calls["n"] == 1  # stopped after the FIRST hang, not 2 tasks x 2 repeats
+    assert len(detail.results) == 1
+    assert detail.inconclusive is False  # a hang is a server failure, not an LLM hiccup
+    reliability = next(d for d in dims if d.key == "tool_reliability")
+    assert reliability.score == 0.0
+    # The timeout must be visible in the report, or a merely-slow server is indistinguishable
+    # from a broken one and the user never learns which flag to raise.
+    timeout_finding = next(f for f in reliability.findings if "did not respond" in f.message)
+    assert timeout_finding.severity is Severity.HIGH
+    assert "--tool-timeout" in (timeout_finding.detail or "")
+
+
+async def test_hang_stops_the_eval_even_when_the_judge_also_errors() -> None:
+    # The nastiest co-occurrence, and the likely one: a rate-limited key makes the judge
+    # fail on the very run where the server hung. If the hang is latched only after the
+    # judge verdict, that failure path skips it and every remaining repeat pays a full
+    # timeout again — restoring the exact defect the early stop exists to prevent.
+    calls = {"n": 0}
+
+    class _Hanging:
+        async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
+            calls["n"] += 1
+            await anyio.sleep(30)
+            return _tool_result("too late")
+
+    fn = build_tool_bridge([_ADD]).tools[0]["function"]["name"]
+    responses = [_completion(_msg(tool_calls=[_tool_call("c1", fn, '{"a": 1, "b": 2}')]))] * 8
+    client = _client(responses, judge_verdict=RuntimeError("Error code: 429"))
+    dims, detail = await run_agentic_eval(
+        session=cast(ClientSession, _Hanging()),
+        tools=[_ADD],
+        client=client,
+        model="m",
+        provider="test",
+        tasks=[
+            EvalTask(description="one", rubric="r", expected_tools=["add"]),
+            EvalTask(description="two", rubric="r", expected_tools=["add"]),
+        ],
+        repeats=2,
+        max_turns=4,
+        excluded_write_tools=[],
+        tool_timeout_s=0.05,
+    )
+    assert calls["n"] == 1  # one hang paid for, not 2 tasks x 2 repeats
+    # The hang still has to be reported even though nothing could be graded.
+    reliability = next(d for d in dims if d.key == "tool_reliability")
+    assert any("did not respond" in f.message for f in reliability.findings)
+    assert len(detail.results) == 1
+
+
+async def test_repeat_level_truncation_is_recorded() -> None:
+    # The shape a results-length proxy misses entirely: with ONE task, a hang on repeat 1
+    # of 2 leaves len(results) == tasks_generated, so nothing about the list reveals that
+    # half the samples are gone. The flag has to come from the evaluation, not be inferred.
+    class _Hanging:
+        async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
+            await anyio.sleep(30)
+            return _tool_result("too late")
+
+    fn = build_tool_bridge([_ADD]).tools[0]["function"]["name"]
+    responses = [_completion(_msg(tool_calls=[_tool_call("c1", fn, '{"a": 1, "b": 2}')]))] * 4
+    client = _client(responses, judge_verdict={"success": False, "score": 0, "reasoning": "hung"})
+    _dims, detail = await run_agentic_eval(
+        session=cast(ClientSession, _Hanging()),
+        tools=[_ADD],
+        client=client,
+        model="m",
+        provider="test",
+        tasks=[EvalTask(description="only", rubric="r", expected_tools=["add"])],
+        repeats=2,
+        max_turns=4,
+        excluded_write_tools=[],
+        tool_timeout_s=0.05,
+    )
+    assert len(detail.results) == detail.tasks_generated  # the proxy would see nothing wrong
+    assert detail.truncated is True
+    # And the task must report the repeats it actually ATTEMPTED, not the configured 2 —
+    # "0/2" would read as two failed attempts when only one ran.
+    assert detail.results[0].repeats == 1
 
 
 async def test_inconclusive_when_judge_errors_keeps_reliability() -> None:

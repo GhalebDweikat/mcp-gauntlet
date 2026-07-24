@@ -34,6 +34,7 @@ async def run_agentic_eval(
     repeats: int,
     max_turns: int,
     excluded_write_tools: list[str],
+    tool_timeout_s: float = 60.0,
 ) -> tuple[list[DimensionResult], AgenticDetail]:
     bridge = build_tool_bridge(tools)
     detail = AgenticDetail(
@@ -51,9 +52,11 @@ async def run_agentic_eval(
 
     success_findings: list[Finding] = []
     selection_findings: list[Finding] = []
+    timeout_findings: list[Finding] = []
     runtime_outputs: list[tuple[str, str]] = []  # (tool, output) for dynamic poisoning scan
     total_calls = 0
     ok_calls = 0
+    hung = False  # a tool blew the per-call timeout — stop after finishing this repeat
 
     for task in tasks:
         valid_scores: list[float] = []
@@ -64,8 +67,10 @@ async def run_agentic_eval(
         any_tool_error = False
         sample_reasoning = ""
         sample_error = ""
+        attempts = 0
 
         for _ in range(repeats):
+            attempts += 1
             trace = await run_agent_task(
                 session=session,
                 bridge=bridge,
@@ -73,8 +78,19 @@ async def run_agentic_eval(
                 model=model,
                 task=task.description,
                 max_turns=max_turns,
+                tool_timeout_s=tool_timeout_s,
             )
+            # Latch the hang BEFORE any of the paths below that `continue` — a rate-limited
+            # judge is exactly when a hang is most likely, and letting that skip the check
+            # would grind through every remaining repeat at a full timeout each, blow the
+            # caller's budget, and lose the report: the very outcome this prevents.
+            if trace.stop_reason == "tool_timeout":
+                hung = True
+
             if trace.stop_reason == "error":  # agent's own LLM call failed — inconclusive
+                # No `if hung: break` needed here: run_agent_task returns the moment a tool
+                # times out, so a single trace is never both "error" and "tool_timeout", and
+                # a hang in an EARLIER repeat already broke out of this loop.
                 errored_repeats += 1
                 sample_error = sample_error or (trace.error or "agent LLM error")
                 continue
@@ -93,6 +109,8 @@ async def run_agentic_eval(
             if verdict.errored:  # judge call failed — can't grade this run
                 errored_repeats += 1
                 sample_error = sample_error or verdict.reasoning
+                if hung:
+                    break
                 continue
 
             valid_repeats += 1
@@ -105,12 +123,20 @@ async def run_agentic_eval(
             if sel is not None:
                 valid_sel.append(sel)
 
+            if hung:
+                # Stop the whole evaluation, not just this run: a server that hangs once
+                # almost always hangs again, and re-learning that costs a full tool timeout
+                # per remaining repeat. Same early-stop stance as the robustness probes.
+                break
+
         inconclusive = valid_repeats == 0
         result = TaskResult(
             description=task.description,
             rubric=task.rubric,
             expected_tools=task.expected_tools,
-            repeats=repeats,
+            # Repeats actually ATTEMPTED, not the configured count: a hang can cut a task
+            # short, and reporting "0/2" for a task that ran once reads as two failures.
+            repeats=attempts,
             successes=successes,
             success_rate=(successes / valid_repeats) if valid_repeats else 0.0,
             mean_score=round(mean(valid_scores), 1) if valid_scores else 0.0,
@@ -124,35 +150,55 @@ async def run_agentic_eval(
         )
         detail.results.append(result)
 
-        if inconclusive:
-            continue
+        if hung:
+            # Surface the timeout itself: without this the report is byte-identical to a
+            # genuinely broken server, and a user whose tool is merely SLOW has no way to
+            # tell — nothing else in the report mentions the limit or the flag that raises it.
+            timeout_findings.append(
+                Finding(
+                    severity=Severity.HIGH,
+                    message=f"a tool did not respond within the {tool_timeout_s:g}s limit — "
+                    "stopped the agent evaluation early",
+                    detail="If this server is legitimately slow rather than hung, raise "
+                    "--tool-timeout and re-run.",
+                )
+            )
 
-        if successes < valid_repeats:
-            severity = Severity.MEDIUM if successes == 0 else Severity.LOW
-            attribution = (
-                "tool errors blocked it (server signal)"
-                if any_tool_error
-                else "agent did not complete it (agent signal)"
-            )
-            message = f"agent failed a task ({successes}/{valid_repeats} passed) — {attribution}"
-            success_findings.append(
-                Finding(
-                    severity=severity,
-                    message=message,
-                    detail=f"{task.description[:120]} — {sample_reasoning[:140]}",
+        # An inconclusive task produced no valid judgment, so it earns no findings.
+        if not inconclusive:
+            if successes < valid_repeats:
+                severity = Severity.MEDIUM if successes == 0 else Severity.LOW
+                attribution = (
+                    "tool errors blocked it (server signal)"
+                    if any_tool_error
+                    else "agent did not complete it (agent signal)"
                 )
-            )
-        if result.selection_score is not None and result.selection_score < 100:
-            selection_findings.append(
-                Finding(
-                    severity=Severity.LOW,
-                    message="agent did not call all expected tools",
-                    detail=f"{task.description[:120]} (expected {', '.join(task.expected_tools)})",
+                message = (
+                    f"agent failed a task ({successes}/{valid_repeats} passed) — {attribution}"
                 )
-            )
+                success_findings.append(
+                    Finding(
+                        severity=severity,
+                        message=message,
+                        detail=f"{task.description[:120]} — {sample_reasoning[:140]}",
+                    )
+                )
+            if result.selection_score is not None and result.selection_score < 100:
+                selection_findings.append(
+                    Finding(
+                        severity=Severity.LOW,
+                        message="agent did not call all expected tools",
+                        detail=f"{task.description[:120]} "
+                        f"(expected {', '.join(task.expected_tools)})",
+                    )
+                )
+
+        if hung:
+            break
 
     conclusive = [r for r in detail.results if not r.inconclusive]
     detail.inconclusive = len(conclusive) == 0
+    detail.truncated = hung  # record the fact; downstream must not have to infer it
 
     dimensions: list[DimensionResult] = []
     if conclusive:
@@ -180,7 +226,9 @@ async def run_agentic_eval(
             )
         )
     if total_calls:
-        dimensions.append(_reliability_dimension(total_calls, ok_calls))
+        reliability = _reliability_dimension(total_calls, ok_calls)
+        reliability.findings.extend(timeout_findings)  # a hang is a reliability signal
+        dimensions.append(reliability)
     # Dynamic tool-poisoning: scan what the tools actually RETURNED. Independent of judge
     # conclusiveness — the outputs were collected whenever the agent ran.
     response_safety = scan_runtime_outputs(runtime_outputs)

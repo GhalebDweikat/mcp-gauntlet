@@ -53,6 +53,14 @@ Generate one yourself across any set of servers listed in a JSON file:
 uv run mcp-gauntlet leaderboard --servers leaderboard.servers.json --out docs
 ```
 
+Only servers the agent actually scored share the ranked table. The overall is a weighted
+mean over the dimensions *present*, so a server the agent never ran against — no LLM
+configured, the backend rate-limited it, or every tool was excluded as possibly-mutating —
+skips Agent Task Success (the heaviest dimension) and would score systematically higher on
+a smaller denominator. Those are listed separately under **Partially evaluated**, each with
+the reason it wasn't ranked, rather than mixed in where an untested server could outrank a
+tested one.
+
 ## Quickstart
 
 ```bash
@@ -84,6 +92,13 @@ uv run mcp-gauntlet run "python -m mcp_gauntlet.fixtures.good_server"  # A
 With an LLM key, the bad fixture also trips **Response Safety**: its `status_report`
 tool has a clean description but poisons its *output*, so only the runtime scan
 catches it — the static description scan can't.
+
+A server that hangs can't stall the run: every tool call is bounded by
+`--tool-timeout` (default 60s) and recorded as a failed call against the server's Tool
+Reliability, and `--timeout` (default 900s, `0` disables) caps the evaluation as a whole
+so a server that hangs during connect or `tools/list` still can't wedge the CLI. Raise
+`--tool-timeout` if a server is legitimately slow rather than stuck — the report says so
+when the limit is what stopped it.
 
 ## Configuration
 

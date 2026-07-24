@@ -4,6 +4,7 @@ the CLI, and the report is written to disk BEFORE rendering so a render glitch c
 discard a run the user just paid for.
 """
 
+import inspect
 import io
 import json
 from pathlib import Path
@@ -77,6 +78,36 @@ def test_inconclusive_empty_results_surfaces_in_all_renderers(
     monkeypatch.setattr(cli, "console", Console(file=buf, width=100))
     cli._render_report(report)
     assert "inconclusive" in buf.getvalue().lower()  # console banner
+
+
+def _default(command: str, option: str) -> object:
+    """The declared default of a typer option, read off the command signature."""
+    param = inspect.signature(getattr(cli, command)).parameters[option]
+    return param.default.default
+
+
+def test_timeout_defaults_are_mutually_coherent() -> None:
+    # The budgets have to fit each other or the per-tool timeout is inert: if a hung server
+    # can burn more than the per-server budget, the outer bound fires first, the report is
+    # lost, and the tool timeout never gets to record anything. A hang now ends the agent
+    # evaluation after ONE timeout, so that is the figure the budget must cover.
+    tool_timeout = _default("leaderboard", "tool_timeout")
+    per_server = _default("leaderboard", "timeout")
+    assert isinstance(tool_timeout, float) and isinstance(per_server, float)
+    # Real headroom, not merely `<`: the budget has to absorb the one permitted hang AND
+    # the LLM turns of the tasks that already ran. A bare `tool_timeout < per_server` passes
+    # at 239 vs 240, which would leave the timeout inert exactly when it matters.
+    assert per_server >= tool_timeout * 3, (
+        "per-server budget must cover one hung call plus the rest of the evaluation"
+    )
+    # The behavioural half of this invariant — that only ONE hang is ever paid for — is
+    # pinned by test_agent_mock.py::test_hang_stops_the_whole_eval_and_is_reported.
+
+    # And the single-server path must be at least as generous as the batch path.
+    run_timeout = _default("run", "timeout")
+    assert isinstance(run_timeout, float)
+    assert run_timeout >= per_server
+    assert _default("run", "tool_timeout") == tool_timeout  # same limit on both paths
 
 
 def test_write_report_writes_all_three(tmp_path: Path) -> None:

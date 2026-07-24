@@ -64,6 +64,7 @@ async def evaluate_server(
     tasks_file: Path | None = None,
     refresh_tasks: bool = False,
     cache_dir: Path = DEFAULT_CACHE_DIR,
+    tool_timeout_s: float = 60.0,
 ) -> GauntletReport:
     agentic_detail: AgenticDetail | None = None
     async with open_session(spec) as (session, init):
@@ -98,8 +99,21 @@ async def evaluate_server(
                 repeats=repeats,
                 max_turns=max_turns,
                 excluded_write_tools=excluded,
+                tool_timeout_s=tool_timeout_s,
             )
             dimensions.extend(agentic_dims)
+        elif llm_config is not None:
+            # An LLM was configured but every tool was filtered out as possibly-mutating, so
+            # the agent had nothing safe to run. Record that explicitly: otherwise this looks
+            # identical to a keyless static-only run, and the leaderboard can't explain why a
+            # server it never actually tested is missing the agentic dimensions.
+            agentic_detail = AgenticDetail(
+                provider=llm_config.provider,
+                model=llm_config.model,
+                tasks_generated=0,
+                repeats=repeats,
+                excluded_write_tools=excluded,
+            )
 
         # Robustness probes run last so a probe-induced hiccup can't disturb the agent run.
         if probe and exec_tools:

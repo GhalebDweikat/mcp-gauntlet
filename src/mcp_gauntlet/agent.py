@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import anyio
 from mcp import ClientSession
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
@@ -42,7 +43,7 @@ class AgentTrace(BaseModel):
     turns: int = 0
     prompt_tokens: int = 0
     completion_tokens: int = 0
-    stop_reason: str = "end"  # end | max_turns | error
+    stop_reason: str = "end"  # end | max_turns | error | tool_timeout
     error: str | None = None
 
     @property
@@ -86,6 +87,7 @@ async def run_agent_task(
     task: str,
     max_turns: int = 8,
     result_char_limit: int = 4000,
+    tool_timeout_s: float = 60.0,
 ) -> AgentTrace:
     trace = AgentTrace(task=task)
     messages: list[dict[str, Any]] = [
@@ -151,13 +153,23 @@ async def run_agent_task(
 
             original = bridge.original(tc.function.name)
             record = ToolCallRecord(tool=original, arguments=args)
+            timed_out = False
             try:
-                result = await session.call_tool(original, args)
+                # Bound every dispatch: an unbounded call_tool lets one hung tool hang the
+                # whole CLI forever (the MCP session has no read timeout of its own).
+                with anyio.fail_after(tool_timeout_s):
+                    result = await session.call_tool(original, args)
                 ok, text = _render_tool_result(result)
                 record.ok = ok
                 record.result_text = text[:result_char_limit]
                 if not ok:
                     record.error = "tool reported an error"
+            except TimeoutError:
+                timed_out = True
+                record.ok = False
+                # :g not :.0f — a fractional limit must not render as "0s".
+                record.error = f"tool did not respond within {tool_timeout_s:g}s"
+                record.result_text = f"ERROR: {record.error}"
             except Exception as exc:  # noqa: BLE001 - a failed tool call is data, not fatal
                 record.ok = False
                 record.error = str(exc)
@@ -170,6 +182,16 @@ async def run_agent_task(
                     "content": record.result_text or record.error or "(no content)",
                 }
             )
+            if timed_out:
+                # End the run rather than keep driving a server that just hung. Not because
+                # the session is unusable — a cancelled call_tool cleans up after itself and
+                # the session stays fine — but because each further turn can cost another
+                # full timeout, and the caller's overall budget is finite. The timed-out
+                # call is already recorded, so it still counts against Tool Reliability and
+                # the partial run is judged normally (a server failure, NOT the "error"
+                # stop_reason that means an inconclusive LLM hiccup).
+                trace.stop_reason = "tool_timeout"
+                return trace
 
     trace.stop_reason = "max_turns"
     return trace

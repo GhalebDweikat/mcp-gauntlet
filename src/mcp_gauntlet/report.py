@@ -82,6 +82,18 @@ class AgenticDetail(BaseModel):
     excluded_write_tools: list[str] = Field(default_factory=list)
     results: list[TaskResult] = Field(default_factory=list)
     inconclusive: bool = False  # the whole agentic eval was inconclusive (e.g. rate-limited)
+    truncated: bool = False  # stopped early because a tool hung — fewer samples than planned
+
+
+def _has_critical_security(dimensions: list[DimensionResult]) -> bool:
+    """Whether the (server-authored) security dimension carries a HIGH finding.
+
+    Keyed on ``security`` specifically: ``response_safety`` scans passthrough *content*
+    a server merely relayed, which is not evidence the server itself is malicious, so it
+    deliberately never sets this flag.
+    """
+    security = next((d for d in dimensions if d.key == "security"), None)
+    return bool(security and any(f.severity is Severity.HIGH for f in security.findings))
 
 
 class GauntletReport(BaseModel):
@@ -118,15 +130,19 @@ class GauntletReport(BaseModel):
                 "so there is nothing to evaluate.",
                 findings=[Finding(severity=Severity.MEDIUM, message="server exposes no tools")],
             )
+            # KEEP the real dimensions (appending the note) rather than replacing them: a
+            # tool-less server can still ship poisoned `instructions`, and dropping the
+            # security dimension here would silently discard that finding along with its
+            # critical flag. The grade stays N/A — unscored, but not unexamined.
             return cls(
                 spec=spec,
                 server=server,
                 tool_count=0,
-                dimensions=[note],
+                dimensions=[*dimensions, note],
                 overall_score=0.0,
                 grade="N/A",
                 generated_at=datetime.now(UTC).isoformat(timespec="seconds"),
-                security_critical=False,
+                security_critical=_has_critical_security(dimensions),
                 agentic=agentic,
             )
 
@@ -135,10 +151,7 @@ class GauntletReport(BaseModel):
 
         # A tool-poisoning / injection / hidden-character finding is a "do not trust
         # this server" signal that averaging must not wash out — cap the grade.
-        security = next((d for d in dimensions if d.key == "security"), None)
-        security_critical = bool(
-            security and any(f.severity is Severity.HIGH for f in security.findings)
-        )
+        security_critical = _has_critical_security(dimensions)
         if security_critical:
             overall = min(overall, GRADE_CAP_ON_CRITICAL)
 
@@ -153,6 +166,32 @@ class GauntletReport(BaseModel):
             security_critical=security_critical,
             agentic=agentic,
         )
+
+    @property
+    def agentically_scored(self) -> bool:
+        """Whether the live-agent dimensions actually contributed to the overall score.
+
+        The overall is a weighted mean over the dimensions that are PRESENT, so a report
+        without Agent Task Success (weight 3) is averaged over a much smaller denominator
+        and scores systematically higher than one that earned its number the hard way.
+        The two are therefore NOT comparable, and the leaderboard must not co-rank them.
+        """
+        return any(d.key == "task_success" for d in self.dimensions)
+
+    @property
+    def agent_eval_truncated(self) -> bool:
+        """Whether the agent evaluation stopped early because a tool hung.
+
+        Reads the flag the evaluation *recorded*, rather than inferring it from a short
+        results list: a hang on the last task, or on a repeat when only one task was
+        generated, truncates the sample without shortening that list at all, so the proxy
+        missed exactly the cases where it mattered.
+
+        A truncated score is averaged over however many runs happened before the hang — a
+        sample size the server itself controls — so it is no more comparable with a full
+        evaluation than one that was never agent-scored.
+        """
+        return bool(self.agentic and self.agentic.truncated)
 
     @property
     def findings(self) -> list[Finding]:
@@ -197,7 +236,14 @@ def to_markdown(report: GauntletReport) -> str:
         f"- **Generated:** {report.generated_at}",
     ]
     if report.security_critical:
-        lines.append("- ⚠️ **Critical security finding(s) present — overall grade is capped.**")
+        # Don't claim a cap on an N/A report: it kept its security findings but, exposing
+        # no tools, was never scored in the first place.
+        tail = (
+            "this server exposes no tools, so it was never scored"
+            if report.grade == "N/A"
+            else "overall grade is capped"
+        )
+        lines.append(f"- ⚠️ **Critical security finding(s) present — {tail}.**")
     lines += [
         "",
         "## Dimensions",

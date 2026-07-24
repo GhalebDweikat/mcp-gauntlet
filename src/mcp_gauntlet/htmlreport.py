@@ -90,7 +90,14 @@ def _body(report: GauntletReport) -> str:
     p.append("</div>")
 
     if report.security_critical:
-        p.append('<div class="banner">⚠ Critical security finding(s) — overall grade capped.</div>')
+        # Only claim a cap when one was actually applied — an N/A (zero-tool) report keeps
+        # its security findings but was never scored, so nothing got capped.
+        tail = (
+            "this server exposes no tools, so it was never scored"
+            if report.grade == "N/A"
+            else "overall grade capped"
+        )
+        p.append(f'<div class="banner">⚠ Critical security finding(s) — {tail}.</div>')
 
     p.append("<h2>Dimensions</h2>")
     for dim in report.dimensions:
@@ -106,15 +113,36 @@ def _body(report: GauntletReport) -> str:
         p.append("</div>")
 
     agentic = report.agentic
-    # Show the section when there are results OR when the whole eval was inconclusive —
-    # an inconclusive run with no results (task generation failed) must still surface, not
-    # vanish and read as a clean static-only report.
-    if agentic and (agentic.results or agentic.inconclusive):
+    # Show the section whenever an agent evaluation was attempted at all — results, an
+    # inconclusive run (task generation failed), or a run that never started because every
+    # tool was excluded. The grade card already says an agent model was configured, so
+    # hiding the section here would leave that claim unexplained.
+    if agentic is not None:
         p.append("<h2>Agent evaluation</h2>")
         if agentic.inconclusive:
             p.append(
                 '<div class="banner">⚠ Inconclusive — the LLM backend errored (e.g. rate '
                 "limit); the grade reflects the static checks only.</div>"
+            )
+        elif not agentic.results:
+            # Gated on `agentic is not None`, not on the sub-conditions: a zero-tool server
+            # has an empty `excluded_write_tools` too, and any gate that hides the section
+            # while the grade card still advertises an agent model leaves that claim unexplained.
+            why = (
+                "every tool was excluded as possibly-mutating, so the agent had nothing "
+                "safe to call. Re-run with --allow-writes against a disposable target to "
+                "score it"
+                if agentic.excluded_write_tools
+                else "this server exposed no tools for the agent to call"
+            )
+            p.append(f'<div class="banner">⚠ Not run — {why}.</div>')
+        if report.agent_eval_truncated:
+            # The leaderboard row links here saying a tool hung; the page has to agree,
+            # or the short task table below reads as an unexplained inconsistency.
+            p.append(
+                '<div class="banner">⚠ Stopped early — a tool exceeded the per-call '
+                "timeout, so the evaluation ended before every planned run completed. "
+                "The scores below rest on a smaller sample than configured.</div>"
             )
         p.append(
             f'<div class="muted" style="margin-bottom:12px">{agentic.tasks_generated} tasks × '

@@ -156,31 +156,82 @@ def check_description_quality(tools: list[ToolInfo]) -> DimensionResult:
 
 # ------------------------------------------------------------ security signals
 
+# Injection signals split by how ambiguous they are. Only *near-certain* ones CAP the
+# grade (HIGH): "ignore … instructions" phrasing, an <IMPORTANT> hidden-instruction marker
+# (the canonical MCP tool-poisoning payload), and truly hidden characters. Everything
+# else is reported but does not cap — "ignore the rule/prompt/guidance" (ordinary domain
+# nouns), the ambiguous "hide from the user" phrasings, and secret/exfil references (which
+# are damning together but overlap with honest backup/credential-helper tools, so a human
+# reviews the flagged MEDIUM/LOW rather than the grade being auto-capped). Verbs match
+# inflections, and text is normalized (see _clean_for_match) so a reworded or
+# invisible-char-smuggled description can't slip past.
+_OVERRIDE_VERB = (
+    r"(?:ignor(?:e|es|ed|ing)|disregard(?:s|ed|ing)?|forget(?:s|ting)?|"
+    r"overrid(?:e|es|ing|den))"
+)
+# Up to two qualifiers between verb and noun: "ignore [all] [previous] instructions".
+_QUALIFIER = (
+    r"(?:(?:all|any|the|your|these|those|prior|previous|earlier|preceding|foregoing|"
+    r"above)\s+){0,2}"
+)
+# "instructions" is essentially never a legit object of ignore/override in a tool
+# description, so it caps (HIGH); rule/prompt/guidance/directive/policy are ordinary
+# domain nouns (linters, LLM tooling, config), so they only warn (MEDIUM).
+# The negative lookahead keeps "ignore the instructions FIELD/parameter" (a tool handling
+# an `instructions` data field, e.g. OpenAI Assistants) from capping, while "ignore the
+# previous instructions" still does.
+_HARD_NOUN = (
+    r"(?:instruction)s?\b"
+    r"(?!\s+(?:field|parameter|param|argument|property|value|key|column|header)s?)"
+)
+_SOFT_NOUN = r"(?:rule|prompt|guidance|directive|guideline|polic(?:y|ies))s?"
+_HIDE_VERB = r"(?:tell|inform|reveal|disclose|mention)s?"
+_PERSON = r"(?:user|caller|human|operator|owner|client|them|anyone)s?"
 _INJECTION_PATTERNS: list[tuple[re.Pattern[str], Severity, str]] = [
     (
-        re.compile(r"ignore\s+(all\s+)?previous", re.I),
+        re.compile(rf"{_OVERRIDE_VERB}\s+{_QUALIFIER}{_HARD_NOUN}", re.I),
         Severity.HIGH,
         "attempts to override prior instructions",
     ),
     (
-        re.compile(r"disregard\s+(the\s+)?(above|previous|prior)", re.I),
-        Severity.HIGH,
-        "attempts to override prior instructions",
+        re.compile(rf"{_OVERRIDE_VERB}\s+{_QUALIFIER}{_SOFT_NOUN}", re.I),
+        Severity.MEDIUM,
+        "possible instruction-override phrasing",
     ),
     (
-        re.compile(r"do\s+not\s+(tell|inform|mention|reveal)\b", re.I),
-        Severity.HIGH,
+        re.compile(
+            rf"(?:do(?:es)?\s+not|don'?t|never)\s+{_HIDE_VERB}\b[^.]{{0,40}}?"
+            rf"(?:to\s+)?(?:the\s+)?{_PERSON}\b",
+            re.I,
+        ),
+        Severity.MEDIUM,
         "instructs the agent to hide behavior from the user",
     ),
     (
-        re.compile(r"without\s+(telling|informing|notifying)\b", re.I),
-        Severity.HIGH,
+        re.compile(
+            rf"without\s+(?:telling|informing|notifying|alerting|warning)\s+(?:the\s+)?{_PERSON}\b",
+            re.I,
+        ),
+        Severity.MEDIUM,
         "instructs the agent to act without informing the user",
     ),
     (
         re.compile(r"<\s*important\s*>", re.I),
+        Severity.HIGH,
+        "hidden-instruction marker (<IMPORTANT>) — canonical tool-poisoning payload",
+    ),
+    (
+        # LLM chat-template control tokens (ChatML / Llama / Gemma). Legitimate prompt-
+        # formatter / tokenizer MCP servers document these in their descriptions, so the
+        # bare token can't be told from an injected system turn — flag for review (MEDIUM),
+        # don't auto-cap.
+        re.compile(
+            r"<\|[a-z_]+\|>|<<\s*/?\s*sys\s*>>|\[/?INST\]|"
+            r"<\s*/?\s*(?:start_of_turn|end_of_turn)\s*>",
+            re.I,
+        ),
         Severity.MEDIUM,
-        "hidden-instruction marker (<IMPORTANT>)",
+        "chat-template / system-turn marker",
     ),
     (
         re.compile(r"<!--", re.I),
@@ -189,28 +240,104 @@ _INJECTION_PATTERNS: list[tuple[re.Pattern[str], Severity, str]] = [
     ),
     (re.compile(r"system\s+prompt", re.I), Severity.MEDIUM, "references the system prompt"),
     (
+        # Lookarounds, not \b: a leading \b can never match before a dotfile like
+        # ".env" (space-then-dot is non-word on both sides), so \b silently missed them.
         re.compile(
-            r"\b(\.env|id_rsa|\.ssh|credentials?|secret[_-]?keys?|api[_-]?keys?|passwords?)\b", re.I
+            r"(?<!\w)(\.env|id_rsa|\.ssh|\.aws|\.git-?credentials|credentials?|"
+            r"secret[_-]?keys?|api[_-]?keys?|access[_-]?tokens?|passwords?)(?!\w)",
+            re.I,
         ),
         Severity.MEDIUM,
         "references sensitive files or secrets",
     ),
     (
-        re.compile(r"\b(curl|wget|exfiltrat\w*|base64\s+-d)\b", re.I),
+        re.compile(r"\b(curls?|wgets?|scp|exfiltrat\w*|base64\s+-d)\b", re.I),
         Severity.LOW,
         "references data-transfer / exfiltration tooling",
     ),
 ]
 
 
+# ZWJ / variation selector-16 are legitimate only inside an emoji sequence (a family
+# emoji joins its members with ZWJ). The same chars smuggled between letters
+# ("previ<ZWJ>ous") are an attack, and soft hyphen is never allowlisted — so the
+# allowance is context-checked below, not unconditional.
+_FORMAT_ALLOWED = {chr(0x200D), chr(0xFE0F)}
+
+
+def _is_pictographic(ch: str) -> bool:
+    return not ch.isascii() and (ord(ch) >= 0x1F000 or unicodedata.category(ch) == "So")
+
+
+def _is_variation_selector(o: int) -> bool:
+    return 0xFE00 <= o <= 0xFE0F or 0xE0100 <= o <= 0xE01EF
+
+
+def _between_ascii_word(text: str, i: int) -> bool:
+    """True when the char at i sits between two ASCII word chars — the signature of a
+    combining mark smuggled into an ASCII keyword ("in<combining>structions"). Both-sides
+    so a word-final accent ("café" decomposed = e + combining) isn't flagged."""
+    return (
+        i > 0
+        and i + 1 < len(text)
+        and text[i - 1].isascii()
+        and text[i - 1].isalnum()
+        and text[i + 1].isascii()
+        and text[i + 1].isalnum()
+    )
+
+
+def _adjacent_ascii_letter(text: str, i: int) -> bool:
+    """True when a neighbor is an ASCII letter — the signature of a selector/ZWJ smuggled
+    into a Latin word ("Ignore<VS> …"), as opposed to a keycap (digit) or CJK/emoji base."""
+    return any(
+        0 <= j < len(text) and text[j].isascii() and text[j].isalpha() for j in (i - 1, i + 1)
+    )
+
+
+# Directional MARKS (LRM/RLM/ALM) are legitimate in bidirectional (RTL) text; the
+# dangerous Trojan-Source vectors are the bidi override/embedding/isolate controls, which
+# are caught as ordinary format chars below.
+_BENIGN_BIDI = {0x200E, 0x200F, 0x061C}
+# ZWJ / ZWNJ: legitimate in emoji and non-Latin scripts (Persian/Indic need ZWNJ), an
+# attack only when wedged into a Latin word.
+_CONTEXTUAL = {0x200D, 0x200C}
+
+
 def _hidden_chars(text: str) -> list[str]:
-    """Return non-printable / invisible characters (zero-width, format, control)."""
+    """Return invisible / non-printable characters used to smuggle text past the scan.
+
+    Zero-width, format, control chars, and stray bidi overrides are flagged anywhere.
+    Context-dependent chars — variation selectors, ZWJ/ZWNJ, and combining marks — are
+    flagged only with the smuggle signature (adjacent to ASCII letters), so legitimate
+    emoji, CJK variation sequences, keycaps, accented text, and non-Latin scripts aren't.
+    (Evasion is handled independently by _clean_for_match, so scoping the flag is safe.)
+    """
     out: list[str] = []
-    for ch in text:
+    for i, ch in enumerate(text):
         if ch in "\n\r\t ":
             continue
-        if unicodedata.category(ch) in {"Cf", "Cc", "Co"}:
-            out.append(ch)
+        o = ord(ch)
+        category = unicodedata.category(ch)
+        is_selector = _is_variation_selector(o)
+        is_combining = category in {"Mn", "Me"}
+        if not (category in {"Cf", "Cc", "Co"} or is_selector or is_combining):
+            continue
+        if o in _BENIGN_BIDI:
+            continue  # directional marks are legitimate in bidirectional text
+        # ZWJ / variation selector inside a real emoji cluster (adjacent to a pictographic
+        # char) is legitimate — a family emoji joins members with ZWJ.
+        if (ch in _FORMAT_ALLOWED or is_selector) and any(
+            _is_pictographic(text[j]) for j in (i - 1, i + 1) if 0 <= j < len(text)
+        ):
+            continue
+        # Selectors / ZWJ / ZWNJ: flag only when smuggled next to an ASCII letter.
+        if (is_selector or o in _CONTEXTUAL) and not _adjacent_ascii_letter(text, i):
+            continue
+        # True combining marks (Mn/Me, excluding selectors): only between ASCII letters.
+        if is_combining and not is_selector and not _between_ascii_word(text, i):
+            continue
+        out.append(ch)
     return out
 
 
@@ -223,12 +350,33 @@ def _excerpt(text: str, match: re.Match[str], width: int = 60) -> str:
     return f"{prefix}{snippet}{suffix}"
 
 
+def _clean_for_match(text: str) -> str:
+    """NFC-compose (folding decomposed accents back into é etc.), then drop zero-width /
+    format / control / variation-selector / combining chars, so an invisible smuggled into
+    a keyword ("in<VS>structions", "ignore<VS> instructions") can't split it before the
+    injection patterns run. Detection of the smuggled char itself happens on the raw text.
+    """
+    composed = unicodedata.normalize("NFC", text)
+    kept = [
+        ch
+        for ch in composed
+        if not _is_variation_selector(ord(ch))
+        and unicodedata.category(ch) not in {"Cf", "Cc", "Mn", "Me"}
+    ]
+    return "".join(kept)
+
+
 def _scan_text(text: str, tool: str | None, where: str) -> list[Finding]:
     findings: list[Finding] = []
+    # Match phrase patterns against the normalized text so smuggled invisibles can't break
+    # a keyword; detect the smuggled chars themselves against the raw text.
+    cleaned = _clean_for_match(text)
+    obfuscated = " (obfuscating characters removed)" if cleaned != text else ""
     for pattern, severity, label in _INJECTION_PATTERNS:
-        match = pattern.search(text)
+        match = pattern.search(cleaned)
         if match:
-            findings.append(_f(tool, severity, f"{where} {label}", _excerpt(text, match)))
+            detail = _excerpt(cleaned, match) + obfuscated
+            findings.append(_f(tool, severity, f"{where} {label}", detail))
     hidden = _hidden_chars(text)
     if hidden:
         codes = ", ".join(sorted({f"U+{ord(c):04X}" for c in hidden}))

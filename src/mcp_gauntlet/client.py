@@ -76,6 +76,8 @@ async def discover_in_session(session: ClientSession, init: InitializeResult) ->
             name=tool.name,
             description=tool.description,
             input_schema=dict(tool.inputSchema or {}),
+            read_only_hint=getattr(tool.annotations, "readOnlyHint", None),
+            destructive_hint=getattr(tool.annotations, "destructiveHint", None),
         )
         for tool in listed.tools
     ]

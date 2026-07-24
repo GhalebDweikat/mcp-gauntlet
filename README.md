@@ -58,9 +58,12 @@ uv run mcp-gauntlet run "npx -y @modelcontextprotocol/server-everything"
 ```
 
 The LLM backend is provider-agnostic — any OpenAI-compatible endpoint (Groq by
-default; also OpenRouter, Together, or a local Ollama / vLLM). Runs are safe by
-default: only read-only tools are exercised unless you pass `--allow-writes`, and
-generated task sets are cached so scores are reproducible across runs.
+default; also OpenRouter, Together, or a local Ollama / vLLM). Runs are read-only by
+default: tools that *look* mutating (by name/description or a self-declared MCP
+`destructiveHint`) are excluded unless you pass `--allow-writes`. That exclusion is a
+best-effort heuristic, not a guarantee — pair it with read-only credentials or a
+throwaway environment for untrusted servers. Generated task sets are cached so scores
+are reproducible across runs.
 
 Bundled `good` / `bad` fixture servers make it easy to see the difference:
 

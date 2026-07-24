@@ -11,6 +11,10 @@ class ToolInfo(BaseModel):
     name: str
     description: str | None = None
     input_schema: dict[str, Any] = Field(default_factory=dict)
+    # MCP tool annotation *hints* (server-declared, advisory). Only ever trusted in the
+    # conservative direction — see mcp_gauntlet.safety — never to mark a tool safe.
+    read_only_hint: bool | None = None
+    destructive_hint: bool | None = None
 
 
 class ServerInfo(BaseModel):

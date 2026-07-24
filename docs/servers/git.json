@@ -1,0 +1,361 @@
+{
+  "name": "git",
+  "spec": "uvx mcp-server-git --repository .",
+  "error": null,
+  "report": {
+    "spec": "uvx mcp-server-git --repository .",
+    "server": {
+      "name": "mcp-git",
+      "version": "1.28.1",
+      "instructions": null
+    },
+    "tool_count": 12,
+    "dimensions": [
+      {
+        "key": "schema_health",
+        "title": "Schema Health",
+        "score": 90.8,
+        "weight": 1.0,
+        "summary": "Structural validity of each tool's JSON input schema: valid schema, typed and described properties, and a consistent required list.",
+        "findings": [
+          {
+            "tool": "git_status",
+            "severity": "low",
+            "message": "property 'repo_path' has no description",
+            "detail": null
+          },
+          {
+            "tool": "git_diff_unstaged",
+            "severity": "low",
+            "message": "property 'repo_path' has no description",
+            "detail": null
+          },
+          {
+            "tool": "git_diff_unstaged",
+            "severity": "low",
+            "message": "property 'context_lines' has no description",
+            "detail": null
+          },
+          {
+            "tool": "git_diff_staged",
+            "severity": "low",
+            "message": "property 'repo_path' has no description",
+            "detail": null
+          },
+          {
+            "tool": "git_diff_staged",
+            "severity": "low",
+            "message": "property 'context_lines' has no description",
+            "detail": null
+          },
+          {
+            "tool": "git_diff",
+            "severity": "low",
+            "message": "property 'repo_path' has no description",
+            "detail": null
+          },
+          {
+            "tool": "git_diff",
+            "severity": "low",
+            "message": "property 'target' has no description",
+            "detail": null
+          },
+          {
+            "tool": "git_diff",
+            "severity": "low",
+            "message": "property 'context_lines' has no description",
+            "detail": null
+          },
+          {
+            "tool": "git_commit",
+            "severity": "low",
+            "message": "property 'repo_path' has no description",
+            "detail": null
+          },
+          {
+            "tool": "git_commit",
+            "severity": "low",
+            "message": "property 'message' has no description",
+            "detail": null
+          },
+          {
+            "tool": "git_add",
+            "severity": "low",
+            "message": "property 'repo_path' has no description",
+            "detail": null
+          },
+          {
+            "tool": "git_add",
+            "severity": "low",
+            "message": "property 'files' has no description",
+            "detail": null
+          },
+          {
+            "tool": "git_reset",
+            "severity": "low",
+            "message": "property 'repo_path' has no description",
+            "detail": null
+          },
+          {
+            "tool": "git_log",
+            "severity": "low",
+            "message": "property 'repo_path' has no description",
+            "detail": null
+          },
+          {
+            "tool": "git_log",
+            "severity": "low",
+            "message": "property 'max_count' has no description",
+            "detail": null
+          },
+          {
+            "tool": "git_create_branch",
+            "severity": "low",
+            "message": "property 'repo_path' has no description",
+            "detail": null
+          },
+          {
+            "tool": "git_create_branch",
+            "severity": "low",
+            "message": "property 'branch_name' has no description",
+            "detail": null
+          },
+          {
+            "tool": "git_create_branch",
+            "severity": "low",
+            "message": "property 'base_branch' has no description",
+            "detail": null
+          },
+          {
+            "tool": "git_checkout",
+            "severity": "low",
+            "message": "property 'repo_path' has no description",
+            "detail": null
+          },
+          {
+            "tool": "git_checkout",
+            "severity": "low",
+            "message": "property 'branch_name' has no description",
+            "detail": null
+          },
+          {
+            "tool": "git_show",
+            "severity": "low",
+            "message": "property 'repo_path' has no description",
+            "detail": null
+          },
+          {
+            "tool": "git_show",
+            "severity": "low",
+            "message": "property 'revision' has no description",
+            "detail": null
+          }
+        ]
+      },
+      {
+        "key": "description_quality",
+        "title": "Description Quality (heuristic)",
+        "score": 96.7,
+        "weight": 1.0,
+        "summary": "Offline heuristics on tool descriptions (presence and length). An LLM-judged 'can an agent tell when to use this?' score is added in the agentic stage.",
+        "findings": [
+          {
+            "tool": "git_status",
+            "severity": "low",
+            "message": "description is short",
+            "detail": "29 chars"
+          },
+          {
+            "tool": "git_commit",
+            "severity": "low",
+            "message": "description is short",
+            "detail": "33 chars"
+          },
+          {
+            "tool": "git_add",
+            "severity": "low",
+            "message": "description is short",
+            "detail": "38 chars"
+          },
+          {
+            "tool": "git_reset",
+            "severity": "low",
+            "message": "description is short",
+            "detail": "27 chars"
+          },
+          {
+            "tool": "git_log",
+            "severity": "low",
+            "message": "description is short",
+            "detail": "21 chars"
+          },
+          {
+            "tool": "git_checkout",
+            "severity": "low",
+            "message": "description is short",
+            "detail": "17 chars"
+          },
+          {
+            "tool": "git_show",
+            "severity": "low",
+            "message": "description is short",
+            "detail": "30 chars"
+          },
+          {
+            "tool": "git_branch",
+            "severity": "low",
+            "message": "description is short",
+            "detail": "17 chars"
+          }
+        ]
+      },
+      {
+        "key": "security",
+        "title": "Security Signals",
+        "score": 100.0,
+        "weight": 2.0,
+        "summary": "Static scan of the server's init instructions plus tool and parameter descriptions for tool-poisoning / prompt-injection markers and hidden characters (Invariant Labs / OWASP MCP threat model).",
+        "findings": []
+      },
+      {
+        "key": "task_success",
+        "title": "Agent Task Success",
+        "score": 16.7,
+        "weight": 3.0,
+        "summary": "Whether a live agent, given only this server's tools, completes generated tasks (LLM-judged, repeated for a success rate).",
+        "findings": [
+          {
+            "tool": null,
+            "severity": "medium",
+            "message": "agent failed a task (0/2 passed) \u2014 tool errors blocked it (server signal)",
+            "detail": "Check the working tree status for the Git repository located at '/home/user/projects/backend-api' and report whether the \u2014 The tool call for the specified repository path '/home/user/projects/backend-api' errored, and the agent incorrectly reported status results"
+          },
+          {
+            "tool": null,
+            "severity": "low",
+            "message": "agent failed a task (1/2 passed) \u2014 tool errors blocked it (server signal)",
+            "detail": "Examine the unstaged diff in the repository at '/home/user/projects/frontend-app' using 5 context lines to identify what \u2014 The tool call to inspect '/home/user/projects/frontend-app' failed with an error, so the requested repository's diff could not be examined."
+          },
+          {
+            "tool": null,
+            "severity": "medium",
+            "message": "agent failed a task (0/2 passed) \u2014 tool errors blocked it (server signal)",
+            "detail": "List all local branches in the Git repository at '/var/repos/data-pipeline' that contain commit 'e4f8a92'. \u2014 The tool call to inspect '/var/repos/data-pipeline' errored out, so the agent failed to check the requested repository."
+          }
+        ]
+      },
+      {
+        "key": "tool_selection",
+        "title": "Tool-Selection Accuracy",
+        "score": 100.0,
+        "weight": 1.5,
+        "summary": "Whether the agent called the tools each task was expected to use.",
+        "findings": []
+      },
+      {
+        "key": "tool_reliability",
+        "title": "Tool Reliability",
+        "score": 45.8,
+        "weight": 1.0,
+        "summary": "Fraction of the agent's tool calls the server executed without error \u2014 a server-quality signal distinct from whether the agent finished the task.",
+        "findings": [
+          {
+            "tool": null,
+            "severity": "medium",
+            "message": "13/24 agent tool calls returned an error",
+            "detail": null
+          }
+        ]
+      },
+      {
+        "key": "response_safety",
+        "title": "Response Safety (runtime)",
+        "score": 100.0,
+        "weight": 1.0,
+        "summary": "Dynamic scan of the server's live tool outputs for prompt-injection / poisoning markers and hidden characters. Markers here may be the server poisoning its responses, or untrusted content it passed through \u2014 either exposes the agent. Reported (and it lowers the score) but does not cap the grade on its own. Reflects the outputs the generated tasks happened to elicit, so it can vary run to run.",
+        "findings": []
+      },
+      {
+        "key": "robustness",
+        "title": "Robustness",
+        "score": 100.0,
+        "weight": 1.0,
+        "summary": "Fraction of probed tools that reject malformed / schema-violating arguments \u2014 a well-behaved server rejects them rather than silently accepting, hanging, or crashing (LLM-free).",
+        "findings": []
+      }
+    ],
+    "overall_score": 72.5,
+    "grade": "C",
+    "generated_at": "2026-07-24T20:29:27+00:00",
+    "security_critical": false,
+    "agentic": {
+      "provider": "gemini",
+      "model": "gemini-flash-latest",
+      "tasks_generated": 3,
+      "repeats": 2,
+      "excluded_write_tools": [
+        "git_diff_staged",
+        "git_diff",
+        "git_commit",
+        "git_add",
+        "git_reset",
+        "git_log",
+        "git_create_branch",
+        "git_checkout",
+        "git_show"
+      ],
+      "results": [
+        {
+          "description": "Check the working tree status for the Git repository located at '/home/user/projects/backend-api' and report whether there are any untracked files or staged changes.",
+          "rubric": "The agent calls git_status with repo_path='/home/user/projects/backend-api' and accurately reports the current working tree state based on the tool output.",
+          "expected_tools": [
+            "git_status"
+          ],
+          "repeats": 2,
+          "successes": 0,
+          "success_rate": 0.0,
+          "mean_score": 0.0,
+          "selection_score": 100.0,
+          "tool_error": true,
+          "errored_repeats": 0,
+          "inconclusive": false,
+          "sample_reasoning": "The tool call for the specified repository path '/home/user/projects/backend-api' errored, and the agent incorrectly reported status results obtained from running the tool on a different path ('.')."
+        },
+        {
+          "description": "Examine the unstaged diff in the repository at '/home/user/projects/frontend-app' using 5 context lines to identify what changes have been made to the working directory.",
+          "rubric": "The agent calls git_diff_unstaged with repo_path='/home/user/projects/frontend-app' and context_lines=5, and provides a summary of the unstaged modifications found in the diff output.",
+          "expected_tools": [
+            "git_diff_unstaged"
+          ],
+          "repeats": 2,
+          "successes": 1,
+          "success_rate": 0.5,
+          "mean_score": 50.0,
+          "selection_score": 100.0,
+          "tool_error": true,
+          "errored_repeats": 0,
+          "inconclusive": false,
+          "sample_reasoning": "The tool call to inspect '/home/user/projects/frontend-app' failed with an error, so the requested repository's diff could not be examined."
+        },
+        {
+          "description": "List all local branches in the Git repository at '/var/repos/data-pipeline' that contain commit 'e4f8a92'.",
+          "rubric": "The agent calls git_branch with repo_path='/var/repos/data-pipeline', contains='e4f8a92', and branch_type specifying local branches, then reports the matching branch names to the user.",
+          "expected_tools": [
+            "git_branch"
+          ],
+          "repeats": 2,
+          "successes": 0,
+          "success_rate": 0.0,
+          "mean_score": 0.0,
+          "selection_score": 100.0,
+          "tool_error": true,
+          "errored_repeats": 0,
+          "inconclusive": false,
+          "sample_reasoning": "The tool call to inspect '/var/repos/data-pipeline' errored out, so the agent failed to check the requested repository."
+        }
+      ],
+      "inconclusive": false,
+      "truncated": false
+    }
+  }
+}

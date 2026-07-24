@@ -1,0 +1,153 @@
+{
+  "name": "good-fixture",
+  "spec": "python -m mcp_gauntlet.fixtures.good_server",
+  "error": null,
+  "report": {
+    "spec": "python -m mcp_gauntlet.fixtures.good_server",
+    "server": {
+      "name": "good-fixture",
+      "version": "1.28.1",
+      "instructions": null
+    },
+    "tool_count": 3,
+    "dimensions": [
+      {
+        "key": "schema_health",
+        "title": "Schema Health",
+        "score": 93.3,
+        "weight": 1.0,
+        "summary": "Structural validity of each tool's JSON input schema: valid schema, typed and described properties, and a consistent required list.",
+        "findings": [
+          {
+            "tool": "add",
+            "severity": "low",
+            "message": "property 'a' has no description",
+            "detail": null
+          },
+          {
+            "tool": "add",
+            "severity": "low",
+            "message": "property 'b' has no description",
+            "detail": null
+          },
+          {
+            "tool": "echo",
+            "severity": "low",
+            "message": "property 'message' has no description",
+            "detail": null
+          },
+          {
+            "tool": "reverse",
+            "severity": "low",
+            "message": "property 'text' has no description",
+            "detail": null
+          }
+        ]
+      },
+      {
+        "key": "description_quality",
+        "title": "Description Quality (heuristic)",
+        "score": 100.0,
+        "weight": 1.0,
+        "summary": "Offline heuristics on tool descriptions (presence and length). An LLM-judged 'can an agent tell when to use this?' score is added in the agentic stage.",
+        "findings": []
+      },
+      {
+        "key": "security",
+        "title": "Security Signals",
+        "score": 100.0,
+        "weight": 2.0,
+        "summary": "Static scan of the server's init instructions plus tool and parameter descriptions for tool-poisoning / prompt-injection markers and hidden characters (Invariant Labs / OWASP MCP threat model).",
+        "findings": []
+      },
+      {
+        "key": "task_success",
+        "title": "Agent Task Success",
+        "score": 100.0,
+        "weight": 3.0,
+        "summary": "Whether a live agent, given only this server's tools, completes generated tasks (LLM-judged, repeated for a success rate).",
+        "findings": []
+      },
+      {
+        "key": "tool_selection",
+        "title": "Tool-Selection Accuracy",
+        "score": 100.0,
+        "weight": 1.5,
+        "summary": "Whether the agent called the tools each task was expected to use.",
+        "findings": []
+      },
+      {
+        "key": "tool_reliability",
+        "title": "Tool Reliability",
+        "score": 100.0,
+        "weight": 1.0,
+        "summary": "Fraction of the agent's tool calls the server executed without error \u2014 a server-quality signal distinct from whether the agent finished the task.",
+        "findings": []
+      },
+      {
+        "key": "response_safety",
+        "title": "Response Safety (runtime)",
+        "score": 100.0,
+        "weight": 1.0,
+        "summary": "Dynamic scan of the server's live tool outputs for prompt-injection / poisoning markers and hidden characters. Markers here may be the server poisoning its responses, or untrusted content it passed through \u2014 either exposes the agent. Reported (and it lowers the score) but does not cap the grade on its own. Reflects the outputs the generated tasks happened to elicit, so it can vary run to run.",
+        "findings": []
+      },
+      {
+        "key": "robustness",
+        "title": "Robustness",
+        "score": 100.0,
+        "weight": 1.0,
+        "summary": "Fraction of probed tools that reject malformed / schema-violating arguments \u2014 a well-behaved server rejects them rather than silently accepting, hanging, or crashing (LLM-free).",
+        "findings": []
+      }
+    ],
+    "overall_score": 99.4,
+    "grade": "A",
+    "generated_at": "2026-07-24T20:30:46+00:00",
+    "security_critical": false,
+    "agentic": {
+      "provider": "gemini",
+      "model": "gemini-flash-latest",
+      "tasks_generated": 2,
+      "repeats": 2,
+      "excluded_write_tools": [],
+      "results": [
+        {
+          "description": "The user wants to know the result of adding 5 and 7, and then have the string 'Hello World' echoed back. The agent should first use the add tool with a=5 and b=7, then use the echo tool with message='Hello World'.",
+          "rubric": "The agent must correctly calculate the sum of 5 and 7 using the add tool and then echo 'Hello World' using the echo tool. The sum should be 12 and 'Hello World' should be echoed back.",
+          "expected_tools": [
+            "add",
+            "echo"
+          ],
+          "repeats": 2,
+          "successes": 2,
+          "success_rate": 1.0,
+          "mean_score": 100.0,
+          "selection_score": 100.0,
+          "tool_error": false,
+          "errored_repeats": 0,
+          "inconclusive": false,
+          "sample_reasoning": ""
+        },
+        {
+          "description": "The user wants to reverse the string 'abcdefg'. The agent should use the reverse tool with text='abcdefg'.",
+          "rubric": "The agent must correctly reverse the string 'abcdefg' using the reverse tool. The reversed string should be 'gfedcba'.",
+          "expected_tools": [
+            "reverse"
+          ],
+          "repeats": 2,
+          "successes": 2,
+          "success_rate": 1.0,
+          "mean_score": 100.0,
+          "selection_score": 100.0,
+          "tool_error": false,
+          "errored_repeats": 0,
+          "inconclusive": false,
+          "sample_reasoning": ""
+        }
+      ],
+      "inconclusive": false,
+      "truncated": false
+    }
+  }
+}

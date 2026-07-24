@@ -1,0 +1,190 @@
+{
+  "name": "memory",
+  "spec": "npx -y @modelcontextprotocol/server-memory",
+  "error": null,
+  "report": {
+    "spec": "npx -y @modelcontextprotocol/server-memory",
+    "server": {
+      "name": "memory-server",
+      "version": "0.6.3",
+      "instructions": null
+    },
+    "tool_count": 9,
+    "dimensions": [
+      {
+        "key": "schema_health",
+        "title": "Schema Health",
+        "score": 97.8,
+        "weight": 1.0,
+        "summary": "Structural validity of each tool's JSON input schema: valid schema, typed and described properties, and a consistent required list.",
+        "findings": [
+          {
+            "tool": "create_entities",
+            "severity": "low",
+            "message": "property 'entities' has no description",
+            "detail": null
+          },
+          {
+            "tool": "create_relations",
+            "severity": "low",
+            "message": "property 'relations' has no description",
+            "detail": null
+          },
+          {
+            "tool": "add_observations",
+            "severity": "low",
+            "message": "property 'observations' has no description",
+            "detail": null
+          },
+          {
+            "tool": "delete_observations",
+            "severity": "low",
+            "message": "property 'deletions' has no description",
+            "detail": null
+          }
+        ]
+      },
+      {
+        "key": "description_quality",
+        "title": "Description Quality (heuristic)",
+        "score": 99.4,
+        "weight": 1.0,
+        "summary": "Offline heuristics on tool descriptions (presence and length). An LLM-judged 'can an agent tell when to use this?' score is added in the agentic stage.",
+        "findings": [
+          {
+            "tool": "read_graph",
+            "severity": "low",
+            "message": "description is short",
+            "detail": "31 chars"
+          }
+        ]
+      },
+      {
+        "key": "security",
+        "title": "Security Signals",
+        "score": 100.0,
+        "weight": 2.0,
+        "summary": "Static scan of the server's init instructions plus tool and parameter descriptions for tool-poisoning / prompt-injection markers and hidden characters (Invariant Labs / OWASP MCP threat model).",
+        "findings": []
+      },
+      {
+        "key": "task_success",
+        "title": "Agent Task Success",
+        "score": 83.3,
+        "weight": 3.0,
+        "summary": "Whether a live agent, given only this server's tools, completes generated tasks (LLM-judged, repeated for a success rate).",
+        "findings": [
+          {
+            "tool": null,
+            "severity": "low",
+            "message": "agent failed a task (1/2 passed) \u2014 agent did not complete it (agent signal)",
+            "detail": "Search the knowledge graph for nodes related to 'Quantum Encryption' using search_nodes, and then inspect the node named \u2014 Although the agent called the requested tools, the knowledge graph was empty and the agent was unable to extract or report the key rotation "
+          }
+        ]
+      },
+      {
+        "key": "tool_selection",
+        "title": "Tool-Selection Accuracy",
+        "score": 100.0,
+        "weight": 1.5,
+        "summary": "Whether the agent called the tools each task was expected to use.",
+        "findings": []
+      },
+      {
+        "key": "tool_reliability",
+        "title": "Tool Reliability",
+        "score": 100.0,
+        "weight": 1.0,
+        "summary": "Fraction of the agent's tool calls the server executed without error \u2014 a server-quality signal distinct from whether the agent finished the task.",
+        "findings": []
+      },
+      {
+        "key": "response_safety",
+        "title": "Response Safety (runtime)",
+        "score": 100.0,
+        "weight": 1.0,
+        "summary": "Dynamic scan of the server's live tool outputs for prompt-injection / poisoning markers and hidden characters. Markers here may be the server poisoning its responses, or untrusted content it passed through \u2014 either exposes the agent. Reported (and it lowers the score) but does not cap the grade on its own. Reflects the outputs the generated tasks happened to elicit, so it can vary run to run.",
+        "findings": []
+      },
+      {
+        "key": "robustness",
+        "title": "Robustness",
+        "score": 100.0,
+        "weight": 1.0,
+        "summary": "Fraction of probed tools that reject malformed / schema-violating arguments \u2014 a well-behaved server rejects them rather than silently accepting, hanging, or crashing (LLM-free).",
+        "findings": []
+      }
+    ],
+    "overall_score": 95.4,
+    "grade": "A",
+    "generated_at": "2026-07-24T20:25:03+00:00",
+    "security_critical": false,
+    "agentic": {
+      "provider": "gemini",
+      "model": "gemini-flash-latest",
+      "tasks_generated": 3,
+      "repeats": 2,
+      "excluded_write_tools": [
+        "create_entities",
+        "create_relations",
+        "add_observations",
+        "delete_entities",
+        "delete_observations",
+        "delete_relations"
+      ],
+      "results": [
+        {
+          "description": "Search the knowledge graph for nodes related to 'Quantum Encryption' using search_nodes, and then inspect the node named 'Encryption_Key_Rotation_Policy' using open_nodes to report the key rotation frequency in days.",
+          "rubric": "The agent calls search_nodes with a query related to 'Quantum Encryption', invokes open_nodes with 'Encryption_Key_Rotation_Policy', and correctly extracts the rotation frequency value from the retrieved node content.",
+          "expected_tools": [
+            "search_nodes",
+            "open_nodes"
+          ],
+          "repeats": 2,
+          "successes": 1,
+          "success_rate": 0.5,
+          "mean_score": 50.0,
+          "selection_score": 100.0,
+          "tool_error": false,
+          "errored_repeats": 0,
+          "inconclusive": false,
+          "sample_reasoning": "Although the agent called the requested tools, the knowledge graph was empty and the agent was unable to extract or report the key rotation frequency."
+        },
+        {
+          "description": "Retrieve the complete knowledge graph using read_graph to identify all top-level category nodes and list their names.",
+          "rubric": "The agent calls read_graph to inspect the full graph structure and accurately identifies and lists all top-level category nodes based on the graph data.",
+          "expected_tools": [
+            "read_graph"
+          ],
+          "repeats": 2,
+          "successes": 2,
+          "success_rate": 1.0,
+          "mean_score": 100.0,
+          "selection_score": 100.0,
+          "tool_error": false,
+          "errored_repeats": 0,
+          "inconclusive": false,
+          "sample_reasoning": ""
+        },
+        {
+          "description": "Directly fetch the node details for 'Service_Gateway' and 'Auth_Service' using open_nodes to verify their current operational status and declared dependencies.",
+          "rubric": "The agent calls open_nodes with 'Service_Gateway' and 'Auth_Service' (either in a single call or separate calls) and accurately reports the operational status and dependency list for both services.",
+          "expected_tools": [
+            "open_nodes"
+          ],
+          "repeats": 2,
+          "successes": 2,
+          "success_rate": 1.0,
+          "mean_score": 100.0,
+          "selection_score": 100.0,
+          "tool_error": false,
+          "errored_repeats": 0,
+          "inconclusive": false,
+          "sample_reasoning": ""
+        }
+      ],
+      "inconclusive": false,
+      "truncated": false
+    }
+  }
+}

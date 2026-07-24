@@ -1,0 +1,315 @@
+{
+  "name": "filesystem",
+  "spec": "npx -y @modelcontextprotocol/server-filesystem .",
+  "error": null,
+  "report": {
+    "spec": "npx -y @modelcontextprotocol/server-filesystem .",
+    "server": {
+      "name": "secure-filesystem-server",
+      "version": "0.2.0",
+      "instructions": null
+    },
+    "tool_count": 14,
+    "dimensions": [
+      {
+        "key": "schema_health",
+        "title": "Schema Health",
+        "score": 93.6,
+        "weight": 1.0,
+        "summary": "Structural validity of each tool's JSON input schema: valid schema, typed and described properties, and a consistent required list.",
+        "findings": [
+          {
+            "tool": "read_file",
+            "severity": "low",
+            "message": "property 'path' has no description",
+            "detail": null
+          },
+          {
+            "tool": "read_text_file",
+            "severity": "low",
+            "message": "property 'path' has no description",
+            "detail": null
+          },
+          {
+            "tool": "read_media_file",
+            "severity": "low",
+            "message": "property 'path' has no description",
+            "detail": null
+          },
+          {
+            "tool": "write_file",
+            "severity": "low",
+            "message": "property 'path' has no description",
+            "detail": null
+          },
+          {
+            "tool": "write_file",
+            "severity": "low",
+            "message": "property 'content' has no description",
+            "detail": null
+          },
+          {
+            "tool": "edit_file",
+            "severity": "low",
+            "message": "property 'path' has no description",
+            "detail": null
+          },
+          {
+            "tool": "edit_file",
+            "severity": "low",
+            "message": "property 'edits' has no description",
+            "detail": null
+          },
+          {
+            "tool": "create_directory",
+            "severity": "low",
+            "message": "property 'path' has no description",
+            "detail": null
+          },
+          {
+            "tool": "list_directory",
+            "severity": "low",
+            "message": "property 'path' has no description",
+            "detail": null
+          },
+          {
+            "tool": "list_directory_with_sizes",
+            "severity": "low",
+            "message": "property 'path' has no description",
+            "detail": null
+          },
+          {
+            "tool": "directory_tree",
+            "severity": "low",
+            "message": "property 'path' has no description",
+            "detail": null
+          },
+          {
+            "tool": "directory_tree",
+            "severity": "low",
+            "message": "property 'excludePatterns' has no description",
+            "detail": null
+          },
+          {
+            "tool": "move_file",
+            "severity": "low",
+            "message": "property 'source' has no description",
+            "detail": null
+          },
+          {
+            "tool": "move_file",
+            "severity": "low",
+            "message": "property 'destination' has no description",
+            "detail": null
+          },
+          {
+            "tool": "search_files",
+            "severity": "low",
+            "message": "property 'path' has no description",
+            "detail": null
+          },
+          {
+            "tool": "search_files",
+            "severity": "low",
+            "message": "property 'pattern' has no description",
+            "detail": null
+          },
+          {
+            "tool": "search_files",
+            "severity": "low",
+            "message": "property 'excludePatterns' has no description",
+            "detail": null
+          },
+          {
+            "tool": "get_file_info",
+            "severity": "low",
+            "message": "property 'path' has no description",
+            "detail": null
+          }
+        ]
+      },
+      {
+        "key": "description_quality",
+        "title": "Description Quality (heuristic)",
+        "score": 100.0,
+        "weight": 1.0,
+        "summary": "Offline heuristics on tool descriptions (presence and length). An LLM-judged 'can an agent tell when to use this?' score is added in the agentic stage.",
+        "findings": []
+      },
+      {
+        "key": "security",
+        "title": "Security Signals",
+        "score": 100.0,
+        "weight": 2.0,
+        "summary": "Static scan of the server's init instructions plus tool and parameter descriptions for tool-poisoning / prompt-injection markers and hidden characters (Invariant Labs / OWASP MCP threat model).",
+        "findings": []
+      },
+      {
+        "key": "task_success",
+        "title": "Agent Task Success",
+        "score": 0.0,
+        "weight": 3.0,
+        "summary": "Whether a live agent, given only this server's tools, completes generated tasks (LLM-judged, repeated for a success rate).",
+        "findings": [
+          {
+            "tool": null,
+            "severity": "medium",
+            "message": "agent failed a task (0/2 passed) \u2014 tool errors blocked it (server signal)",
+            "detail": "Locate all Python script files (*.py) in the directory '/workspace/project' and read the file '/workspace/project/main.p \u2014 The agent failed to search or read files in '/workspace/project' due to tool errors and never determined the port number."
+          },
+          {
+            "tool": null,
+            "severity": "medium",
+            "message": "agent failed a task (0/2 passed) \u2014 tool errors blocked it (server signal)",
+            "detail": "Check the allowed root directories using list_allowed_directories, then list the files in '/workspace/data' sorted by si \u2014 The tool call to list files in '/workspace/data' errored due to access restrictions, so the agent was unable to list the directory or identi"
+          },
+          {
+            "tool": null,
+            "severity": "medium",
+            "message": "agent failed a task (0/2 passed) \u2014 tool errors blocked it (server signal)",
+            "detail": "Search for all PNG image files in '/workspace/assets' matching pattern '*.png', and then load '/workspace/assets/logo.pn \u2014 The agent failed to search the specified path due to a tool error and never executed read_media_file to load the PNG image and verify its MI"
+          }
+        ]
+      },
+      {
+        "key": "tool_selection",
+        "title": "Tool-Selection Accuracy",
+        "score": 83.3,
+        "weight": 1.5,
+        "summary": "Whether the agent called the tools each task was expected to use.",
+        "findings": [
+          {
+            "tool": null,
+            "severity": "low",
+            "message": "agent did not call all expected tools",
+            "detail": "Locate all Python script files (*.py) in the directory '/workspace/project' and read the file '/workspace/project/main.p (expected search_files, read_text_file)"
+          },
+          {
+            "tool": null,
+            "severity": "low",
+            "message": "agent did not call all expected tools",
+            "detail": "Search for all PNG image files in '/workspace/assets' matching pattern '*.png', and then load '/workspace/assets/logo.pn (expected search_files, read_media_file)"
+          }
+        ]
+      },
+      {
+        "key": "tool_reliability",
+        "title": "Tool Reliability",
+        "score": 79.1,
+        "weight": 1.0,
+        "summary": "Fraction of the agent's tool calls the server executed without error \u2014 a server-quality signal distinct from whether the agent finished the task.",
+        "findings": [
+          {
+            "tool": null,
+            "severity": "medium",
+            "message": "9/43 agent tool calls returned an error",
+            "detail": null
+          }
+        ]
+      },
+      {
+        "key": "response_safety",
+        "title": "Response Safety (runtime)",
+        "score": 76.0,
+        "weight": 1.0,
+        "summary": "Dynamic scan of the server's live tool outputs for prompt-injection / poisoning markers and hidden characters. Markers here may be the server poisoning its responses, or untrusted content it passed through \u2014 either exposes the agent. Reported (and it lowers the score) but does not cap the grade on its own. Reflects the outputs the generated tasks happened to elicit, so it can vary run to run.",
+        "findings": [
+          {
+            "tool": "list_directory",
+            "severity": "medium",
+            "message": "tool output references sensitive files or secrets",
+            "detail": "[FILE] .env[FILE] .env.example[DIR] .gaun\u2026 (obfuscating characters removed)"
+          },
+          {
+            "tool": "search_files",
+            "severity": "medium",
+            "message": "tool output references sensitive files or secrets",
+            "detail": "\u2026ude\\Breakthrough\\mcp-gauntlet\\.env.exampleC:\\GenAI\\Claude\\Breakt\u2026 (obfuscating characters removed)"
+          }
+        ]
+      },
+      {
+        "key": "robustness",
+        "title": "Robustness",
+        "score": 100.0,
+        "weight": 1.0,
+        "summary": "Fraction of probed tools that reject malformed / schema-violating arguments \u2014 a well-behaved server rejects them rather than silently accepting, hanging, or crashing (LLM-free).",
+        "findings": []
+      }
+    ],
+    "overall_score": 67.3,
+    "grade": "D",
+    "generated_at": "2026-07-24T20:27:22+00:00",
+    "security_critical": false,
+    "agentic": {
+      "provider": "gemini",
+      "model": "gemini-flash-latest",
+      "tasks_generated": 3,
+      "repeats": 2,
+      "excluded_write_tools": [
+        "read_multiple_files",
+        "write_file",
+        "edit_file",
+        "create_directory",
+        "directory_tree",
+        "move_file",
+        "get_file_info"
+      ],
+      "results": [
+        {
+          "description": "Locate all Python script files (*.py) in the directory '/workspace/project' and read the file '/workspace/project/main.py' to determine the port number the server listens on.",
+          "rubric": "The agent must call search_files with path '/workspace/project' and pattern '*.py', then call read_text_file for '/workspace/project/main.py'. The final response must accurately state the server port specified in main.py.",
+          "expected_tools": [
+            "search_files",
+            "read_text_file"
+          ],
+          "repeats": 2,
+          "successes": 0,
+          "success_rate": 0.0,
+          "mean_score": 0.0,
+          "selection_score": 75.0,
+          "tool_error": true,
+          "errored_repeats": 0,
+          "inconclusive": false,
+          "sample_reasoning": "The agent failed to search or read files in '/workspace/project' due to tool errors and never determined the port number."
+        },
+        {
+          "description": "Check the allowed root directories using list_allowed_directories, then list the files in '/workspace/data' sorted by size using list_directory_with_sizes to identify the largest file in that folder.",
+          "rubric": "The agent must call list_allowed_directories and list_directory_with_sizes with path '/workspace/data' and sortBy parameter set to size (or equivalent sorting option). The final response must correctly state the name and size of the largest file.",
+          "expected_tools": [
+            "list_allowed_directories",
+            "list_directory_with_sizes"
+          ],
+          "repeats": 2,
+          "successes": 0,
+          "success_rate": 0.0,
+          "mean_score": 0.0,
+          "selection_score": 100.0,
+          "tool_error": true,
+          "errored_repeats": 0,
+          "inconclusive": false,
+          "sample_reasoning": "The tool call to list files in '/workspace/data' errored due to access restrictions, so the agent was unable to list the directory or identify the largest file."
+        },
+        {
+          "description": "Search for all PNG image files in '/workspace/assets' matching pattern '*.png', and then load '/workspace/assets/logo.png' using read_media_file to verify its MIME type.",
+          "rubric": "The agent must invoke search_files with path '/workspace/assets' and pattern '*.png', then invoke read_media_file with path '/workspace/assets/logo.png'. The agent must confirm the file was returned as an image/png media content block.",
+          "expected_tools": [
+            "search_files",
+            "read_media_file"
+          ],
+          "repeats": 2,
+          "successes": 0,
+          "success_rate": 0.0,
+          "mean_score": 0.0,
+          "selection_score": 75.0,
+          "tool_error": true,
+          "errored_repeats": 0,
+          "inconclusive": false,
+          "sample_reasoning": "The agent failed to search the specified path due to a tool error and never executed read_media_file to load the PNG image and verify its MIME type."
+        }
+      ],
+      "inconclusive": false,
+      "truncated": false
+    }
+  }
+}

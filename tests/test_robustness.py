@@ -9,7 +9,7 @@ from mcp_gauntlet.client import open_session
 from mcp_gauntlet.config import ServerSpec
 from mcp_gauntlet.models import ToolInfo
 from mcp_gauntlet.report import Severity
-from mcp_gauntlet.robustness import malformed_args, run_robustness_probes
+from mcp_gauntlet.robustness import declares_arguments, malformed_args, run_robustness_probes
 
 # --- malformed_args (pure) --------------------------------------------------
 
@@ -237,6 +237,99 @@ def test_any_of_accepting_every_type_is_unviolatable() -> None:
     branches = [{"type": t} for t in ("string", "number", "boolean", "array", "object")]
     schema = {"type": "object", "properties": {"v": {"anyOf": branches}}}
     assert malformed_args(schema) is None  # honestly nothing invalid to send
+
+
+def test_all_of_composition_is_probed() -> None:
+    # An ordinary composed schema declares a required, typed argument one level down.
+    # Reading only the top level left it unprobed AND treated as zero-argument, which
+    # handed it a free perfect score.
+    payload = malformed_args(
+        {
+            "type": "object",
+            "allOf": [{"properties": {"q": {"type": "string"}}, "required": ["q"]}],
+        }
+    )
+    assert payload is not None and not isinstance(payload["q"], str)
+
+
+def test_all_of_through_a_ref_is_probed() -> None:
+    payload = malformed_args(
+        {
+            "type": "object",
+            "allOf": [{"$ref": "#/$defs/A"}],
+            "$defs": {"A": {"properties": {"q": {"type": "string"}}, "required": ["q"]}},
+        }
+    )
+    assert payload is not None and not isinstance(payload["q"], str)
+
+
+def test_arbitrary_key_contracts_are_probed() -> None:
+    # A key not named in `properties` is validated against patternProperties /
+    # additionalProperties, so violating one of those is a genuine probe.
+    payload = malformed_args({"type": "object", "patternProperties": {"^.*$": {"type": "string"}}})
+    assert payload is not None and not isinstance(next(iter(payload.values())), str)
+
+    payload = malformed_args({"type": "object", "additionalProperties": {"type": "string"}})
+    assert payload is not None and not isinstance(next(iter(payload.values())), str)
+
+
+def test_declares_arguments_sees_through_composition() -> None:
+    assert declares_arguments({"type": "object", "allOf": [{"properties": {"q": {}}}]})
+    assert declares_arguments({"type": "object", "patternProperties": {"^x$": {}}})
+    assert declares_arguments({"type": "object", "additionalProperties": {"type": "string"}})
+    assert declares_arguments({"type": "object", "additionalProperties": True})
+    # `additionalProperties: false` IS the canonical strict zero-argument tool.
+    assert not declares_arguments(
+        {"type": "object", "properties": {}, "additionalProperties": False}
+    )
+    assert not declares_arguments({"type": "object", "properties": {}})
+
+
+async def test_composed_schemas_cannot_dodge_the_dimension() -> None:
+    # Every shape that declares arguments somewhere other than the top level used to reach
+    # the zero-argument exemption and score 100. None may now beat an honest schema.
+    honest = ToolInfo(
+        name="honest",
+        input_schema={
+            "type": "object",
+            "properties": {"a": {"type": "integer"}},
+            "required": ["a"],
+        },
+    )
+    accepts_everything = _session(lambda n, a: SimpleNamespace(isError=False))
+    honest_dim = await run_robustness_probes(accepts_everything, [honest])
+    assert honest_dim is not None
+    for dodge in (
+        {"type": "object", "allOf": [{"properties": {"q": {"type": "string"}}, "required": ["q"]}]},
+        {
+            "type": "object",
+            "allOf": [{"$ref": "#/$defs/A"}],
+            "$defs": {"A": {"properties": {"q": {"type": "string"}}, "required": ["q"]}},
+        },
+        {"type": "object", "patternProperties": {"^.*$": {"type": "string"}}},
+        {"type": "object", "additionalProperties": {"type": "string"}},
+        {"type": "object", "additionalProperties": True},
+    ):
+        dim = await run_robustness_probes(
+            accepts_everything, [ToolInfo(name="d", input_schema=dodge)]
+        )
+        assert dim is not None, dodge
+        assert dim.score <= honest_dim.score, dodge
+
+
+async def test_open_any_of_branch_is_not_a_false_accusation() -> None:
+    # anyOf containing `{}` accepts everything, so any value we send is VALID. Reporting
+    # the server for "accepting schema-violating input" would be a false claim about its
+    # behaviour — treat it as an unenforceable declaration instead.
+    schema = {"type": "object", "properties": {"q": {"anyOf": [{"type": "string"}, {}]}}}
+    assert malformed_args(schema) is None
+    dim = await run_robustness_probes(
+        _session(lambda n, a: SimpleNamespace(isError=False)),
+        [ToolInfo(name="t", input_schema=schema)],
+    )
+    assert dim is not None
+    assert not any("accepted schema-violating" in f.message for f in dim.findings)
+    assert any("too loose" in f.message for f in dim.findings)
 
 
 async def test_loose_optional_args_are_scored_not_exempted() -> None:

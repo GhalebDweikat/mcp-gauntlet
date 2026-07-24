@@ -9,6 +9,7 @@ we never penalize a server for validating the "wrong" way.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import anyio
@@ -91,8 +92,10 @@ def _violating_value(prop: Any, defs: dict[str, Any], depth: int = 0) -> tuple[b
         branches = prop.get(key)
         if isinstance(branches, list) and branches:
             allowed: set[str] = set()
+            unconstrained = False
             for branch in branches:
                 if not isinstance(branch, dict):
+                    unconstrained = True
                     continue
                 resolved = branch
                 branch_ref = branch.get("$ref")
@@ -106,7 +109,14 @@ def _violating_value(prop: Any, defs: dict[str, Any], depth: int = 0) -> tuple[b
                     allowed.update(t for t in branch_type if isinstance(t, str))
                 elif "enum" in resolved or "const" in resolved:
                     allowed.add("string")  # conservative: assume the literal may be a string
-            return _wrong_for_types(allowed) if allowed else (False, None)
+                else:
+                    unconstrained = True
+            # One unconstrained branch (``{}``) makes the union accept everything, so any
+            # value we sent would be VALID — reporting the server for accepting it would be
+            # a false accusation about its behaviour. Say we can't violate it instead.
+            if unconstrained or not allowed:
+                return False, None
+            return _wrong_for_types(allowed)
 
     prop_type = prop.get("type")
     # ``type`` may be a string OR a list (the ``["string", "null"]`` nullable idiom) — a
@@ -132,15 +142,62 @@ def declares_arg_contract(schema: Any) -> bool:
     return isinstance(schema, dict) and schema.get("type") == "object"
 
 
+def _subschemas(schema: Any, defs: dict[str, Any], depth: int = 0) -> list[dict[str, Any]]:
+    """The schema itself plus any ``allOf`` branches it composes, with local $refs resolved.
+
+    A composed schema declares its arguments one level down, so reading only the top level
+    both under-probes an ordinary ``allOf`` schema and — because an unprobed tool used to be
+    treated as argument-less — handed it an unearned perfect Robustness score.
+    """
+    if not isinstance(schema, dict) or depth > 4:  # depth-bounded: $refs/allOf can be cyclic
+        return []
+    ref = schema.get("$ref")
+    if isinstance(ref, str):
+        return _subschemas(_resolve_ref(ref, defs), defs, depth + 1)
+    out = [schema]
+    all_of = schema.get("allOf")
+    if isinstance(all_of, list):
+        for branch in all_of:
+            out.extend(_subschemas(branch, defs, depth + 1))
+    return out
+
+
+def _key_matching(pattern: str) -> str | None:
+    """A property name satisfying ``pattern``, so patternProperties can be probed."""
+    try:
+        compiled = re.compile(pattern)
+    except re.error:
+        return None
+    for candidate in ("mcp_gauntlet_probe", "a", "x_1", "0", "_"):
+        if compiled.search(candidate):
+            return candidate
+    return None
+
+
+def _arg_surface(schema: dict[str, Any], defs: dict[str, Any]) -> tuple[dict, list, dict, Any]:
+    """The effective (properties, required, patternProperties, additionalProperties)."""
+    props: dict[str, Any] = {}
+    required: list[Any] = []
+    pattern_props: dict[str, Any] = {}
+    extra: Any = None
+    for sub in _subschemas(schema, defs):
+        if isinstance(sub.get("properties"), dict):
+            props.update(sub["properties"])
+        if isinstance(sub.get("required"), list):
+            required.extend(sub["required"])
+        if isinstance(sub.get("patternProperties"), dict):
+            pattern_props.update(sub["patternProperties"])
+        if extra is None and "additionalProperties" in sub:
+            extra = sub["additionalProperties"]
+    return props, required, pattern_props, extra
+
+
 def malformed_args(schema: dict[str, Any]) -> dict[str, Any] | None:
     """Build one schema-violating argument payload, or None if nothing can be violated."""
     if not isinstance(schema, dict) or schema.get("type") != "object":
         return None
-    props = schema.get("properties")
-    props = props if isinstance(props, dict) else {}
-    required = schema.get("required")
-    required = required if isinstance(required, list) else []
     defs = {k: v for k, v in schema.items() if k in ("$defs", "definitions")}
+    props, required, pattern_props, extra = _arg_surface(schema, defs)
 
     # Strongest violation: an invalid value on a required field.
     for name in required:
@@ -163,14 +220,39 @@ def malformed_args(schema: dict[str, Any]) -> dict[str, Any] | None:
         if found:
             return {name: value}
 
+    # Arbitrary-key contracts: a key not named in `properties` is validated against
+    # patternProperties / additionalProperties, so violating one of those is a real probe.
+    for pattern, sub in pattern_props.items():
+        key = _key_matching(pattern) if isinstance(pattern, str) else None
+        if key is None:
+            continue
+        found, value = _violating_value(sub, defs)
+        if found:
+            return {key: value}
+    if isinstance(extra, dict):
+        found, value = _violating_value(extra, defs)
+        if found:
+            return {"mcp_gauntlet_probe": value}
+
     return None
 
 
 def declares_arguments(schema: Any) -> bool:
-    """Whether the tool takes arguments at all (as opposed to being zero-argument)."""
+    """Whether the tool takes arguments at all (as opposed to being zero-argument).
+
+    Looks through ``allOf`` composition and at the arbitrary-key contracts, because the
+    zero-argument exemption is the one path that skips scoring entirely: any shape that
+    declares arguments but is missed here becomes a free perfect score.
+    """
     if not isinstance(schema, dict):
         return False
-    return bool(schema.get("properties")) or bool(schema.get("required"))
+    defs = {k: v for k, v in schema.items() if k in ("$defs", "definitions")}
+    props, required, pattern_props, extra = _arg_surface(schema, defs)
+    if props or required or pattern_props:
+        return True
+    # `additionalProperties: false` is the canonical strict zero-argument tool; anything
+    # else here (a schema, or a bare `true`) admits arguments we were never able to probe.
+    return extra is not None and extra is not False
 
 
 async def run_robustness_probes(

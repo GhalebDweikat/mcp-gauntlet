@@ -1,0 +1,47 @@
+# Example: gate your MCP server's pull requests on its mcp-gauntlet score.
+#
+# Copy this file into YOUR MCP server's repository as
+# `.github/workflows/gauntlet.yml`, then change the `run:` command below to
+# launch your server. The build fails when the score drops below --fail-under.
+name: mcp-gauntlet
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  gauntlet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      # Static + robustness checks — no API key required. Replace the server
+      # command with however your server launches (e.g. "python -m your_server",
+      # "node dist/index.js", "npx -y your-package").
+      - name: Run the gauntlet
+        run: >
+          uvx mcp-gauntlet run "npx -y @modelcontextprotocol/server-everything"
+          --no-agentic --fail-under 60 --out gauntlet-report
+
+      # ── Optional: the full agentic evaluation ────────────────────────────────
+      # Add a repository secret with an LLM key (a free Groq key works:
+      # https://console.groq.com/keys), then use this step instead of the one
+      # above — drop --no-agentic so a live agent attempts real tasks:
+      #
+      #   - name: Run the gauntlet (with agent)
+      #     env:
+      #       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      #     run: >
+      #       uvx mcp-gauntlet run "npx -y your-package"
+      #       --fail-under 70 --repeats 3 --out gauntlet-report
+
+      - name: Upload report
+        if: always() # keep the report even when the gate fails
+        uses: actions/upload-artifact@v4
+        with:
+          name: gauntlet-report
+          path: gauntlet-report/

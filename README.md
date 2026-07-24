@@ -98,6 +98,22 @@ Add `--no-probe` for a pure inspection that never executes any of the server's
 tools. The leaderboard behaves the same way — with no key it ranks servers on the
 static + robustness checks alone.
 
+## Use it in CI
+
+Gate your MCP server's pull requests on its gauntlet score. Copy
+[`examples/gauntlet-ci.yml`](examples/gauntlet-ci.yml) into your server's repo as
+`.github/workflows/gauntlet.yml`, point it at your server, and the build fails
+when the score drops below your threshold:
+
+```yaml
+- name: Run the gauntlet
+  run: uvx mcp-gauntlet run "python -m your_server" --no-agentic --fail-under 70
+```
+
+The static + robustness checks need no API key. To include the live agent
+evaluation, add an LLM key (e.g. `GROQ_API_KEY`) as a repository secret and drop
+`--no-agentic`. The report is uploaded as a build artifact.
+
 ## License
 
 MIT © Ghaleb Dweikat

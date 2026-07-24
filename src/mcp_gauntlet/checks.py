@@ -400,15 +400,28 @@ def _check_tool_security(tool: ToolInfo) -> list[Finding]:
     return findings
 
 
-def check_security(tools: list[ToolInfo]) -> DimensionResult:
-    return _dimension(
-        "security",
-        "Security Signals",
-        "Static scan of tool and parameter descriptions for tool-poisoning / prompt-injection "
-        "markers and hidden characters (Invariant Labs / OWASP MCP threat model).",
-        tools,
-        _check_tool_security,
+def check_security(tools: list[ToolInfo], instructions: str | None = None) -> DimensionResult:
+    all_findings: list[Finding] = []
+    scores: list[float] = []
+    for tool in tools:
+        tool_findings = _check_tool_security(tool)
+        all_findings.extend(tool_findings)
+        scores.append(score_from_findings(tool_findings))
+    # The server's own init "instructions" are server-authored (not passthrough), so
+    # injection there is genuine tool-poisoning and counts like a poisoned description.
+    if instructions:
+        server_findings = _scan_text(instructions, None, "server instructions")
+        all_findings.extend(server_findings)
+        scores.append(score_from_findings(server_findings))
+    return DimensionResult(
+        key="security",
+        title="Security Signals",
         weight=2.0,
+        score=_mean_or_full(scores),
+        summary="Static scan of the server's init instructions plus tool and parameter "
+        "descriptions for tool-poisoning / prompt-injection markers and hidden characters "
+        "(Invariant Labs / OWASP MCP threat model).",
+        findings=all_findings,
     )
 
 
@@ -455,5 +468,5 @@ def run_static_checks(discovery: DiscoveryResult) -> list[DimensionResult]:
     return [
         check_schema_health(tools),
         check_description_quality(tools),
-        check_security(tools),
+        check_security(tools, discovery.server.instructions),
     ]

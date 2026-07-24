@@ -20,6 +20,9 @@ class ToolInfo(BaseModel):
 class ServerInfo(BaseModel):
     name: str | None = None
     version: str | None = None
+    # The server's init "instructions" string — fed to the model as system context by many
+    # clients, so it's a server-authored prompt-injection surface (scanned in checks).
+    instructions: str | None = None
 
 
 class DiscoveryResult(BaseModel):

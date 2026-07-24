@@ -46,6 +46,18 @@ def _slug(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "server"
 
 
+def _unique_slug(name: str, used: set[str]) -> str:
+    """A slug that won't collide with one already written (two names can slug the same)."""
+    base = _slug(name)
+    slug = base
+    suffix = 2
+    while slug in used:
+        slug = f"{base}-{suffix}"
+        suffix += 1
+    used.add(slug)
+    return slug
+
+
 def _dim_score(report: GauntletReport, key: str) -> float | None:
     for dim in report.dimensions:
         if dim.key == key:
@@ -68,6 +80,7 @@ async def run_leaderboard(
     servers_dir.mkdir(parents=True, exist_ok=True)
 
     results: list[LeaderboardResult] = []
+    used_slugs: set[str] = set()
     for entry in entries:
         log(f"[leaderboard] evaluating {entry.name} ...")
         report: GauntletReport | None = None
@@ -88,7 +101,7 @@ async def run_leaderboard(
 
         result = LeaderboardResult(name=entry.name, spec=entry.spec, report=report, error=error)
         if report is not None:
-            page = servers_dir / f"{_slug(entry.name)}.html"
+            page = servers_dir / f"{_unique_slug(entry.name, used_slugs)}.html"
             page.write_text(to_html(report), encoding="utf-8")
             result.page = f"servers/{page.name}"
             log(f"  -> {report.grade} ({report.overall_score:.1f})")

@@ -110,6 +110,7 @@ async def discover_in_session(session: ClientSession, init: InitializeResult) ->
     server = ServerInfo(
         name=getattr(init.serverInfo, "name", None),
         version=getattr(init.serverInfo, "version", None),
+        instructions=getattr(init, "instructions", None),
     )
     return DiscoveryResult(server=server, tools=tools)
 

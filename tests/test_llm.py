@@ -48,3 +48,11 @@ def test_missing_key_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     _clear(monkeypatch)
     with pytest.raises(LLMConfigError):
         LLMConfig.from_env("groq")
+
+
+def test_base_url_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    # --base-url (README's "any OpenAI-compatible endpoint") overrides the provider default.
+    _clear(monkeypatch)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-x")
+    config = LLMConfig.from_env("openai", base_url="https://vllm.internal/v1")
+    assert config.base_url == "https://vllm.internal/v1"

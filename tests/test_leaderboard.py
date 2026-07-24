@@ -1,7 +1,7 @@
 """Leaderboard rendering: N/A (zero-tool) servers are listed unranked, not mis-sorted."""
 
 from mcp_gauntlet.checks import run_static_checks
-from mcp_gauntlet.leaderboard import LeaderboardResult, render_index
+from mcp_gauntlet.leaderboard import LeaderboardResult, _unique_slug, render_index
 from mcp_gauntlet.models import DiscoveryResult, ServerInfo, ToolInfo
 from mcp_gauntlet.report import DimensionResult, Finding, GauntletReport, Severity
 
@@ -14,6 +14,13 @@ def _report(name: str, tools: list[ToolInfo]) -> GauntletReport:
         tool_count=len(tools),
         dimensions=run_static_checks(discovery),
     )
+
+
+def test_unique_slug_dedupes_collisions() -> None:
+    used: set[str] = set()
+    assert _unique_slug("My Server", used) == "my-server"
+    assert _unique_slug("my  server", used) == "my-server-2"  # slugs the same -> suffixed
+    assert _unique_slug("MY SERVER!", used) == "my-server-3"
 
 
 def test_na_server_listed_unranked_not_in_score_table() -> None:

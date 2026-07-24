@@ -21,10 +21,12 @@ jobs:
 
       # Static + robustness checks — no API key required. Replace the server
       # command with however your server launches (e.g. "python -m your_server",
-      # "node dist/index.js", "npx -y your-package").
+      # "node dist/index.js", "npx -y your-package"). The gauntlet version is pinned
+      # (mcp-gauntlet@x.y.z) so a new release can't silently change your gate — bump it
+      # deliberately.
       - name: Run the gauntlet
         run: >
-          uvx mcp-gauntlet run "npx -y @modelcontextprotocol/server-everything"
+          uvx mcp-gauntlet@0.1.0 run "npx -y @modelcontextprotocol/server-everything"
           --no-agentic --fail-under 60 --out gauntlet-report
 
       # ── Optional: the full agentic evaluation ────────────────────────────────
@@ -36,7 +38,7 @@ jobs:
       #     env:
       #       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       #     run: >
-      #       uvx mcp-gauntlet run "npx -y your-package"
+      #       uvx mcp-gauntlet@0.1.0 run "npx -y your-package"
       #       --fail-under 70 --repeats 3 --out gauntlet-report
 
       - name: Upload report

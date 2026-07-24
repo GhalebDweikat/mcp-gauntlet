@@ -38,7 +38,10 @@ def load_tasks(path: Path) -> list[EvalTask] | None:
         return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        return [EvalTask(**item) for item in data.get("tasks", [])]
+        if not isinstance(data, dict):  # a valid-JSON-but-not-object cache (e.g. [1,2,3])
+            return None
+        items = data.get("tasks", [])
+        return [EvalTask(**item) for item in items if isinstance(item, dict)]
     except (json.JSONDecodeError, TypeError, ValueError):
         return None
 

@@ -8,15 +8,17 @@ from pathlib import Path
 import anyio
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
 from mcp_gauntlet.config import ServerSpec
 from mcp_gauntlet.engine import evaluate_server
 from mcp_gauntlet.env import load_env
+from mcp_gauntlet.htmlreport import to_html
 from mcp_gauntlet.leaderboard import load_servers, run_leaderboard
 from mcp_gauntlet.llm import LLMConfig, LLMConfigError, list_models
-from mcp_gauntlet.report import GauntletReport, Severity, sort_findings, write_report
+from mcp_gauntlet.report import GauntletReport, Severity, sort_findings, to_markdown
 
 app = typer.Typer(
     add_completion=False,
@@ -77,12 +79,29 @@ def doctor(
         )
 
 
+def write_report(report: GauntletReport, out_dir: Path) -> tuple[Path, Path, Path]:
+    """Persist the report as JSON + Markdown + HTML.
+
+    Lives next to the CLI (its only caller) so ``report.py`` needn't import the HTML
+    renderer — that report<->htmlreport import cycle is what previously forced a lazy
+    in-function import. Here the composition happens at the top level, cycle-free.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    json_path = out_dir / "report.json"
+    md_path = out_dir / "report.md"
+    html_path = out_dir / "report.html"
+    json_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+    md_path.write_text(to_markdown(report), encoding="utf-8")
+    html_path.write_text(to_html(report), encoding="utf-8")
+    return json_path, md_path, html_path
+
+
 def _render_report(report: GauntletReport) -> None:
     color = _GRADE_COLOR.get(report.grade, "white")
     console.print(
         Panel.fit(
             f"[bold {color}]{report.grade}[/]   [bold]{report.overall_score:.1f}[/]/100",
-            title=f"{report.server.name or 'server'} — gauntlet score",
+            title=f"{escape(report.server.name or 'server')} — gauntlet score",
         )
     )
     if report.security_critical:
@@ -96,25 +115,32 @@ def _render_report(report: GauntletReport) -> None:
         table.add_row(dimension.title, f"{dimension.score:.1f}", f"{dimension.weight:g}")
     console.print(table)
 
-    if report.agentic and report.agentic.results:
+    # Show when there are results OR the whole eval was inconclusive (task generation
+    # failed → empty results): an inconclusive run must never render as a clean skip.
+    if report.agentic and (report.agentic.results or report.agentic.inconclusive):
         detail = report.agentic
-        tasks_table = Table(title=f"Agent task results ({detail.provider}:{detail.model})")
-        tasks_table.add_column("Task", style="cyan", max_width=58)
-        tasks_table.add_column("Pass", justify="right")
-        tasks_table.add_column("Score", justify="right")
-        tasks_table.add_column("Tools", justify="right")
-        for result in detail.results:
-            if result.inconclusive:
-                tasks_table.add_row(result.description[:58], "—", "[dim]incon.[/dim]", "—")
-                continue
-            sel = f"{result.selection_score:.0f}" if result.selection_score is not None else "—"
-            tasks_table.add_row(
-                result.description[:58],
-                f"{result.successes}/{result.repeats}",
-                f"{result.mean_score:.0f}",
-                sel,
+        if detail.results:
+            tasks_table = Table(
+                title=f"Agent task results ({escape(detail.provider)}:{escape(detail.model)})"
             )
-        console.print(tasks_table)
+            tasks_table.add_column("Task", style="cyan", max_width=58)
+            tasks_table.add_column("Pass", justify="right")
+            tasks_table.add_column("Score", justify="right")
+            tasks_table.add_column("Tools", justify="right")
+            for result in detail.results:
+                if result.inconclusive:
+                    tasks_table.add_row(
+                        escape(result.description[:58]), "—", "[dim]incon.[/dim]", "—"
+                    )
+                    continue
+                sel = f"{result.selection_score:.0f}" if result.selection_score is not None else "—"
+                tasks_table.add_row(
+                    escape(result.description[:58]),
+                    f"{result.successes}/{result.repeats}",
+                    f"{result.mean_score:.0f}",
+                    sel,
+                )
+            console.print(tasks_table)
         if detail.inconclusive:
             console.print(
                 "[yellow]⚠ Agent evaluation inconclusive — the LLM backend errored "
@@ -129,7 +155,7 @@ def _render_report(report: GauntletReport) -> None:
         for finding in notable[:15]:
             tag = f"[{_SEVERITY_COLOR[finding.severity]}]{finding.severity.upper():<6}[/]"
             scope = finding.tool or "server"
-            console.print(f"  {tag} [cyan]{scope}[/]: {finding.message}")
+            console.print(f"  {tag} [cyan]{escape(scope)}[/]: {escape(finding.message)}")
         if len(notable) > 15:
             console.print(f"  [dim]… and {len(notable) - 15} more (see report.md)[/dim]")
     else:
@@ -231,10 +257,18 @@ def run(
         console.print(f"[red]Evaluation failed:[/red] {exc}")
         raise typer.Exit(code=1) from exc
 
-    console.print()
-    _render_report(report)
-
+    # Persist BEFORE rendering: a console-rendering glitch (unencodable glyph on a legacy
+    # code page, stray markup from a hostile server name) must never discard the report of
+    # a run the user just paid for. Rendering is best-effort on top of a written artifact.
     json_path, md_path, html_path = write_report(report, out)
+
+    console.print()
+    try:
+        _render_report(report)
+    except Exception as exc:  # noqa: BLE001 - the report is already on disk; don't crash on it
+        console.print(
+            f"[yellow]Could not render the summary to console:[/yellow] {escape(str(exc))}"
+        )
     console.print(f"\n[dim]Reports written:[/dim] {json_path} | {md_path} | {html_path}")
 
     if fail_under is not None and report.overall_score < fail_under:

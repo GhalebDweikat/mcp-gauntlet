@@ -37,6 +37,47 @@ def test_none_when_nothing_to_violate() -> None:
     assert malformed_args({"type": "string"}) is None
 
 
+def test_wrong_type_on_nullable_type_array() -> None:
+    # zod-to-json-schema and many servers emit ["string", "null"] for a nullable field.
+    # A list type is unhashable, so the old `prop_type in _WRONG` membership test raised
+    # TypeError and crashed the whole probe run; we must pick the violatable branch.
+    schema = {
+        "type": "object",
+        "properties": {"a": {"type": ["string", "null"]}},
+        "required": ["a"],
+    }
+    payload = malformed_args(schema)
+    assert payload is not None
+    assert not isinstance(payload["a"], str)
+
+
+def test_nullable_type_array_with_only_null_is_unviolatable() -> None:
+    # ["null"] has no concrete type to wrong-type; skip it rather than crash.
+    assert malformed_args({"type": "object", "properties": {"a": {"type": ["null"]}}}) is None
+
+
+def test_required_with_non_string_entry_does_not_crash() -> None:
+    # `required` is server data and may hold non-strings (unhashable dict/list) that would
+    # crash props.get(name). Skip them and fall back to omitting required fields.
+    schema = {
+        "type": "object",
+        "required": [{"x": 1}, ["a"]],
+        "properties": {"a": {"type": "string"}},
+    }
+    assert malformed_args(schema) == {}  # no crash; omit-required violation
+
+
+def test_required_mixes_junk_and_a_valid_string_name() -> None:
+    schema = {
+        "type": "object",
+        "required": [{"bad": 1}, "a"],
+        "properties": {"a": {"type": "integer"}},
+    }
+    payload = malformed_args(schema)
+    assert payload is not None
+    assert "a" in payload and not isinstance(payload["a"], int)
+
+
 # --- run_robustness_probes classification (mocked session) ------------------
 
 

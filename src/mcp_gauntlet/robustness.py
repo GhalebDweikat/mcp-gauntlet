@@ -29,6 +29,25 @@ _WRONG: dict[str, Any] = {
 }
 
 
+def _violatable_type(prop: Any) -> str | None:
+    """The JSON Schema type of ``prop`` we can violate, or None.
+
+    ``type`` may be a string OR a list (the ``["string", "null"]`` nullable idiom that
+    zod-to-json-schema and many servers emit) — a list is unhashable, so guarding the
+    dict-membership test is what keeps this from crashing the whole probe run.
+    """
+    if not isinstance(prop, dict):
+        return None
+    prop_type = prop.get("type")
+    if isinstance(prop_type, str):
+        return prop_type if prop_type in _WRONG else None
+    if isinstance(prop_type, list):
+        for item in prop_type:
+            if isinstance(item, str) and item != "null" and item in _WRONG:
+                return item
+    return None
+
+
 def malformed_args(schema: dict[str, Any]) -> dict[str, Any] | None:
     """Build one schema-violating argument payload, or None if nothing can be violated."""
     if not isinstance(schema, dict) or schema.get("type") != "object":
@@ -40,9 +59,13 @@ def malformed_args(schema: dict[str, Any]) -> dict[str, Any] | None:
 
     # Strongest violation: a wrong-typed value on a required, typed field.
     for name in required:
-        prop = props.get(name)
-        prop_type = prop.get("type") if isinstance(prop, dict) else None
-        if prop_type in _WRONG:
+        if not isinstance(name, str):
+            # ``required`` is server data and may hold non-strings; a dict/list entry is
+            # unhashable and would crash props.get(name). A non-string can't name a real
+            # JSON property anyway, so skip it.
+            continue
+        prop_type = _violatable_type(props.get(name))
+        if prop_type is not None:
             return {name: _WRONG[prop_type]}
 
     # Otherwise: omit all required fields.
@@ -51,8 +74,9 @@ def malformed_args(schema: dict[str, Any]) -> dict[str, Any] | None:
 
     # No required fields: wrong-type the first typed property.
     for name, prop in props.items():
-        if isinstance(prop, dict) and prop.get("type") in _WRONG:
-            return {name: _WRONG[prop["type"]]}
+        prop_type = _violatable_type(prop)
+        if prop_type is not None:
+            return {name: _WRONG[prop_type]}
 
     return None
 

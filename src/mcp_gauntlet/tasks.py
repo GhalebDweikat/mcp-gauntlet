@@ -46,7 +46,9 @@ def _tools_blurb(tools: list[ToolInfo]) -> str:
     for tool in tools:
         props: dict[str, Any] = {}
         if isinstance(tool.input_schema, dict):
-            props = tool.input_schema.get("properties") or {}
+            raw_props = tool.input_schema.get("properties")
+            if isinstance(raw_props, dict):  # `or {}` wouldn't catch a truthy non-dict (a list)
+                props = raw_props
         params = ", ".join(props.keys())
         desc = (tool.description or "").strip().replace("\n", " ")[:200]
         lines.append(f"- {tool.name}({params}): {desc}")
@@ -57,24 +59,35 @@ async def generate_tasks(
     client: AsyncOpenAI, model: str, tools: list[ToolInfo], n_tasks: int
 ) -> list[EvalTask]:
     prompt = _PROMPT.format(n=n_tasks, tools=_tools_blurb(tools))
-    completion = await client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0,
-        response_format={"type": "json_object"},
-    )
+    try:
+        completion = await client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            response_format={"type": "json_object"},
+        )
+    except Exception:  # noqa: BLE001 - a task-gen rate-limit/transport failure degrades to
+        return []  # no tasks (→ inconclusive agentic eval); it must not crash the whole run
+    if not completion.choices:
+        return []
     content = completion.choices[0].message.content or "{}"
     try:
         data = json.loads(content)
     except json.JSONDecodeError:
         return []
+    if not isinstance(data, dict):  # model returned a top-level array/scalar, not an object
+        return []
 
     valid_names = {tool.name for tool in tools}
     tasks: list[EvalTask] = []
-    for raw in (data.get("tasks") or [])[:n_tasks]:
+    raw_tasks = data.get("tasks")  # the model may emit a dict/scalar here, not a list
+    for raw in (raw_tasks if isinstance(raw_tasks, list) else [])[:n_tasks]:
         if not isinstance(raw, dict):
             continue
-        expected = [n for n in raw.get("expected_tools", []) if n in valid_names]
+        raw_expected = raw.get("expected_tools")  # may be null/scalar, not a list
+        expected = [
+            n for n in (raw_expected if isinstance(raw_expected, list) else []) if n in valid_names
+        ]
         try:
             tasks.append(
                 EvalTask(

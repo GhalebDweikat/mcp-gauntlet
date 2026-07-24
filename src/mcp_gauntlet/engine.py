@@ -44,10 +44,11 @@ async def _resolve_tasks(
     path = tasks_file or cache_file(cache_dir, server_key(discovery.server, tools))
     if not refresh_tasks:
         cached = load_tasks(path)
-        if cached is not None:
+        if cached:  # non-empty hit; an empty/failed set is a miss, not a cached "no tasks"
             return cached
     tasks = await generate_tasks(client, model, tools, n_tasks)
-    save_tasks(path, tasks)
+    if tasks:  # never cache a failed (empty) generation — that would reproduce the failure
+        save_tasks(path, tasks)
     return tasks
 
 

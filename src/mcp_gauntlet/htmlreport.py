@@ -106,37 +106,41 @@ def _body(report: GauntletReport) -> str:
         p.append("</div>")
 
     agentic = report.agentic
-    if agentic and agentic.results:
+    # Show the section when there are results OR when the whole eval was inconclusive —
+    # an inconclusive run with no results (task generation failed) must still surface, not
+    # vanish and read as a clean static-only report.
+    if agentic and (agentic.results or agentic.inconclusive):
         p.append("<h2>Agent evaluation</h2>")
         if agentic.inconclusive:
             p.append(
                 '<div class="banner">⚠ Inconclusive — the LLM backend errored (e.g. rate '
-                "limit) on every run; the grade reflects the static checks only.</div>"
+                "limit); the grade reflects the static checks only.</div>"
             )
         p.append(
             f'<div class="muted" style="margin-bottom:12px">{agentic.tasks_generated} tasks × '
             f'{agentic.repeats} repeat(s) &nbsp;<span class="chip">'
             f"{_esc(agentic.provider)}:{_esc(agentic.model)}</span></div>"
         )
-        p.append(
-            '<table><thead><tr><th>Task</th><th class="num">Pass</th>'
-            '<th class="num">Score</th><th class="num">Tools</th></tr></thead><tbody>'
-        )
-        for r in agentic.results:
-            if r.inconclusive:
+        if agentic.results:
+            p.append(
+                '<table><thead><tr><th>Task</th><th class="num">Pass</th>'
+                '<th class="num">Score</th><th class="num">Tools</th></tr></thead><tbody>'
+            )
+            for r in agentic.results:
+                if r.inconclusive:
+                    p.append(
+                        f"<tr><td>{_esc(r.description[:120])}</td>"
+                        '<td class="num">—</td><td class="num muted">inconclusive</td>'
+                        '<td class="num">—</td></tr>'
+                    )
+                    continue
+                sel = f"{r.selection_score:.0f}" if r.selection_score is not None else "—"
                 p.append(
                     f"<tr><td>{_esc(r.description[:120])}</td>"
-                    '<td class="num">—</td><td class="num muted">inconclusive</td>'
-                    '<td class="num">—</td></tr>'
+                    f'<td class="num">{r.successes}/{r.repeats}</td>'
+                    f'<td class="num">{r.mean_score:.0f}</td><td class="num">{sel}</td></tr>'
                 )
-                continue
-            sel = f"{r.selection_score:.0f}" if r.selection_score is not None else "—"
-            p.append(
-                f"<tr><td>{_esc(r.description[:120])}</td>"
-                f'<td class="num">{r.successes}/{r.repeats}</td>'
-                f'<td class="num">{r.mean_score:.0f}</td><td class="num">{sel}</td></tr>'
-            )
-        p.append("</tbody></table>")
+            p.append("</tbody></table>")
         if agentic.excluded_write_tools:
             excluded = _esc(", ".join(agentic.excluded_write_tools))
             p.append(

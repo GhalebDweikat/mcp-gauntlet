@@ -44,6 +44,9 @@ async def run_agentic_eval(
         excluded_write_tools=excluded_write_tools,
     )
     if not tasks:
+        # No tasks means generation failed (rate limit / bad output), not that the server
+        # has nothing to test — mark it inconclusive so it reads as "couldn't run", not "0/0".
+        detail.inconclusive = True
         return [], detail
 
     success_findings: list[Finding] = []

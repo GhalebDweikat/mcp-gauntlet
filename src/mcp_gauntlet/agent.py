@@ -112,6 +112,12 @@ async def run_agent_task(
             trace.prompt_tokens += completion.usage.prompt_tokens or 0
             trace.completion_tokens += completion.usage.completion_tokens or 0
 
+        # Providers/proxies do return an empty choices list (content filter, upstream
+        # error body) — treat it as an errored (inconclusive) run, not an IndexError crash.
+        if not completion.choices:
+            trace.stop_reason = "error"
+            trace.error = "llm returned no choices"
+            return trace
         message = completion.choices[0].message
         # Echo the full assistant message back into history, preserving provider-specific
         # extras (e.g. Gemini's thought_signature on tool calls) that some models require

@@ -203,6 +203,21 @@ async def test_hallucinated_tool_is_agent_error_not_server() -> None:
     assert not trace.had_tool_error  # agent error, not a server-reliability signal
 
 
+async def test_agent_empty_choices_is_errored_not_crash() -> None:
+    # Providers/proxies do return an empty choices list (content filter, upstream error
+    # body). It must end the run as errored, never IndexError on choices[0].
+    empty = SimpleNamespace(choices=[], usage=None)
+    trace = await run_agent_task(
+        session=_session(lambda n, a: _tool_result("x")),
+        bridge=build_tool_bridge([_ADD]),
+        client=_client([empty]),
+        model="m",
+        task="add",
+    )
+    assert trace.stop_reason == "error"
+    assert trace.error is not None
+
+
 async def test_agent_loop_max_turns() -> None:
     loop_tool = ToolInfo(name="loop", input_schema={"type": "object", "properties": {}})
     bridge = build_tool_bridge([loop_tool])
@@ -227,6 +242,27 @@ async def test_judge_parses_verdict() -> None:
     )
     assert verdict.success
     assert verdict.score == 88
+
+
+async def test_judge_rejects_nan_score() -> None:
+    # json.loads accepts NaN/Infinity; an unvalidated score poisons the sort, the mean,
+    # and --fail-under. A non-finite score must be treated as an errored verdict.
+    client = _client([], judge_verdict={"success": True, "score": float("nan"), "reasoning": "x"})
+    verdict = await judge_task(
+        client, "m", EvalTask(description="d", rubric="r"), AgentTrace(task="d")
+    )
+    assert verdict.errored is True
+    assert verdict.success is False
+
+
+async def test_judge_rejects_non_bool_success() -> None:
+    # bool("false") is True — coercing a string success field would silently flip a
+    # failure into a pass, so a non-bool success is an errored verdict, not a success.
+    client = _client([], judge_verdict={"success": "false", "score": 0, "reasoning": "x"})
+    verdict = await judge_task(
+        client, "m", EvalTask(description="d", rubric="r"), AgentTrace(task="d")
+    )
+    assert verdict.errored is True
 
 
 def test_judge_prompt_frames_transcript_as_untrusted() -> None:
@@ -411,6 +447,24 @@ async def test_inconclusive_when_agent_llm_errors() -> None:
     assert detail.inconclusive is True
     assert detail.results[0].inconclusive is True
     assert not any(d.key == "task_success" for d in dims)  # never blame the server
+
+
+async def test_agentic_eval_no_tasks_is_inconclusive() -> None:
+    # Task generation can fail (rate limit -> zero tasks). The eval must report the whole
+    # agentic dimension inconclusive, not silently emit a clean 0/0 with no dimensions.
+    dims, detail = await run_agentic_eval(
+        session=_session(lambda n, a: _tool_result("x")),
+        tools=[_ADD],
+        client=_client([]),
+        model="m",
+        provider="test",
+        tasks=[],
+        repeats=1,
+        max_turns=4,
+        excluded_write_tools=[],
+    )
+    assert detail.inconclusive is True
+    assert dims == []
 
 
 async def test_inconclusive_when_judge_errors_keeps_reliability() -> None:

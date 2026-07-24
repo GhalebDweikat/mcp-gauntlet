@@ -25,6 +25,7 @@ the task rubric rather than trusting tool output as ground truth.
 from __future__ import annotations
 
 import json
+import math
 from typing import Any
 
 from openai import AsyncOpenAI
@@ -145,9 +146,15 @@ async def judge_task(client: AsyncOpenAI, model: str, task: EvalTask, trace: Age
             response_format={"type": "json_object"},
         )
         data = json.loads(completion.choices[0].message.content or "{}")
+        success = data.get("success")
+        score = float(data.get("score", 0.0))
+        # Validate rather than trust: json accepts NaN/Infinity (→ broken grade + sort +
+        # fail-under), and bool("false") is True (a sloppy model output flips fail→pass).
+        if not isinstance(success, bool) or not math.isfinite(score):
+            return Verdict(errored=True, reasoning="judge returned a malformed verdict")
         return Verdict(
-            success=bool(data.get("success", False)),
-            score=float(data.get("score", 0.0)),
+            success=success,
+            score=min(100.0, max(0.0, score)),
             reasoning=str(data.get("reasoning", "")),
         )
     except (json.JSONDecodeError, ValueError, TypeError) as exc:

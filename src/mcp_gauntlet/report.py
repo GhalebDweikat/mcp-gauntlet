@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from pathlib import Path
 
 from pydantic import BaseModel, Field
 
@@ -231,8 +230,8 @@ def to_markdown(report: GauntletReport) -> str:
         lines.append("")
         if agentic.inconclusive:
             lines.append(
-                "> ⚠️ **Inconclusive** — the LLM backend errored (e.g. rate limit) on every "
-                "run; the overall grade reflects the static checks only."
+                "> ⚠️ **Inconclusive** — the LLM backend errored (e.g. rate limit); "
+                "the overall grade reflects the static checks only."
             )
             lines.append("")
         lines.append(f"- **Model:** {agentic.provider}:{agentic.model}")
@@ -240,36 +239,24 @@ def to_markdown(report: GauntletReport) -> str:
         if agentic.excluded_write_tools:
             excluded = ", ".join(agentic.excluded_write_tools)
             lines.append(f"- **Excluded (possibly-mutating) tools:** {excluded}")
-        lines.extend(
-            [
-                "",
-                "| Task | Pass rate | Mean score | Tool selection |",
-                "|------|----------:|-----------:|---------------:|",
-            ]
-        )
-        for result in agentic.results:
-            task_label = result.description.replace("\n", " ")[:70]
-            if result.inconclusive:
-                lines.append(f"| {task_label} | — | inconclusive | — |")
-                continue
-            sel = f"{result.selection_score:.0f}" if result.selection_score is not None else "—"
-            lines.append(
-                f"| {task_label} | {result.successes}/{result.repeats} | "
-                f"{result.mean_score:.0f} | {sel} |"
+        if agentic.results:
+            lines.extend(
+                [
+                    "",
+                    "| Task | Pass rate | Mean score | Tool selection |",
+                    "|------|----------:|-----------:|---------------:|",
+                ]
             )
+            for result in agentic.results:
+                task_label = result.description.replace("\n", " ")[:70]
+                if result.inconclusive:
+                    lines.append(f"| {task_label} | — | inconclusive | — |")
+                    continue
+                sel = f"{result.selection_score:.0f}" if result.selection_score is not None else "—"
+                lines.append(
+                    f"| {task_label} | {result.successes}/{result.repeats} | "
+                    f"{result.mean_score:.0f} | {sel} |"
+                )
         lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"
-
-
-def write_report(report: GauntletReport, out_dir: Path) -> tuple[Path, Path, Path]:
-    from mcp_gauntlet.htmlreport import to_html  # lazy: htmlreport imports this module
-
-    out_dir.mkdir(parents=True, exist_ok=True)
-    json_path = out_dir / "report.json"
-    md_path = out_dir / "report.md"
-    html_path = out_dir / "report.html"
-    json_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
-    md_path.write_text(to_markdown(report), encoding="utf-8")
-    html_path.write_text(to_html(report), encoding="utf-8")
-    return json_path, md_path, html_path

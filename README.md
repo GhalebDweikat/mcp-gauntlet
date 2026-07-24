@@ -28,9 +28,9 @@ Each run produces a graded report card (JSON + Markdown) across:
 
 - **Schema Health** — valid JSON schemas, typed and described parameters.
 - **Description Quality** — can an agent tell when and how to use each tool?
-- **Security Signals** — a *static* scan of tool and parameter descriptions for
-  tool-poisoning / prompt-injection markers and hidden characters; a critical
-  finding caps the overall grade.
+- **Security Signals** — a *static* scan of the server's init instructions and its
+  tool / parameter descriptions for tool-poisoning / prompt-injection markers and
+  hidden characters; a critical finding caps the overall grade.
 - **Agent Task Success** — a live LLM agent attempts generated tasks using only
   the server's tools; LLM-judged and repeated for a success rate.
 - **Tool-Selection Accuracy** — did the agent call the tools it was expected to?
@@ -81,6 +81,10 @@ uv run mcp-gauntlet run "python -m mcp_gauntlet.fixtures.bad_server"   # capped 
 uv run mcp-gauntlet run "python -m mcp_gauntlet.fixtures.good_server"  # A
 ```
 
+With an LLM key, the bad fixture also trips **Response Safety**: its `status_report`
+tool has a clean description but poisons its *output*, so only the runtime scan
+catches it — the static description scan can't.
+
 ## Configuration
 
 Configure via a `.env` file (copy [`.env.example`](.env.example) and fill it in)
@@ -92,9 +96,12 @@ or real environment variables:
 | `MCP_GAUNTLET_PROVIDER` | Which provider: `groq` (default), `gemini`, `openai`, `openrouter`, or `ollama` (local). |
 | `MCP_GAUNTLET_MODEL` | Model override for that provider (e.g. `gemini-flash-latest`). Defaults to a sensible per-provider model. |
 
-The `--provider` / `--model` CLI flags override these. The backend is any
-OpenAI-compatible endpoint, so the same setup covers cloud providers and a local
-Ollama / vLLM.
+The `--provider` / `--model` CLI flags override these, and `--base-url` points at
+any OpenAI-compatible endpoint — a local Ollama / vLLM / LM Studio or a gateway:
+
+```bash
+uv run mcp-gauntlet run "npx -y @scope/pkg" --base-url http://localhost:11434/v1 --model llama3.1
+```
 
 ### No API key? Static mode
 

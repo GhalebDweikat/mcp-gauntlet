@@ -412,6 +412,41 @@ def check_security(tools: list[ToolInfo]) -> DimensionResult:
     )
 
 
+def scan_runtime_outputs(outputs: list[tuple[str, str]]) -> DimensionResult | None:
+    """Scan the server's live tool OUTPUTS (``(tool_name, text)``) for the same
+    injection / poisoning markers as the static description scan — a server can pass a
+    description scan yet return poisoned content at call time, and this catches it.
+
+    Returns None if there were no outputs to scan. Reported at the found severities but
+    deliberately keyed ``response_safety`` (NOT ``security``), so it lowers the score but
+    does NOT trigger the grade cap: markers in an *output* may be the server poisoning its
+    responses OR untrusted content it faithfully passed through (a filesystem/fetch server
+    reading a poisoned file), so a human — not the auto-cap — should judge intent.
+    """
+    if not outputs:
+        return None
+    findings: list[Finding] = []
+    seen: set[tuple[str | None, Severity, str]] = set()
+    for tool, text in outputs:
+        for finding in _scan_text(text, tool, "tool output"):
+            key = (finding.tool, finding.severity, finding.message)
+            if key not in seen:
+                seen.add(key)
+                findings.append(finding)
+    return DimensionResult(
+        key="response_safety",
+        title="Response Safety (runtime)",
+        weight=1.0,
+        score=score_from_findings(findings),
+        summary="Dynamic scan of the server's live tool outputs for prompt-injection / "
+        "poisoning markers and hidden characters. Markers here may be the server poisoning "
+        "its responses, or untrusted content it passed through — either exposes the agent. "
+        "Reported (and it lowers the score) but does not cap the grade on its own. Reflects "
+        "the outputs the generated tasks happened to elicit, so it can vary run to run.",
+        findings=findings,
+    )
+
+
 # ------------------------------------------------------------------ orchestrator
 
 

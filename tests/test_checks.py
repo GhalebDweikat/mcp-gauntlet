@@ -5,7 +5,7 @@ from mcp_gauntlet.checks import (
     run_static_checks,
 )
 from mcp_gauntlet.models import DiscoveryResult, ServerInfo, ToolInfo
-from mcp_gauntlet.report import GauntletReport, Severity
+from mcp_gauntlet.report import DimensionResult, Finding, GauntletReport, Severity
 
 
 def _good_tool() -> ToolInfo:
@@ -41,6 +41,25 @@ def test_zero_tool_server_is_na_not_a() -> None:
     assert report.grade == "N/A"
     assert report.overall_score == 0.0
     assert any("no tools" in f.message for f in report.findings)
+
+
+def test_response_safety_high_does_not_cap_grade() -> None:
+    # A HIGH in the runtime response_safety dimension must NOT trigger the grade cap
+    # (tool output can be untrusted passthrough); only static 'security' HIGHs cap.
+    dims = [
+        DimensionResult(key="security", title="Security", weight=2.0, score=100.0, findings=[]),
+        DimensionResult(key="task_success", title="Task", weight=3.0, score=95.0, findings=[]),
+        DimensionResult(
+            key="response_safety",
+            title="Response Safety",
+            weight=1.0,
+            score=25.0,
+            findings=[Finding(severity=Severity.HIGH, message="tool output attempts to override")],
+        ),
+    ]
+    rep = GauntletReport.build(spec="x", server=ServerInfo(name="s"), tool_count=2, dimensions=dims)
+    assert rep.security_critical is False
+    assert rep.overall_score > 75.0  # lowered by the weak dimension, but not capped
 
 
 def test_missing_description_flagged_high() -> None:

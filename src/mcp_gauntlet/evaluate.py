@@ -15,6 +15,7 @@ from mcp import ClientSession
 from openai import AsyncOpenAI
 
 from mcp_gauntlet.agent import run_agent_task
+from mcp_gauntlet.checks import scan_runtime_outputs
 from mcp_gauntlet.judge import judge_task, selection_score
 from mcp_gauntlet.models import ToolInfo
 from mcp_gauntlet.report import AgenticDetail, DimensionResult, Finding, Severity, TaskResult
@@ -47,6 +48,7 @@ async def run_agentic_eval(
 
     success_findings: list[Finding] = []
     selection_findings: list[Finding] = []
+    runtime_outputs: list[tuple[str, str]] = []  # (tool, output) for dynamic poisoning scan
     total_calls = 0
     ok_calls = 0
 
@@ -80,6 +82,9 @@ async def run_agentic_eval(
             total_calls += len(server_calls)
             ok_calls += sum(1 for call in server_calls if call.ok)
             any_tool_error = any_tool_error or trace.had_tool_error
+            runtime_outputs.extend(
+                (call.tool, call.result_text) for call in server_calls if call.result_text
+            )
 
             verdict = await judge_task(client, model, task, trace)
             if verdict.errored:  # judge call failed — can't grade this run
@@ -173,6 +178,11 @@ async def run_agentic_eval(
         )
     if total_calls:
         dimensions.append(_reliability_dimension(total_calls, ok_calls))
+    # Dynamic tool-poisoning: scan what the tools actually RETURNED. Independent of judge
+    # conclusiveness — the outputs were collected whenever the agent ran.
+    response_safety = scan_runtime_outputs(runtime_outputs)
+    if response_safety is not None:
+        dimensions.append(response_safety)
     return dimensions, detail
 
 

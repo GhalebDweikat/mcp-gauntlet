@@ -14,6 +14,9 @@ are all **static** — they inspect schemas, count tokens, and lint descriptions
 None of them run an LLM agent against the server to see whether it can actually
 complete tasks. That dynamic, agent-in-the-loop evaluation — with a real
 **task-success rate**, not just a conformance check — is what mcp-gauntlet does.
+The same live run also scans the tools' actual **outputs** for prompt-injection,
+catching tool-poisoning that a static description scan can't (a server that looks
+clean at list-time but poisons at call-time).
 
 > Google Lighthouse tells you your web page is *well-formed*.
 > mcp-gauntlet tells you your MCP server is *usable by an agent* — with a
@@ -25,12 +28,18 @@ Each run produces a graded report card (JSON + Markdown) across:
 
 - **Schema Health** — valid JSON schemas, typed and described parameters.
 - **Description Quality** — can an agent tell when and how to use each tool?
-- **Security Signals** — tool-poisoning / prompt-injection markers and hidden
-  characters; a critical finding caps the overall grade.
+- **Security Signals** — a *static* scan of tool and parameter descriptions for
+  tool-poisoning / prompt-injection markers and hidden characters; a critical
+  finding caps the overall grade.
 - **Agent Task Success** — a live LLM agent attempts generated tasks using only
   the server's tools; LLM-judged and repeated for a success rate.
 - **Tool-Selection Accuracy** — did the agent call the tools it was expected to?
 - **Tool Reliability** — did the server's tools execute without error?
+- **Response Safety** — a *dynamic* scan of the tools' live **outputs** for the
+  same injection / poisoning markers, catching a server that looks clean at
+  list-time but poisons at call-time. Reported (and it lowers the score) but
+  doesn't cap on its own, since a fetch/filesystem server may faithfully pass
+  through untrusted content.
 - **Robustness** — does the server reject malformed input gracefully?
 
 ## Leaderboard

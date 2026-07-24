@@ -19,7 +19,7 @@ from mcp_gauntlet.config import ServerSpec
 from mcp_gauntlet.engine import evaluate_server
 from mcp_gauntlet.htmlreport import _GRADE_COLORS, _STYLE, _esc, to_html
 from mcp_gauntlet.llm import LLMConfig
-from mcp_gauntlet.report import GauntletReport
+from mcp_gauntlet.report import GauntletReport, Severity
 
 
 @dataclass
@@ -144,7 +144,10 @@ def render_index(results: list[LeaderboardResult]) -> str:
         else:
             task_success = _dim_score(rep, "task_success")
             ts = f"{task_success:.0f}" if task_success is not None else "—"
-        security = "⚠" if rep.security_critical else "✓"
+        rs_dim = next((d for d in rep.dimensions if d.key == "response_safety"), None)
+        runtime_poison = bool(rs_dim and any(f.severity is Severity.HIGH for f in rs_dim.findings))
+        # ⚠ static tool-poisoning (caps the grade); ⚡ runtime output poisoning (does not cap).
+        security = "⚠" if rep.security_critical else ("⚡" if runtime_poison else "✓")
         name_cell = f'<a href="{_esc(r.page)}">{_esc(r.name)}</a>' if r.page else _esc(r.name)
         rows.append(
             f'<tr><td class="num">{i}</td><td>{name_cell}</td>'
@@ -176,7 +179,8 @@ def render_index(results: list[LeaderboardResult]) -> str:
         '<th class="num">Tools</th></tr></thead><tbody>' + "".join(rows) + "</tbody></table>"
         f'<p class="note">Agent model: {_esc(model)} · generated {_esc(generated)} · '
         "scores from a live agent are stochastic (repeated and averaged); "
-        "the ⚠ flag marks tool-poisoning / injection findings.</p>"
+        "⚠ = static tool-poisoning in a description (caps the grade), "
+        "⚡ = injection in a live tool output (does not cap).</p>"
         "</div>"
     )
     return (

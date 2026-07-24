@@ -3,7 +3,7 @@
 from mcp_gauntlet.checks import run_static_checks
 from mcp_gauntlet.leaderboard import LeaderboardResult, render_index
 from mcp_gauntlet.models import DiscoveryResult, ServerInfo, ToolInfo
-from mcp_gauntlet.report import GauntletReport
+from mcp_gauntlet.report import DimensionResult, Finding, GauntletReport, Severity
 
 
 def _report(name: str, tools: list[ToolInfo]) -> GauntletReport:
@@ -29,3 +29,24 @@ def test_na_server_listed_unranked_not_in_score_table() -> None:
     html = render_index(results)
     assert "exposes no tools" in html  # N/A gets the unranked treatment
     assert html.index("good") < html.index("empty")  # graded server ranked above the N/A one
+
+
+def test_runtime_poisoning_shows_bolt_glyph() -> None:
+    # A server flagged only by the runtime Response Safety scan (not the static cap) must
+    # surface a distinct glyph, not a silent checkmark.
+    rep = _report(
+        "leaky",
+        [ToolInfo(name="fetch", description="Fetches a record.", input_schema={})],
+    )
+    rep.dimensions.append(
+        DimensionResult(
+            key="response_safety",
+            title="Response Safety",
+            weight=1.0,
+            score=40.0,
+            findings=[Finding(severity=Severity.HIGH, message="tool output attempts to override")],
+        )
+    )
+    assert rep.security_critical is False  # runtime finding didn't cap
+    html = render_index([LeaderboardResult(name="leaky", spec="l", report=rep, page="p.html")])
+    assert "⚡" in html

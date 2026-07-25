@@ -9,6 +9,9 @@ All notable changes to mcp-gauntlet are documented here. This project adheres to
 
 - **The negotiated MCP protocol revision is recorded** on every report. A score is only
   interpretable against the spec the server was speaking, and the protocol is changing.
+  mcp-gauntlet targets revision **2025-11-25**; a server requiring one this harness doesn't
+  support now says so plainly instead of failing with an opaque transport error, and is
+  reported as a limitation here rather than a fault in the server.
 - **All three MCP primitives are now scanned.** Prompts and resources were never touched,
   which mattered most for prompts: a `prompts/get` response is placed in the model's
   context *verbatim*, with none of the framing a tool result gets, making it the most

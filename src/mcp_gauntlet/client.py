@@ -94,6 +94,26 @@ class _RecordingSession(ClientSession):
         await super()._received_request(responder)  # type: ignore[arg-type]
 
 
+async def _initialize(session: ClientSession) -> InitializeResult:
+    """Initialize, turning a protocol-version mismatch into a message that says so.
+
+    The SDK raises a bare ``RuntimeError`` when the server answers with a revision it does
+    not support, which surfaces as an opaque task-group failure and reads exactly like a
+    broken server. As the protocol moves, "speaks a newer revision than this harness" will
+    become an ordinary thing to encounter, and it is not a defect in the server.
+    """
+    try:
+        return await session.initialize()
+    except RuntimeError as exc:
+        if "protocol version" not in str(exc).lower():
+            raise
+        raise MCPConnectionError(
+            f"{exc}. mcp-gauntlet speaks MCP {types.LATEST_PROTOCOL_VERSION}; this server "
+            "requires a revision it does not support, so it could not be evaluated. This "
+            "is a limitation of the harness, not a fault in the server."
+        ) from exc
+
+
 def _resolve_command(command: str | None) -> str:
     """Resolve a bare command name to an executable path.
 
@@ -133,7 +153,7 @@ async def open_session(
             stdio_client(params) as (read, write),
             _RecordingSession(read, write, interactions=interactions) as session,
         ):
-            init = await session.initialize()
+            init = await _initialize(session)
             yield session, init, interactions
     else:
         # Imported lazily so the stdio path doesn't pay for the HTTP stack.
@@ -145,7 +165,7 @@ async def open_session(
             streamablehttp_client(spec.url, headers=spec.headers or None) as (read, write, _),
             _RecordingSession(read, write, interactions=interactions) as session,
         ):
-            init = await session.initialize()
+            init = await _initialize(session)
             yield session, init, interactions
 
 

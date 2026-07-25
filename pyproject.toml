@@ -32,7 +32,12 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
 ]
 dependencies = [
-    "mcp>=1.9",
+    # Upper bound is deliberate and load-bearing. `mcp` 2.0.0 is targeted for 2026-07-28 —
+    # the same day the next protocol revision finalizes — and renames FastMCP, replaces
+    # ClientSession with a new Client class, and moves the types into a separate package.
+    # Unbounded, every fresh install of mcp-gauntlet would break on release day. The SDK's
+    # own release notes tell library authors to pin this.
+    "mcp>=1.9,<2",
     "openai>=1.40",
     "typer>=0.12",
     "rich>=13.7",

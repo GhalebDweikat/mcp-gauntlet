@@ -8,6 +8,19 @@ the gauntlet version that produced it, because **scores are only comparable with
 version** — adding or reweighting a dimension changes the number without anything changing
 about the server.
 
+## Which protocol this targets
+
+mcp-gauntlet evaluates servers against MCP revision **2025-11-25**, the current finalized
+spec, and records the revision each server negotiated on its report. A server that requires
+a revision this harness does not support is reported as unevaluable *by the harness* — that
+is a limitation here, not a defect in the server, and it is never scored as a failure.
+
+A further revision (**2026-07-28**) is in release candidate as of this writing. It replaces
+the `initialize` handshake with a `server/discover` probe and moves server-initiated
+sampling and elicitation to a client-driven pattern. Everything this tool actually scores —
+tool fields and annotations, prompts, resources, content blocks, pagination — is unchanged
+or only additively changed by it, but support is deliberately not claimed until it lands.
+
 ## The scoring model
 
 Each **subject** — one tool, or the server itself — starts at 100 and loses points per

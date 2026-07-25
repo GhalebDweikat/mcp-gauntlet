@@ -482,6 +482,7 @@ _BOARD_HEAD = (
 # badge would resolve and quietly advertise a DIFFERENT server's grade instead of 404ing.
 BOARD_URL_PLACEHOLDER = "https://your-board.example"
 _BOARD_META = "board.json"
+METHODOLOGY_URL = "https://github.com/GhalebDweikat/mcp-gauntlet/blob/main/METHODOLOGY.md"
 
 
 def _save_board_url(out_dir: Path, board_url: str | None) -> None:
@@ -532,7 +533,9 @@ def _badge_section(shown: list[LeaderboardResult], board_url: str | None) -> str
         f'<pre class="snippet">{_esc(snippet)}</pre>'
         + unset_note
         + '<p class="note">Not listed, or think a score is wrong? Open an issue on the '
-        "repository — re-runs and corrections are free.</p>"
+        "repository — re-runs and corrections are free. How these scores are computed, what "
+        "they are not, and the disclosure policy behind publishing them: see "
+        f'<a href="{_esc(METHODOLOGY_URL)}">METHODOLOGY.md</a>.</p>'
     )
 
 

@@ -88,6 +88,13 @@ Every row shows the date its score was **measured**, not when the page was last 
 and the board names the gauntlet versions behind its numbers — scoring changes between
 releases, so scores are only comparable within a version.
 
+[**METHODOLOGY.md**](https://github.com/GhalebDweikat/mcp-gauntlet/blob/main/METHODOLOGY.md)
+documents how a score is computed, what it is *not*
+(it is not a security audit, and it is not deterministic), and the policies the leaderboard
+follows when publishing results about other people's servers — coordinated disclosure,
+advance notice, free disputes, no pay-to-play. Think a score is wrong?
+[Open an issue](https://github.com/GhalebDweikat/mcp-gauntlet/issues) — re-runs are free.
+
 ### Badges
 
 Each listed server gets a [shields.io endpoint](https://shields.io/badges/endpoint-badge)
@@ -213,7 +220,7 @@ when the score drops below your threshold:
 
 ```yaml
 - name: Run the gauntlet
-  run: uvx mcp-gauntlet@0.3.0 run "python -m your_server" --no-agentic --fail-under 60
+  run: uvx mcp-gauntlet@0.3.2 run "python -m your_server" --no-agentic --fail-under 60
 ```
 
 Pin the version, as above: an unpinned `uvx mcp-gauntlet` would let a new release move

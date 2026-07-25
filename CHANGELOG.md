@@ -3,11 +3,16 @@
 All notable changes to mcp-gauntlet are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.3.2] — 2026-07-25
 
 Audit-proofing plus the first coverage features toward evaluating the servers people
-actually run — a batch of correctness and hardening fixes to survive a close outside read,
-and honest handling of servers that need capabilities the harness doesn't drive.
+actually run — correctness and hardening fixes to survive a close outside read, honest
+handling of servers that need capabilities the harness doesn't drive, and the machinery for
+publishing scores about other people's servers responsibly. A new
+[METHODOLOGY.md](https://github.com/GhalebDweikat/mcp-gauntlet/blob/main/METHODOLOGY.md)
+documents the scoring model, what a score is *not*, the
+sandbox-account requirement for credentialed runs, and the coordinated-disclosure policy
+the leaderboard follows.
 
 ### Added
 
@@ -73,6 +78,11 @@ and honest handling of servers that need capabilities the harness doesn't drive.
 - The README's competitive framing was corrected — the previously cited static tools were
   not the real comparison — and the security claim narrowed to what holds: no *evaluator*
   folds a runtime scan of live tool output into a CI-gateable score.
+- **METHODOLOGY.md** now states the scoring model, the comparability rules, the limits of
+  the score, and the policies for publishing results about third-party servers: private
+  notice with a 14-day window before naming a server in a HIGH security finding, advance
+  notice to anyone published with a low score, free disputes and re-runs, and no
+  pay-to-play.
 
 ## [0.3.0] — 2026-07-24
 

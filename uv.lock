@@ -575,7 +575,7 @@ wheels = [
 
 [[package]]
 name = "mcp-gauntlet"
-version = "0.3.0"
+version = "0.3.2"
 source = { editable = "." }
 dependencies = [
     { name = "anyio" },

@@ -1,0 +1,121 @@
+# Methodology
+
+How mcp-gauntlet produces a score, what that score does and doesn't mean, and the policies
+it follows when publishing results about other people's servers.
+
+This document is versioned with the tool. Every report and every leaderboard row records
+the gauntlet version that produced it, because **scores are only comparable within a
+version** — adding or reweighting a dimension changes the number without anything changing
+about the server.
+
+## The scoring model
+
+Each **subject** — one tool, or the server itself — starts at 100 and loses points per
+finding by severity:
+
+| Severity | Penalty | Meaning |
+|---|---|---|
+| HIGH | 25 | Near-certain defect or attack signal |
+| MEDIUM | 12 | Real problem, some interpretation |
+| LOW | 5 | Minor or stylistic |
+| INFO | 0 | Recorded, never scored |
+
+A **dimension** scores the mean of its per-subject scores, so a large server isn't punished
+for having more tools. The **overall** is the weighted mean of the dimensions *present*:
+
+| Dimension | Weight | What it measures | Needs an LLM |
+|---|---:|---|---|
+| Agent Task Success | 3.0 | A live agent attempts generated tasks using only this server's tools; LLM-judged, repeated for a success rate | yes |
+| Security Signals | 2.0 | Static scan for tool-poisoning / prompt-injection markers and hidden characters across every string in every tool schema, plus the server's init `instructions` | no |
+| Tool-Selection Accuracy | 1.5 | Whether the agent called the tools each task was expected to use | yes |
+| Schema Health | 1.0 | Valid JSON Schema, typed and described parameters, coherent `required` | no |
+| Description Quality | 1.0 | Offline heuristics on description presence and length | no |
+| Tool Reliability | 1.0 | Fraction of the agent's tool calls the server executed without error | yes |
+| Response Safety | 1.0 | Dynamic scan of what the tools actually **returned** for injection markers | yes |
+| Robustness | 1.0 | Whether tools reject malformed, schema-violating input | no |
+
+Grades: **A** ≥ 90, **B** ≥ 80, **C** ≥ 70, **D** ≥ 60, **F** below. A server exposing no
+tools grades **N/A** — it is unscored, not perfect.
+
+### The security cap
+
+A HIGH finding in **Security Signals** caps the overall at **75** (a C ceiling), no matter
+how strong the other dimensions are. Tool poisoning is a "do not trust this server" signal
+that averaging must not wash out.
+
+**Response Safety deliberately does not cap.** It scans content a server *returned*, and a
+fetch or filesystem server may faithfully relay untrusted text it did not author. A HIGH
+finding there lowers the score and is shown with a ⚡ on the board, but the judgment of
+whether the server is at fault is left to the reader.
+
+## What the score is not
+
+- **Not a security audit.** The static scan is pattern-based. It catches known
+  tool-poisoning shapes and hidden-character smuggling; it cannot catch plain-prose social
+  engineering, and it will never be complete. A clean security score is not a clean bill of
+  health.
+- **Not deterministic.** Agent and judge runs are stochastic even at temperature 0. Task
+  sets are cached per server so they don't drift between runs, and tasks are repeated and
+  averaged, but two runs of the same server can differ by a few points. Treat small gaps as
+  noise.
+- **Partly a measure of the agent.** A weaker model fails tasks a stronger one completes.
+  The model is held constant across a leaderboard and stamped into every report, so rows
+  are comparable with each other — not with a run on a different model.
+- **Not a measure of what the server does when it's used properly.** Runs are read-only by
+  default and tasks are generated, not real workloads.
+
+## Comparability rules
+
+The overall is a weighted mean over the dimensions **present**, so a server the agent never
+scored skips Agent Task Success — the heaviest dimension — and is averaged over a smaller
+denominator, scoring systematically higher. The leaderboard therefore ranks only servers
+that were fully agent-scored. Everything else is listed separately under **Partially
+evaluated**, each row stating why, so an untested server can never outrank a tested one. A
+run cut short by a hung tool is segregated too: its score rests on however many runs
+finished, a sample size the server itself controls.
+
+## Safety when evaluating
+
+- **Read-only by default.** Tools that look mutating — by name, description, or a
+  self-declared MCP `destructiveHint` — are excluded from execution unless `--allow-writes`
+  is passed. This is a **best-effort heuristic and explicitly not a guarantee**: it trusts
+  server-declared hints that the harness cannot verify, and a mislabeled tool will slip
+  through.
+- **Credentialed runs use sandbox accounts only.** When `--env` or `--header` gives a server
+  real credentials, a live agent executes real tool calls against whatever those credentials
+  reach. Use a throwaway account, a test workspace, a scratch database — never production.
+  Credential values are redacted from reports, the console, the task cache, and error
+  messages, but redaction is a backstop, not the control.
+- **Interactive capabilities are declined.** The harness drives no user (elicitation) and no
+  server-side LLM (sampling). It advertises neither, and a server that requests one is
+  declined cleanly. A tool call that failed *only* for that reason is not counted against
+  the server's Tool Reliability, and the report says so.
+
+## Publishing results about other people's servers
+
+The leaderboard names third-party servers, so it follows these rules:
+
+1. **Coordinated disclosure.** A HIGH-severity *security* finding on a named third-party
+   server is reported privately to its maintainers first, with a **14-day** window before
+   that server is named in connection with it. Aggregate figures ("N of M servers returned
+   injectable content") may be published immediately, without naming.
+2. **Notice before publication.** Any server appearing in a published survey with a low
+   score gets advance notice and a link to dispute it.
+3. **Disputes are free.** Anyone can contest a score by opening an issue. Re-runs cost
+   nothing to request. A finding shown to be a false positive is corrected, and the
+   correction is noted rather than quietly swapped in.
+4. **Every score carries its provenance** — scan date, gauntlet version, model, and repeat
+   count — and every row that could not be evaluated says so, with the reason. Servers are
+   never silently dropped.
+5. **No pay-to-play.** Placement cannot be bought, and no one is charged for a scan, a
+   re-scan, or a badge.
+
+## Reproducing a score
+
+```bash
+uvx mcp-gauntlet@<version> run "<the exact spec from the report>" --tasks 3 --repeats 2
+```
+
+The report's header records the version, model, task count, and repeats. Task sets are
+cached per server (name + version + exposed tools) under `.gauntlet/`, and `--tasks-file`
+pins a committable set so the same tasks are used across runs.

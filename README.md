@@ -37,15 +37,17 @@ Each run produces a graded report card (JSON + Markdown) across:
 - **Schema Health** — valid JSON schemas, typed and described parameters.
 - **Description Quality** — can an agent tell when and how to use each tool?
 - **Security Signals** — a *static* scan for tool-poisoning / prompt-injection markers
-  and hidden characters, covering **every server-authored string a client can put in front
-  of the model**: the server's name, title and init instructions; each tool's description,
-  display titles, and **both its input and output schemas** — nested titles, enums,
-  defaults, examples, `$defs` entries and unknown extension keywords included. Anything in
-  that set can carry a payload, so scanning only top-level `description` fields is
-  trivially evaded by nesting one behind a `$ref` or parking it in a display title. Text is
-  folded to a compatibility skeleton before matching, so smuggled invisibles, combining
-  marks, and lookalike alphabets (fullwidth, math-bold) don't break a keyword. A critical
-  finding caps the overall grade.
+  and hidden characters across **every server-authored string a client can put in front of
+  the model**, in all three MCP primitives: the server's name, title and init instructions;
+  each tool's description, display titles, `_meta`, and **both its input and output
+  schemas** (nested titles, enums, defaults, examples, `$defs` entries and unknown extension
+  keywords included); **prompt** metadata, arguments and the messages `prompts/get` actually
+  returns; and **resource** and template metadata. Anything in that set can carry a payload,
+  so scanning only top-level `description` fields is trivially evaded by nesting one behind
+  a `$ref`, parking it in a display title, or putting it in a prompt — whose messages reach
+  the model verbatim. Text is folded to a compatibility skeleton before matching, so
+  smuggled invisibles, combining marks, and lookalike alphabets (fullwidth, math-bold) don't
+  break a keyword. A critical finding caps the overall grade.
 - **Agent Task Success** — a live LLM agent attempts generated tasks using only
   the server's tools; LLM-judged and repeated for a success rate.
 - **Tool-Selection Accuracy** — did the agent call the tools it was expected to?
@@ -165,17 +167,17 @@ catches it — the static description scan can't.
 A third fixture is a working, deliberately malicious server. Every tool has an innocuous
 description, so a scanner that reads descriptions finds nothing — the attacks are in a
 display title, in an *output* schema behind a `$ref`, in what a tool returns at call time,
-and in one tool that is completely clean on the first `tools/list` and poisoned on the
-second:
+in one tool that is completely clean on the first `tools/list` and poisoned on the second,
+and in a prompt whose metadata is spotless and whose rendered messages carry the payload:
 
 ```bash
 uv run mcp-gauntlet run "python -m mcp_gauntlet.fixtures.malicious_server" --no-agentic
 ```
 
-Three of the four are caught with no API key at all; the call-time one needs the live
-agent. The server itself is entirely functional — valid schemas, working tools, 100%
-task success — which is the point: it is flagged for what it *says and returns*, not for
-being broken.
+Four of the five are caught with no API key at all; the call-time one needs the live agent.
+The server itself is entirely functional — valid schemas, working tools, 100% task
+success — which is the point: it is flagged for what it *says and returns*, not for being
+broken.
 
 Because that fixture ships inside the installed package, an MCP security scanner pointed at
 your `site-packages` will flag mcp-gauntlet itself. That's expected: the payloads are inert

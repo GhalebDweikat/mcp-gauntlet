@@ -7,6 +7,15 @@ All notable changes to mcp-gauntlet are documented here. This project adheres to
 
 ### Added
 
+- **All three MCP primitives are now scanned.** Prompts and resources were never touched,
+  which mattered most for prompts: a `prompts/get` response is placed in the model's
+  context *verbatim*, with none of the framing a tool result gets, making it the most
+  direct injection surface the protocol has. Prompt metadata, arguments, and the messages
+  a prompt actually returns are now scanned, along with resource and template metadata and
+  every `_meta` block. Prompts are rendered only when probing is enabled — `--no-probe`
+  still promises to execute nothing — and only when they take no required arguments, since
+  inventing values would mean calling the server with data it never asked for.
+
 - **Definition-drift detection.** A server can pass review, get installed, and *later*
   change what its tools say — the client re-reads the definitions on every connection but
   doesn't re-prompt, so the redefinition lands in the model's context silently. Registry

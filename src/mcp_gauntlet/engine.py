@@ -169,7 +169,10 @@ async def evaluate_server(
 ) -> GauntletReport:
     agentic_detail: AgenticDetail | None = None
     async with open_session(spec) as (session, init, interactions):
-        discovery = await discover_in_session(session, init)
+        # Prompts are fetched only when probing is on: rendering one is a call to the
+        # server, and `--no-probe` means "inspect, don't execute". The messages it returns
+        # are the point — they reach the model's context verbatim.
+        discovery = await discover_in_session(session, init, fetch_prompts=probe)
         drift_findings = await _check_definition_drift(
             session, init, spec, discovery, cache_dir.parent / "baselines", track_drift
         )

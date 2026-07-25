@@ -26,7 +26,7 @@ for having more tools. The **overall** is the weighted mean of the dimensions *p
 | Dimension | Weight | What it measures | Needs an LLM |
 |---|---:|---|---|
 | Agent Task Success | 3.0 | A live agent attempts generated tasks using only this server's tools; LLM-judged, repeated for a success rate | yes |
-| Security Signals | 2.0 | Static scan for tool-poisoning / prompt-injection markers and hidden characters across every server-authored string a client can show the model: server name/title/`instructions`, tool descriptions and display titles, and every string in each tool's input *and output* schema | no |
+| Security Signals | 2.0 | Static scan for tool-poisoning / prompt-injection markers and hidden characters across every server-authored string a client can show the model — all three primitives: server name/title/`instructions`; tool descriptions, display titles, `_meta`, and every string in each tool's input *and output* schema; prompt metadata, arguments and the messages `prompts/get` actually returns; resource and template metadata | no |
 | Tool-Selection Accuracy | 1.5 | Whether the agent called the tools each task was expected to use | yes |
 | Schema Health | 1.0 | Valid JSON Schema, typed and described parameters, coherent `required` | no |
 | Description Quality | 1.0 | Offline heuristics on description presence and length | no |
@@ -69,10 +69,12 @@ whether the server is at fault is left to the reader.
 - **Not a security audit.** The static scan is pattern-based. It catches known
   tool-poisoning shapes and hidden-character smuggling; it cannot catch plain-prose social
   engineering, and it will never be complete. A clean security score is not a clean bill of
-  health. Known gaps, stated rather than implied: the **resources** and **prompts**
-  primitives are not evaluated at all (a `prompts/get` response goes straight into the
-  model's context and would not be scanned), and a tool's `_meta` block is not scanned.
-  Both are tracked work, not claims already met.
+  health. Known gaps, stated rather than implied: **resource contents are not read** (they
+  are unbounded and are passthrough rather than server-authored, so only their metadata is
+  scanned), and a prompt that requires arguments is listed but not rendered, so its
+  messages go unexamined — inventing argument values would mean calling the server with
+  data it never asked for. An unrendered prompt is reported as such rather than counted
+  as clean, so the gap is visible in the report instead of being implied away.
 - **Not deterministic.** Agent and judge runs are stochastic even at temperature 0. Task
   sets are cached per server so they don't drift between runs, and tasks are repeated and
   averaged, but two runs of the same server can differ by a few points. Treat small gaps as

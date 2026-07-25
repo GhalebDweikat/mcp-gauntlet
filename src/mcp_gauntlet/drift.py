@@ -81,6 +81,9 @@ def fingerprint(tool: ToolInfo) -> str:
             "output_schema": tool.output_schema,
             "read_only_hint": tool.read_only_hint,
             "destructive_hint": tool.destructive_hint,
+            # `_meta` is scanned, so it is part of what was approved: a rug-pull relocated
+            # there would otherwise be invisible to both drift checks.
+            "meta": tool.meta,
         },
         sort_keys=True,
         ensure_ascii=True,

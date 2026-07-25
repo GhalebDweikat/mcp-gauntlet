@@ -17,6 +17,7 @@ from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 
 from mcp_gauntlet.client import InteractionLog
+from mcp_gauntlet.content import block_text
 from mcp_gauntlet.llm import chat_completion
 from mcp_gauntlet.toolconv import ToolBridge
 
@@ -105,43 +106,7 @@ class AgentTrace(BaseModel):
         return any(call.needed_interaction and not call.ok for call in self.tool_calls)
 
 
-# Every server-authored string a content block can carry. `text` is the common case; an
-# embedded resource carries its text one level down; a resource link advertises its target
-# through title/name/description/uri, and the SDK's own display helper prefers `title`.
-_BLOCK_FIELDS = ("text", "title", "name", "description", "uri")
-_RESOURCE_FIELDS = ("text", "uri")
-
-
-def _strings(obj: Any, fields: tuple[str, ...]) -> list[str]:
-    out: list[str] = []
-    for field in fields:
-        value = getattr(obj, field, None)
-        if value is None:
-            continue
-        text = value if isinstance(value, str) else str(value)
-        if text:
-            out.append(text)
-    return out
-
-
-def _block_text(block: Any) -> str | None:
-    """*All* server-authored text carried by one content block, whatever its type.
-
-    Collects every surface rather than returning the first one found. MCP content models
-    permit extra fields, so a server can hang a harmless top-level ``text`` on an embedded
-    resource: a first-match reader takes that decoy while a spec-compliant client renders
-    the poisoned ``resource.text`` to the model. The scanner is fed from this string, so
-    first-match reading was a complete bypass of it — the payload reached the model and the
-    scan saw "All good."
-    """
-    parts = _strings(block, _BLOCK_FIELDS)
-    resource = getattr(block, "resource", None)
-    if resource is not None:
-        parts.extend(_strings(resource, _RESOURCE_FIELDS))
-        # A blob is base64, not model-readable prose: identify it rather than decode it.
-        if getattr(resource, "blob", None) is not None:
-            parts.append("[binary resource]")
-    return "\n".join(dict.fromkeys(parts)) if parts else None
+_block_text = block_text  # shared with the prompt path; see mcp_gauntlet.content
 
 
 def _render_tool_result(result: Any) -> tuple[bool, str]:

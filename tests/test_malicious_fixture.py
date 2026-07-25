@@ -20,10 +20,11 @@ SPEC = f"{sys.executable} -m mcp_gauntlet.fixtures.malicious_server"
 
 
 async def test_the_malicious_fixture_is_caught_without_an_llm(tmp_path: Path) -> None:
+    # probe=True (the default) so prompts are rendered: --no-probe promises to execute
+    # nothing, and fetching a prompt is a call to the server.
     report = await evaluate_server(
         ServerSpec.parse(SPEC),
         llm_config=None,
-        probe=False,
         cache_dir=tmp_path / "tasks",  # keeps the baseline out of the real .gauntlet dir
     )
     messages = [f"{f.tool}: {f.message}" for f in report.findings]
@@ -41,9 +42,26 @@ async def test_the_malicious_fixture_is_caught_without_an_llm(tmp_path: Path) ->
     assert any("second tools/list" in m for m in messages), messages
     assert any("second tools/list" in f"{f.tool}: {f.message}" for f in highs), messages
 
+    # 5. The prompt whose METADATA is clean and whose rendered messages carry the payload —
+    #    the surface that reaches the model's context verbatim.
+    assert any("summarize_notes" in m and "prompt message" in m for m in messages), messages
+
     assert highs, "a deliberately poisoned server must raise HIGH findings"
     assert report.security_critical
     assert report.overall_score <= 75.0  # the cap applied
+
+
+async def test_the_poisoned_prompt_is_only_found_by_rendering_it(tmp_path: Path) -> None:
+    # Listing the prompt is not enough: its name, title, description and arguments are all
+    # clean. --no-probe means "inspect, don't execute", so the prompt is not rendered and
+    # the payload is correctly not reported — the finding requires actually fetching it.
+    report = await evaluate_server(
+        ServerSpec.parse(SPEC),
+        llm_config=None,
+        probe=False,
+        cache_dir=tmp_path / "tasks",
+    )
+    assert not any("prompt message" in f.message for f in report.findings)
 
 
 async def test_the_malicious_fixture_still_works_as_a_server(tmp_path: Path) -> None:

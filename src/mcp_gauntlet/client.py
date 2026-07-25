@@ -9,16 +9,25 @@ from __future__ import annotations
 
 import logging
 import shutil
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from typing import Any
 
 from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
 from mcp.types import InitializeResult
 
 from mcp_gauntlet.config import ServerSpec, TransportKind
-from mcp_gauntlet.models import DiscoveryResult, ServerInfo, ToolInfo
+from mcp_gauntlet.content import block_text
+from mcp_gauntlet.models import (
+    DiscoveryResult,
+    PromptArgumentInfo,
+    PromptInfo,
+    ResourceInfo,
+    ServerInfo,
+    ToolInfo,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -140,7 +149,9 @@ async def open_session(
             yield session, init, interactions
 
 
-async def discover_in_session(session: ClientSession, init: InitializeResult) -> DiscoveryResult:
+async def discover_in_session(
+    session: ClientSession, init: InitializeResult, *, fetch_prompts: bool = False
+) -> DiscoveryResult:
     """Build a DiscoveryResult from an already-initialized session.
 
     Follows ``tools/list`` pagination so a server exposing more tools than fit in one
@@ -180,6 +191,7 @@ async def discover_in_session(session: ClientSession, init: InitializeResult) ->
             output_schema=dict(getattr(tool, "outputSchema", None) or {}),
             read_only_hint=getattr(tool.annotations, "readOnlyHint", None),
             destructive_hint=getattr(tool.annotations, "destructiveHint", None),
+            meta=_meta_of(tool),
         )
         for tool in raw_tools
     ]
@@ -189,7 +201,160 @@ async def discover_in_session(session: ClientSession, init: InitializeResult) ->
         title=getattr(init.serverInfo, "title", None),
         instructions=getattr(init, "instructions", None),
     )
-    return DiscoveryResult(server=server, tools=tools)
+    prompts = await _discover_prompts(session, fetch_prompts)
+    resources = await _discover_resources(session)
+    return DiscoveryResult(server=server, tools=tools, prompts=prompts, resources=resources)
+
+
+def _meta_of(obj: object) -> dict[str, Any]:
+    meta = getattr(obj, "meta", None)
+    return dict(meta) if isinstance(meta, dict) else {}
+
+
+async def _paginate(
+    fetch_page: Callable[[str | None], Awaitable[Any]], items_of: Callable[[Any], list[Any]]
+) -> list[Any]:
+    """Follow a paginated list to the end, bounded like ``tools/list`` already is.
+
+    Listing one page and trusting it means a payload on page two is never fetched, let
+    alone scanned.
+    """
+    items: list[Any] = []
+    cursor: str | None = None
+    seen_cursors: set[str] = set()
+    for _ in range(100):
+        page = await fetch_page(cursor)
+        items.extend(items_of(page))
+        cursor = getattr(page, "nextCursor", None)
+        if not cursor or cursor in seen_cursors:
+            break
+        seen_cursors.add(cursor)
+    else:
+        _log.warning("a paginated list did not terminate within 100 pages; may be truncated")
+    return items
+
+
+def _dedup_by_name(items: list[Any]) -> list[Any]:
+    """Same rule as tools: overlapping pages must not inflate the count or the subject list."""
+    seen: set[str] = set()
+    out: list[Any] = []
+    for item in items:
+        name = getattr(item, "name", "")
+        if name not in seen:
+            seen.add(name)
+            out.append(item)
+    return out
+
+
+async def _discover_prompts(session: ClientSession, fetch: bool) -> list[PromptInfo]:
+    """List the server's prompts, and render the ones that take no required arguments.
+
+    A ``prompts/get`` response is placed in the model's context verbatim, so the messages
+    are the real surface here — the description only advertises them. A prompt that isn't
+    rendered records *why*, so the gap is reported rather than passing for clean.
+
+    Listed unconditionally rather than gated on the advertised capability: a server's own
+    declaration is trusted only in the direction that makes us more careful, never as
+    permission to skip a scan. A server that answers a primitive it never advertised is
+    exactly the kind worth looking at.
+    """
+    try:
+        listed = _dedup_by_name(
+            await _paginate(lambda c: session.list_prompts(cursor=c), lambda p: list(p.prompts))
+        )
+    except Exception as exc:  # noqa: BLE001 - "method not found" is the normal no-prompts case
+        _log.debug("prompts/list unavailable: %s", exc)
+        return []
+
+    prompts: list[PromptInfo] = []
+    for prompt in listed:
+        arguments = [
+            PromptArgumentInfo(
+                name=arg.name,
+                description=getattr(arg, "description", None),
+                required=bool(getattr(arg, "required", False)),
+            )
+            for arg in (prompt.arguments or [])
+        ]
+        info = PromptInfo(
+            name=prompt.name,
+            title=getattr(prompt, "title", None),
+            description=prompt.description,
+            arguments=arguments,
+            meta=_meta_of(prompt),
+        )
+        if not fetch:
+            info.unrendered_reason = "probing is disabled"
+        elif any(arg.required for arg in arguments):
+            info.unrendered_reason = "it requires arguments"
+        else:
+            try:
+                result = await session.get_prompt(prompt.name, {})
+                # block_text, not `.text`: a prompt message's content can be an embedded
+                # resource or a resource link, which is exactly how a prompt puts a
+                # document in front of the model — and reading only `.text` dropped both.
+                info.messages = [
+                    text
+                    for message in result.messages
+                    if (text := block_text(getattr(message, "content", None)))
+                ]
+                info.result_description = result.description
+                info.result_meta = _meta_of(result)
+                info.rendered = True
+            except Exception as exc:  # noqa: BLE001 - a prompt that won't render isn't fatal
+                _log.debug("prompts/get %s failed: %s", prompt.name, exc)
+                info.unrendered_reason = f"rendering it failed ({str(exc)[:120]})"
+        prompts.append(info)
+    return prompts
+
+
+async def _discover_resources(session: ClientSession) -> list[ResourceInfo]:
+    """List resources and resource templates, metadata only.
+
+    The contents are deliberately not read: they are unbounded in size and are passthrough
+    content rather than server-authored text. The metadata *is* server-authored, and it is
+    what a user or model reads when deciding what to attach.
+    """
+    found: list[ResourceInfo] = []
+    try:
+        listed_resources = _dedup_by_name(
+            await _paginate(lambda c: session.list_resources(cursor=c), lambda p: list(p.resources))
+        )
+        found.extend(
+            ResourceInfo(
+                name=resource.name,
+                title=getattr(resource, "title", None),
+                uri=str(resource.uri),
+                description=resource.description,
+                mime_type=resource.mimeType,
+                meta=_meta_of(resource),
+            )
+            for resource in listed_resources
+        )
+    except Exception as exc:  # noqa: BLE001 - "method not found" is the no-resources case
+        _log.debug("resources/list unavailable: %s", exc)
+    try:
+        templates = _dedup_by_name(
+            await _paginate(
+                lambda c: session.list_resource_templates(cursor=c),
+                lambda p: list(p.resourceTemplates),
+            )
+        )
+        found.extend(
+            ResourceInfo(
+                name=template.name,
+                title=getattr(template, "title", None),
+                uri=template.uriTemplate,
+                description=template.description,
+                mime_type=template.mimeType,
+                is_template=True,
+                meta=_meta_of(template),
+            )
+            for template in templates
+        )
+    except Exception as exc:  # noqa: BLE001 - same: absent is the common case
+        _log.debug("resources/templates/list unavailable: %s", exc)
+    return found
 
 
 async def discover(spec: ServerSpec) -> DiscoveryResult:

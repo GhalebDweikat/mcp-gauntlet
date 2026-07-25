@@ -6,17 +6,30 @@ agent share one connection.
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 
+from mcp import ClientSession
+from mcp.types import InitializeResult
 from openai import AsyncOpenAI
 
-from mcp_gauntlet.checks import run_static_checks
+from mcp_gauntlet.checks import run_static_checks, scan_tool
 from mcp_gauntlet.client import discover_in_session, open_session
 from mcp_gauntlet.config import ServerSpec
+from mcp_gauntlet.drift import (
+    UnreadableBaseline,
+    baseline_file,
+    changed_within_session,
+    compare_to_baseline,
+    compare_within_session,
+    load_baseline,
+    save_baseline,
+    spec_key,
+)
 from mcp_gauntlet.evaluate import run_agentic_eval
 from mcp_gauntlet.llm import LLMConfig, make_async_client
 from mcp_gauntlet.models import DiscoveryResult, ToolInfo
-from mcp_gauntlet.report import AgenticDetail, GauntletReport, redact
+from mcp_gauntlet.report import AgenticDetail, Finding, GauntletReport, Severity, redact
 from mcp_gauntlet.robustness import run_robustness_probes
 from mcp_gauntlet.safety import filter_read_only
 from mcp_gauntlet.taskcache import (
@@ -66,6 +79,79 @@ async def _resolve_tasks(
     return tasks
 
 
+async def _check_definition_drift(
+    session: ClientSession,
+    init: InitializeResult,
+    spec: ServerSpec,
+    discovery: DiscoveryResult,
+    baseline_dir: Path,
+    track: bool,
+) -> list[Finding]:
+    """Compare the tool surface against itself and against the last run.
+
+    Both halves are best-effort: a server that fails the second ``tools/list`` should not
+    lose its evaluation over a check that is looking for an anomaly, and a baseline that
+    can't be written (read-only checkout, CI sandbox) must not either.
+    """
+    if not track:
+        return []
+    findings: list[Finding] = []
+    try:
+        second = await discover_in_session(session, init)
+    except Exception as exc:  # noqa: BLE001 - an unstable re-list can't cost us the run
+        # But say the check didn't run. Silently swallowing this let a server defeat the
+        # only within-session check by refusing exactly one request, with the report
+        # indistinguishable from a server that answered twice identically.
+        second = None
+        findings.append(
+            Finding(
+                severity=Severity.LOW,
+                message="the server did not answer a second tools/list, so its definitions "
+                "were not checked for mid-session changes",
+                detail=str(exc)[:200],
+            )
+        )
+    if second is not None:
+        tools_capability = getattr(getattr(init, "capabilities", None), "tools", None)
+        findings.extend(
+            compare_within_session(
+                discovery.tools,
+                second.tools,
+                declared_list_changed=bool(getattr(tools_capability, "listChanged", False)),
+            )
+        )
+        # Scan what the second listing actually said. Reporting only that a definition moved
+        # would leave a payload that appears solely in the second listing unexamined — the
+        # first listing is what everything else in the run is built from.
+        for tool in changed_within_session(discovery.tools, second.tools):
+            for finding in scan_tool(tool):
+                findings.append(
+                    finding.model_copy(update={"message": f"second tools/list: {finding.message}"})
+                )
+
+    path = baseline_file(baseline_dir, spec_key(spec.label()))
+    try:
+        baseline = load_baseline(path)
+    except UnreadableBaseline as exc:
+        # Say the check didn't run rather than let a corrupt baseline read as "no drift".
+        baseline = None
+        findings.append(
+            Finding(
+                severity=Severity.INFO,
+                message="could not read the recorded tool definitions, so this run was not "
+                "compared against them",
+                detail=f"{path}: {exc}",
+            )
+        )
+    if baseline is not None:
+        findings.extend(compare_to_baseline(baseline, discovery.server, discovery.tools))
+    # Record AFTER comparing, so this run's surface becomes the next run's baseline. A
+    # read-only checkout or CI sandbox must not cost the server its evaluation.
+    with contextlib.suppress(OSError):
+        save_baseline(path, discovery.server, discovery.tools)
+    return findings
+
+
 async def evaluate_server(
     spec: ServerSpec,
     *,
@@ -79,11 +165,15 @@ async def evaluate_server(
     refresh_tasks: bool = False,
     cache_dir: Path = DEFAULT_CACHE_DIR,
     tool_timeout_s: float = 60.0,
+    track_drift: bool = True,
 ) -> GauntletReport:
     agentic_detail: AgenticDetail | None = None
     async with open_session(spec) as (session, init, interactions):
         discovery = await discover_in_session(session, init)
-        dimensions = run_static_checks(discovery)
+        drift_findings = await _check_definition_drift(
+            session, init, spec, discovery, cache_dir.parent / "baselines", track_drift
+        )
+        dimensions = run_static_checks(discovery, drift_findings)
 
         # The set of tools we'll actually execute (probes + agent) — read-only by default.
         exec_tools = discovery.tools

@@ -943,6 +943,36 @@ def test_a_literal_occurrence_cannot_mask_a_prose_one_across_schemas() -> None:
         assert report.security_critical, decoy
 
 
+def test_drift_findings_can_only_lower_a_score_never_raise_it() -> None:
+    # Scored as a subject of their own, drift findings were 100-minus-their-own-penalties,
+    # so a zero-penalty INFO — the finding emitted when the drift check could NOT run —
+    # added a perfect subject and pulled the dimension mean UP. A server was rewarded for
+    # breaking the check, and a re-run could outscore a first run of the same server.
+    tools = [
+        ToolInfo(name="a", description="short", input_schema={"type": "object"}),
+        ToolInfo(name="b", description="also short", input_schema={"type": "object"}),
+    ]
+    baseline = check_security(tools).score
+    for findings in (
+        [Finding(severity=Severity.INFO, tool="a", message="could not read the baseline")],
+        [Finding(severity=Severity.INFO, message="server-level note")],  # no tool
+        [Finding(severity=Severity.INFO, tool="gone", message="tool disappeared")],  # unknown
+    ):
+        assert check_security(tools, None, None, findings).score <= baseline, findings
+    # And a real drift finding lowers it.
+    real = [Finding(severity=Severity.MEDIUM, tool="a", message="definition changed")]
+    assert check_security(tools, None, None, real).score < baseline
+
+
+def test_drift_on_a_tool_lands_on_that_tools_score() -> None:
+    clean = [ToolInfo(name="a", description="A tool that returns a record for an id.")]
+    assert check_security(clean).score == 100.0
+    drifted = check_security(
+        clean, None, None, [Finding(severity=Severity.MEDIUM, tool="a", message="changed")]
+    )
+    assert drifted.score == 88.0  # one MEDIUM against the single tool subject
+
+
 def test_a_poisoned_server_name_is_caught_behind_a_clean_server_title() -> None:
     # The server-level twin of the tool-title blind spot. `serverInfo.name` is if anything
     # the stronger surface — more clients render it than the newer `title`, and the harness

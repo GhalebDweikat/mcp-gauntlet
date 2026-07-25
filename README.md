@@ -59,6 +59,15 @@ Each run produces a graded report card (JSON + Markdown) across:
   publishes no argument schema at all scores zero here rather than being skipped:
   a server that declares no contract can't reject anything, and skipping it would
   make omitting schemas a way to score higher.
+- **Definition drift** — did the server change what its tools say *after* you approved
+  them? `tools/list` is asked twice per session and the answers compared, and the surface is
+  fingerprinted and compared against the previous run. This is the failure registry signing
+  can't address: the package is unchanged and correctly signed, only the text served at
+  runtime differs. Crucially, a definition that *changed* is then scanned in its own right,
+  so a payload that appears only in the second listing raises its own finding rather than a
+  bare "something moved". The change itself is reported but never caps on its own — honest
+  servers register tools lazily, gate them on auth (MCP has a `tools.listChanged` capability
+  for exactly that), and edit descriptions without bumping a static version.
 
 ## Leaderboard
 
@@ -150,6 +159,28 @@ uv run mcp-gauntlet run "python -m mcp_gauntlet.fixtures.good_server"  # A
 With an LLM key, the bad fixture also trips **Response Safety**: its `status_report`
 tool has a clean description but poisons its *output*, so only the runtime scan
 catches it — the static description scan can't.
+
+### See what a description scan misses
+
+A third fixture is a working, deliberately malicious server. Every tool has an innocuous
+description, so a scanner that reads descriptions finds nothing — the attacks are in a
+display title, in an *output* schema behind a `$ref`, in what a tool returns at call time,
+and in one tool that is completely clean on the first `tools/list` and poisoned on the
+second:
+
+```bash
+uv run mcp-gauntlet run "python -m mcp_gauntlet.fixtures.malicious_server" --no-agentic
+```
+
+Three of the four are caught with no API key at all; the call-time one needs the live
+agent. The server itself is entirely functional — valid schemas, working tools, 100%
+task success — which is the point: it is flagged for what it *says and returns*, not for
+being broken.
+
+Because that fixture ships inside the installed package, an MCP security scanner pointed at
+your `site-packages` will flag mcp-gauntlet itself. That's expected: the payloads are inert
+strings in a test double that touches no filesystem or network, and it prints a warning
+banner to stderr on startup.
 
 A server that hangs can't stall the run: every tool call is bounded by
 `--tool-timeout` (default 60s) and recorded as a failed call against the server's Tool

@@ -22,7 +22,13 @@ import jsonschema
 from jsonschema.exceptions import SchemaError
 
 from mcp_gauntlet.models import DiscoveryResult, ServerInfo, ToolInfo
-from mcp_gauntlet.report import DimensionResult, Finding, Severity, score_from_findings
+from mcp_gauntlet.report import (
+    SEVERITY_PENALTY,
+    DimensionResult,
+    Finding,
+    Severity,
+    score_from_findings,
+)
 from mcp_gauntlet.schemas import arg_surface, schema_texts
 
 
@@ -517,17 +523,42 @@ def _check_tool_security(tool: ToolInfo) -> list[Finding]:
     return findings
 
 
+def scan_tool(tool: ToolInfo) -> list[Finding]:
+    """Every injection finding for one tool's own text. Public so a caller holding a tool
+    from somewhere other than discovery — a second ``tools/list``, say — can scan it."""
+    return _check_tool_security(tool)
+
+
 def check_security(
     tools: list[ToolInfo],
     instructions: str | None = None,
     server: ServerInfo | None = None,
+    drift_findings: list[Finding] | None = None,
 ) -> DimensionResult:
+    # Definition drift belongs here rather than in a dimension of its own: a server that
+    # silently redefines what its tools say is doing tool-poisoning by another route, and a
+    # new weighted dimension would move every existing score without anything about those
+    # servers having changed.
+    #
+    # Each drift finding is scored against the TOOL it concerns, never as a subject of its
+    # own. A separate subject would be scored 100 minus its own penalties, so a harmless
+    # INFO — the very finding emitted when the drift check could not run — would add a
+    # perfect subject and pull the dimension mean UP. A server would then be rewarded for
+    # breaking the check, and a re-run could score higher than a first run of the same
+    # server. Folding them in makes drift able only to lower a score.
+    drift_by_tool: dict[str | None, list[Finding]] = {}
+    for finding in drift_findings or []:
+        drift_by_tool.setdefault(finding.tool, []).append(finding)
+
     all_findings: list[Finding] = []
     scores: list[float] = []
     for tool in tools:
-        tool_findings = _check_tool_security(tool)
+        tool_findings = _check_tool_security(tool) + drift_by_tool.pop(tool.name, [])
         all_findings.extend(tool_findings)
         scores.append(score_from_findings(tool_findings))
+    # Drift about a tool the server no longer offers, or about the server as a whole, has no
+    # tool subject to join; it rides with the server's own findings below.
+    orphan_drift = [f for findings in drift_by_tool.values() for f in findings]
     # The server's own init "instructions" are server-authored (not passthrough), so
     # injection there is genuine tool-poisoning and counts like a poisoned description.
     # Its display name/title ride along: they are shown to the user and reach the model in
@@ -548,8 +579,13 @@ def check_security(
                 server_findings.extend(
                     _scan_text(displayed, None, f"server {field}", references=False)
                 )
-    if server_findings or instructions:
-        all_findings.extend(server_findings)
+    server_findings.extend(orphan_drift)
+    all_findings.extend(server_findings)
+    # Score the server as a subject only when there is something to score it ON: an
+    # instructions block that was actually examined, or a finding that carries a penalty.
+    # A subject conjured by a zero-penalty INFO would be a free 100 pulling the mean up —
+    # the same inflation the per-tool folding above avoids.
+    if instructions or any(SEVERITY_PENALTY[f.severity] for f in server_findings):
         scores.append(score_from_findings(server_findings))
     return DimensionResult(
         key="security",
@@ -615,10 +651,12 @@ def scan_runtime_outputs(
 # ------------------------------------------------------------------ orchestrator
 
 
-def run_static_checks(discovery: DiscoveryResult) -> list[DimensionResult]:
+def run_static_checks(
+    discovery: DiscoveryResult, drift_findings: list[Finding] | None = None
+) -> list[DimensionResult]:
     tools = discovery.tools
     return [
         check_schema_health(tools),
         check_description_quality(tools),
-        check_security(tools, discovery.server.instructions, discovery.server),
+        check_security(tools, discovery.server.instructions, discovery.server, drift_findings),
     ]

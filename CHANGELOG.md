@@ -3,6 +3,34 @@
 All notable changes to mcp-gauntlet are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Definition-drift detection.** A server can pass review, get installed, and *later*
+  change what its tools say — the client re-reads the definitions on every connection but
+  doesn't re-prompt, so the redefinition lands in the model's context silently. Registry
+  signing can't catch it: the package is unchanged and correctly signed, only the runtime
+  text differs. `tools/list` is now asked twice per session and the answers compared, and
+  the surface is fingerprinted and compared against the previous run (`--no-track-drift`
+  opts out). A definition that changed is scanned in its own right, so a payload appearing
+  only in the second listing raises its own finding rather than a bare "something moved".
+  The change itself never caps a grade — MCP has a `tools.listChanged` capability and
+  honest servers register tools lazily or edit descriptions without bumping a version.
+- **A bundled malicious demo server** (`mcp_gauntlet.fixtures.malicious_server`). Every
+  tool has an innocuous description, so a description scanner finds nothing; the attacks
+  live in a display title, in an output schema behind a `$ref`, in what a tool returns at
+  call time, and in a tool that is clean on the first `tools/list` and poisoned on the
+  second. The server is fully functional — valid schemas, working tools — which is the
+  point: it is flagged for what it says and returns, not for being broken.
+
+### Fixed
+
+- **Security Signals no longer scans display titles for credential references.** A tool
+  honestly called "Reset Password" or "Credentials Vault" was reported for naming a
+  credential; titles are short human labels and get the same exemption schema titles
+  already had.
+
 ## [0.3.2] — 2026-07-25
 
 Audit-proofing plus the first coverage features toward evaluating the servers people

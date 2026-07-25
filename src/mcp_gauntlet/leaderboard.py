@@ -20,6 +20,7 @@ import anyio
 from mcp_gauntlet.config import ServerSpec
 from mcp_gauntlet.engine import evaluate_server
 from mcp_gauntlet.htmlreport import _GRADE_COLORS, _STYLE, _esc, to_html
+from mcp_gauntlet.jsonio import read_json_text
 from mcp_gauntlet.llm import LLMConfig
 from mcp_gauntlet.report import GauntletReport, Severity
 
@@ -47,17 +48,7 @@ class ServerListError(ValueError):
     """The --servers file could not be read as a list of servers."""
 
 
-def _read_json_text(path: Path) -> str:
-    """Read a JSON file written by any of the encodings Windows shells produce.
-
-    PowerShell writes UTF-16LE from a plain ``>`` redirect and UTF-8-with-BOM from
-    ``Out-File -Encoding utf8`` — so the two most natural ways to author this file on the
-    platform both used to fail on a strict utf-8 read. Plain UTF-8 decodes unchanged.
-    """
-    raw = path.read_bytes()
-    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
-        return raw.decode("utf-16")
-    return raw.decode("utf-8-sig")
+_read_json_text = read_json_text  # kept as a name here; the implementation is shared
 
 
 def load_servers(path: Path) -> list[ServerEntry]:

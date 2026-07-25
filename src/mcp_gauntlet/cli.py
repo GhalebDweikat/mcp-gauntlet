@@ -267,6 +267,12 @@ def run(
     probe: bool = typer.Option(
         True, "--probe/--no-probe", help="Run LLM-free robustness probes (malformed inputs)."
     ),
+    track_drift: bool = typer.Option(
+        True,
+        "--track-drift/--no-track-drift",
+        help="Record the server's tool definitions and compare them against the last run, "
+        "to catch a server that redefines its tools after you approved them.",
+    ),
     tasks_file: Path | None = typer.Option(
         None,
         "--tasks-file",
@@ -347,6 +353,7 @@ def run(
         tasks_file=tasks_file,
         refresh_tasks=refresh_tasks,
         tool_timeout_s=tool_timeout,
+        track_drift=track_drift,
     )
 
     async def _bounded() -> GauntletReport:

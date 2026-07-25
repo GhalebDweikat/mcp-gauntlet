@@ -34,6 +34,14 @@ for having more tools. The **overall** is the weighted mean of the dimensions *p
 | Response Safety | 1.0 | Dynamic scan of what the tools actually **returned** for injection markers | yes |
 | Robustness | 1.0 | Whether tools reject malformed, schema-violating input | no |
 
+Definition drift is reported inside **Security Signals** rather than as a dimension of its
+own: a server that silently redefines its tools is doing tool-poisoning by another route,
+and a new weighted dimension would have changed every published number without anything
+about those servers changing. Each drift finding is scored against the tool it concerns, so
+it can only ever lower a score — scored as a subject of its own it would have been "100
+minus its own penalties", and a harmless INFO would have *raised* the dimension, paying a
+server for a check that failed to run.
+
 Grades: **A** ≥ 90, **B** ≥ 80, **C** ≥ 70, **D** ≥ 60, **F** below. A server exposing no
 tools grades **N/A** — it is unscored, not perfect.
 
@@ -42,6 +50,14 @@ tools grades **N/A** — it is unscored, not perfect.
 A HIGH finding in **Security Signals** caps the overall at **75** (a C ceiling), no matter
 how strong the other dimensions are. Tool poisoning is a "do not trust this server" signal
 that averaging must not wash out.
+
+Only near-certain signals are allowed to cap. Definition drift therefore never caps on its
+own, in either direction: MCP defines a `tools.listChanged` capability and the reference
+servers all advertise it, so a tool list changing mid-session is documented behaviour, and
+plenty of honest servers edit descriptions without bumping a static version. What caps is a
+*payload* — the changed definition is scanned like any other text, and its own finding does
+the work. Note also that a Python MCP server reports the installed SDK's version unless its
+author sets one, so "did the server admit the change?" is a weaker signal than it looks.
 
 **Response Safety deliberately does not cap.** It scans content a server *returned*, and a
 fetch or filesystem server may faithfully relay untrusted text it did not author. A HIGH

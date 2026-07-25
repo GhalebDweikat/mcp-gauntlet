@@ -65,7 +65,7 @@ A live leaderboard ranks popular public MCP servers by their gauntlet score:
 Generate one yourself across any set of servers listed in a JSON file:
 
 ```bash
-uv run mcp-gauntlet leaderboard --servers leaderboard.servers.json --out docs
+uv run mcp-gauntlet leaderboard --servers leaderboard.servers.json --out docs --board-url https://you.github.io/mcp-gauntlet
 ```
 
 Each server's raw result is saved to `servers/<name>.json` alongside its page, so the
@@ -83,6 +83,28 @@ skips Agent Task Success (the heaviest dimension) and would score systematically
 a smaller denominator. Those are listed separately under **Partially evaluated**, each with
 the reason it wasn't ranked, rather than mixed in where an untested server could outrank a
 tested one.
+
+Every row shows the date its score was **measured**, not when the page was last rebuilt,
+and the board names the gauntlet versions behind its numbers — scoring changes between
+releases, so scores are only comparable within a version.
+
+### Badges
+
+Each listed server gets a [shields.io endpoint](https://shields.io/badges/endpoint-badge)
+document at `badges/<slug>.json`, so its author can show a live grade in their README:
+
+```markdown
+[![mcp-gauntlet](https://img.shields.io/endpoint?url=https://ghalebdweikat.github.io/mcp-gauntlet/badges/sqlite.json)](https://ghalebdweikat.github.io/mcp-gauntlet/)
+```
+
+The badge tracks the published board, so it updates when the board is regenerated. A server
+that fails to evaluate reads *not evaluated* rather than keeping its last grade, and
+`--render-only` retires the badge of any server no longer in `servers/`.
+
+Renaming a server changes its slug, which leaves the old saved result — and so the old
+badge — in place. Delete the stale `servers/<old-slug>.json` and re-render to retire it.
+Saved results are never removed automatically: they are the paid-for measurements that make
+`--render-only` free.
 
 ## Quickstart
 

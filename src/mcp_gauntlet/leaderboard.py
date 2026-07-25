@@ -6,6 +6,7 @@ plus a per-server report page under ``servers/``.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from collections.abc import Callable
@@ -36,6 +37,10 @@ class LeaderboardResult:
     report: GauntletReport | None = None
     error: str | None = None
     page: str | None = None
+    # The filename stem this server's artifacts use (page, saved JSON, badge). Kept even
+    # when there is no page — a server that failed still needs its badge refreshed, or an
+    # embedded one keeps showing the grade from a run this board no longer stands behind.
+    slug: str = ""
 
 
 class ServerListError(ValueError):
@@ -107,7 +112,10 @@ def load_results(out_dir: Path) -> list[LeaderboardResult]:
             # would otherwise make a server silently disappear from a rebuilt board.
             results.append(
                 LeaderboardResult(
-                    name=path.stem, spec="", error=f"saved result could not be read ({path.name})"
+                    name=path.stem,
+                    spec="",
+                    error=f"saved result could not be read ({path.name})",
+                    slug=path.stem,
                 )
             )
             continue
@@ -118,25 +126,145 @@ def load_results(out_dir: Path) -> list[LeaderboardResult]:
                 report=report,
                 error=data.get("error") if report is None else None,
                 page=f"servers/{path.stem}.html" if report else None,
+                slug=path.stem,
             )
         )
     return results
+
+
+# shields.io endpoint colors, keyed by grade. Named colors are shields' own vocabulary.
+_BADGE_COLORS = {
+    "A": "brightgreen",
+    "B": "green",
+    "C": "yellow",
+    "D": "orange",
+    "F": "red",
+    "N/A": "lightgrey",
+}
+
+
+def badge_payload(report: GauntletReport | None) -> str:
+    """A shields.io *endpoint* JSON document for one server's grade.
+
+    Lets a server author embed a live badge that tracks their score with no image hosting
+    on our side:
+    ``![gauntlet](https://img.shields.io/endpoint?url=<board>/badges/<slug>.json)``.
+    The message carries the grade and score together, because a grade alone hides the
+    difference between a 90 and a 99 — and a score alone hides the security cap.
+
+    ``None`` (the server could not be evaluated this run) renders an explicit
+    "not evaluated" badge rather than leaving the previous run's grade in place — an
+    embedded badge must never keep advertising a score the board no longer stands behind.
+    """
+    if report is None:
+        return json.dumps(
+            {
+                "schemaVersion": 1,
+                "label": "mcp-gauntlet",
+                "message": "not evaluated",
+                "color": "lightgrey",
+            },
+            indent=2,
+        )
+    grade = report.grade
+    # Security first: a zero-tool server can still ship poisoned `instructions`, and the
+    # board shows a ⚠ for exactly that. Checking N/A first would replace the warning with a
+    # neutral grey "not scored" on the surface that lands in the author's README.
+    if report.security_critical:
+        # The cap is the headline finding; a bare "C" would read as mediocre-but-fine.
+        detail = "not scored" if grade == "N/A" else f"{grade} ({report.overall_score:.1f})"
+        message = f"{detail} — critical security finding"
+        color = "red"
+    elif grade == "N/A":
+        message = "not scored"
+        color = "lightgrey"
+    else:
+        # One decimal, matching the board row exactly. Rounding to whole points made the
+        # badge contradict its own grade at every boundary: an 89.5 is a B but printed
+        # "B (90)", indistinguishable from a genuine A(90) and disagreeing with the table.
+        message = f"{grade} ({report.overall_score:.1f})"
+        color = _BADGE_COLORS.get(grade, "lightgrey")
+    return json.dumps(
+        {"schemaVersion": 1, "label": "mcp-gauntlet", "message": message, "color": color},
+        indent=2,
+    )
+
+
+def badge_markdown(slug: str, board_url: str) -> str:
+    """The snippet a server author copies into their README to show a live badge."""
+    endpoint = f"{board_url.rstrip('/')}/badges/{slug}.json"
+    return (
+        f"[![mcp-gauntlet](https://img.shields.io/endpoint?url={endpoint})]"
+        f"({board_url.rstrip('/')}/)"
+    )
+
+
+_DATE_PREFIX = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _scanned_on(report: GauntletReport) -> str:
+    """The date this score was measured (not the date the page was rendered).
+
+    A rebuilt board re-stamps the page timestamp but the rows keep their original scan
+    date — without this, a re-render would silently present months-old scores as fresh.
+    ``generated_at`` is an unvalidated string on the model, so anything that isn't a
+    leading ISO date renders as "—" rather than as a truncated non-date in the one column
+    whose whole job is credibility.
+    """
+    match = _DATE_PREFIX.match(report.generated_at or "")
+    return match.group(0) if match else "—"
 
 
 def _slug(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "server"
 
 
-def _unique_slug(name: str, used: set[str]) -> str:
-    """A slug that won't collide with one already written (two names can slug the same)."""
-    base = _slug(name)
-    slug = base
-    suffix = 2
-    while slug in used:
-        slug = f"{base}-{suffix}"
-        suffix += 1
-    used.add(slug)
-    return slug
+def assign_slugs(names: list[str]) -> list[str]:
+    """One distinct filename stem per server name, stable against reordering the list.
+
+    Slugs are assigned over the whole list at once. When several names reduce to the same
+    base, **every** one of them takes a name-derived suffix: handing the bare slug to
+    whichever happened to be listed first would leave that one URL rebinding to a different
+    server on a reorder — the same defect as a positional counter, narrowed to one victim.
+    A badge URL is a public contract pasted into someone else's README, and reordering a
+    JSON list is a routine edit.
+
+    The result therefore depends on the list as a whole, not on each name alone: adding a
+    name that slugs identically to an existing one moves the incumbent off the bare slug.
+    That is the rarer disturbance of the two, but it is a real one — pinning slugs durably
+    would mean persisting the name→slug map rather than deriving it.
+
+    Uniqueness is enforced globally, not per group: a suffixed slug can otherwise land on
+    another group's bare slug, and two servers sharing a stem would overwrite each other's
+    saved result — silently discarding a paid evaluation.
+    """
+    groups: dict[str, list[int]] = {}
+    for index, name in enumerate(names):
+        groups.setdefault(_slug(name), []).append(index)
+
+    slugs = [""] * len(names)
+    used: set[str] = set()
+    # Reserve the unambiguous names first, so a suffixed slug can never take one of theirs.
+    for base, indexes in groups.items():
+        if len(indexes) == 1:
+            slugs[indexes[0]] = base
+            used.add(base)
+
+    for base, indexes in groups.items():
+        if len(indexes) == 1:
+            continue
+        for index in indexes:
+            digest = hashlib.sha256(names[index].encode("utf-8")).hexdigest()[:6]
+            slug = f"{base}-{digest}"
+            # Two entries with the identical name hash identically; they are
+            # indistinguishable anyway, so a counter is as stable as anything can be.
+            suffix = 2
+            while slug in used:
+                slug = f"{base}-{digest}-{suffix}"
+                suffix += 1
+            used.add(slug)
+            slugs[index] = slug
+    return slugs
 
 
 def _dim_score(report: GauntletReport, key: str) -> float | None:
@@ -156,14 +284,15 @@ async def run_leaderboard(
     max_turns: int = 8,
     timeout_s: float = 240.0,
     tool_timeout_s: float = 60.0,
+    board_url: str | None = None,
     log: Callable[[str], None] = print,
 ) -> list[LeaderboardResult]:
     servers_dir = out_dir / "servers"
     servers_dir.mkdir(parents=True, exist_ok=True)
 
     results: list[LeaderboardResult] = []
-    used_slugs: set[str] = set()
-    for entry in entries:
+    slugs = assign_slugs([entry.name for entry in entries])
+    for entry, slug in zip(entries, slugs, strict=True):
         log(f"[leaderboard] evaluating {entry.name} ...")
         report: GauntletReport | None = None
         error: str | None = None
@@ -182,8 +311,9 @@ async def run_leaderboard(
         except Exception as exc:  # noqa: BLE001 - one bad server shouldn't sink the batch
             error = str(exc)[:200]
 
-        result = LeaderboardResult(name=entry.name, spec=entry.spec, report=report, error=error)
-        slug = _unique_slug(entry.name, used_slugs)
+        result = LeaderboardResult(
+            name=entry.name, spec=entry.spec, report=report, error=error, slug=slug
+        )
         if report is not None:
             page = servers_dir / f"{slug}.html"
             page.write_text(to_html(report), encoding="utf-8")
@@ -191,21 +321,71 @@ async def run_leaderboard(
             log(f"  -> {report.grade} ({report.overall_score:.1f})")
         else:
             log(f"  -> FAILED: {error}")
+        # Always refresh the badge, including on failure: a badge left from an earlier run
+        # would keep advertising a stale grade on the author's README for a server this run
+        # could not evaluate at all.
+        _write_badge(out_dir, slug, report)
         # Persist the raw result too, so the site can be re-rendered later for free.
         (servers_dir / f"{slug}.json").write_text(_result_payload(result), encoding="utf-8")
         results.append(result)
 
-    (out_dir / "index.html").write_text(render_index(results), encoding="utf-8")
+    # No pruning here: this run may cover a SUBSET of the board (re-scanning one server that
+    # changed is the natural workflow), and every other server's saved result — and so its
+    # place on the next full render — still stands. Retiring badges is `rerender`'s job,
+    # where `servers/*.json` gives the complete picture. Pruning to this run's set would
+    # break bystander READMEs that the next --render-only would then restore.
+    board_url = board_url or _load_board_url(out_dir)
+    _save_board_url(out_dir, board_url)
+    (out_dir / "index.html").write_text(render_index(results, board_url), encoding="utf-8")
     return results
 
 
-def rerender(out_dir: Path) -> list[LeaderboardResult]:
+def _write_badge(out_dir: Path, slug: str, report: GauntletReport | None) -> None:
+    badges_dir = out_dir / "badges"
+    badges_dir.mkdir(parents=True, exist_ok=True)
+    (badges_dir / f"{slug}.json").write_text(badge_payload(report), encoding="utf-8")
+
+
+def _prune_badges(out_dir: Path, keep: set[str]) -> None:
+    """Delete badge files for servers this board no longer publishes.
+
+    A badge claims to reflect "this board's published score", so one for a server that was
+    renamed, dropped from the list, or whose saved result was deleted is a standing lie —
+    and it lives in someone else's README, where nobody will notice it went stale. The
+    rendered index is rewritten wholesale from the current results, so the badges mirror it.
+    """
+    badges_dir = out_dir / "badges"
+    if not badges_dir.is_dir():
+        return
+    for path in badges_dir.glob("*.json"):
+        if path.stem not in keep:
+            path.unlink()
+
+
+def rerender(out_dir: Path, board_url: str | None = None) -> list[LeaderboardResult]:
     """Rebuild the site from saved results, without re-evaluating (and re-paying for) any."""
     results = load_results(out_dir)
+    if not (out_dir / "servers").is_dir():
+        # There is no saved-results directory to rebuild FROM — a moved or misspelled
+        # --out, an interrupted sync, a fresh clone. Return before touching anything:
+        # pruning against an empty set would delete every published badge endpoint (they
+        # live in other people's READMEs) and blank the index, while the caller reports
+        # that it found nothing and exits non-zero. An empty-but-present directory is
+        # different: the results were deliberately removed, so retiring their badges is
+        # exactly right.
+        return results
     for result in results:
         if result.report is not None and result.page:
             (out_dir / result.page).write_text(to_html(result.report), encoding="utf-8")
-    (out_dir / "index.html").write_text(render_index(results), encoding="utf-8")
+        # Badges are derived from the saved result, so a re-render refreshes them (and
+        # backfills them for boards saved before badges existed). A result with no report
+        # gets an explicit "not evaluated" badge rather than keeping an older grade.
+        if result.slug:
+            _write_badge(out_dir, result.slug, result.report)
+    _prune_badges(out_dir, {r.slug for r in results if r.slug})
+    board_url = board_url or _load_board_url(out_dir)
+    _save_board_url(out_dir, board_url)
+    (out_dir / "index.html").write_text(render_index(results, board_url), encoding="utf-8")
     return results
 
 
@@ -223,6 +403,9 @@ a { color:#0969da; text-decoration:none; } a:hover { text-decoration:underline; 
 h2 { margin-top:36px; font-size:1.1rem; }
 .badge { display:inline-block; font-size:.72rem; font-weight:600; padding:2px 8px;
   border-radius:999px; background:var(--track); color:var(--muted); vertical-align:2px; }
+td.scanned { color:var(--muted); font-size:.85rem; white-space:nowrap; }
+pre.snippet { background:var(--card); border:1px solid var(--border); border-radius:8px;
+  padding:10px 12px; overflow-x:auto; font-size:.8rem; }
 """
 
 
@@ -277,19 +460,83 @@ def _board_row(result: LeaderboardResult, rank: str) -> str:
         f'<td class="num">{rep.overall_score:.1f}</td>'
         f'<td class="num">{ts}</td>'
         f'<td class="ctr">{_security_glyph(rep)}</td>'
-        f'<td class="num">{rep.tool_count}</td></tr>'
+        f'<td class="num">{rep.tool_count}</td>'
+        f'<td class="num scanned">{_esc(_scanned_on(rep))}</td></tr>'
     )
 
+
+# The colspan values below track this column count: bump both when adding a column.
+_BOARD_COLUMNS = 8
 
 _BOARD_HEAD = (
     '<table class="board"><thead><tr>'
     '<th class="num">#</th><th>Server</th><th>Grade</th><th class="num">Score</th>'
     '<th class="num">Task&nbsp;success</th><th class="ctr">Security</th>'
-    '<th class="num">Tools</th></tr></thead><tbody>'
+    '<th class="num">Tools</th><th class="num">Scanned</th></tr></thead><tbody>'
 )
 
 
-def render_index(results: list[LeaderboardResult]) -> str:
+# Deliberately NOT a real board: a snippet is only correct for the board that published it.
+# Defaulting to any specific site would make every other operator's page hand out badge URLs
+# pointing at that site — and because slugs are generic server names (git, filesystem), the
+# badge would resolve and quietly advertise a DIFFERENT server's grade instead of 404ing.
+BOARD_URL_PLACEHOLDER = "https://your-board.example"
+_BOARD_META = "board.json"
+
+
+def _save_board_url(out_dir: Path, board_url: str | None) -> None:
+    if board_url:
+        (out_dir / _BOARD_META).write_text(
+            json.dumps({"board_url": board_url}, indent=2), encoding="utf-8"
+        )
+
+
+def _load_board_url(out_dir: Path) -> str | None:
+    """The URL a previous run published this board at.
+
+    ``--render-only`` is the documented free rebuild, so it must not silently downgrade a
+    correct badge snippet to the placeholder just because the flag wasn't repeated.
+    """
+    try:
+        data = json.loads(_read_json_text(out_dir / _BOARD_META))
+    except (OSError, ValueError):
+        return None
+    url = data.get("board_url") if isinstance(data, dict) else None
+    return str(url) if url else None
+
+
+def _badge_section(shown: list[LeaderboardResult], board_url: str | None) -> str:
+    """Tell a listed server's author how to embed their live badge.
+
+    The badge reads the same ``badges/<slug>.json`` the board writes, so it updates when the
+    board does — no action needed from the author after the one-time paste, and no claim
+    here that we will keep it fresh beyond the next scan.
+    """
+    example = next((r for r in shown if r.slug), None)
+    slug = example.slug if example else "your-server"
+    url = board_url or BOARD_URL_PLACEHOLDER
+    snippet = badge_markdown(slug, url)
+    unset_note = (
+        ""
+        if board_url
+        else '<p class="note">This board was generated without <code>--board-url</code>, so '
+        f"the snippet above uses a placeholder host — replace <code>{_esc(url)}</code> with "
+        "the URL this site is published at.</p>"
+    )
+    return (
+        "<h2>Add your badge</h2>"
+        '<p class="note">Listed here? Paste this into your README — it reads this board\'s '
+        "published score and updates whenever the board is regenerated. Swap "
+        f"<code>{_esc(slug)}</code> for your server's slug: the filename of its row link, "
+        "without the <code>.html</code>.</p>"
+        f'<pre class="snippet">{_esc(snippet)}</pre>'
+        + unset_note
+        + '<p class="note">Not listed, or think a score is wrong? Open an issue on the '
+        "repository — re-runs and corrections are free.</p>"
+    )
+
+
+def render_index(results: list[LeaderboardResult], board_url: str | None = None) -> str:
     # A zero-tool (N/A) server was not really scored, so keep it out of the ranked table
     # (where its synthetic 0.0 would sort it below a genuinely-graded F) and list it with
     # the unevaluable ones.
@@ -333,6 +580,20 @@ def render_index(results: list[LeaderboardResult]) -> str:
             model = f"{r.report.agentic.provider}:{r.report.agentic.model}"
             break
 
+    # Every version that produced a score on this page. A board rebuilt after an upgrade can
+    # legitimately mix them, and saying so is the honest alternative to implying one number.
+    # Rows with no recorded version are LISTED, never dropped: silently omitting them would
+    # let a board with one fresh row and nine unknown ones claim a single methodology —
+    # exactly the comparability guarantee this line exists to make good on.
+    stamped = {r.report.gauntlet_version for r in results if r.report}
+    known = sorted(v for v in stamped if v)
+    if known and "" in stamped:
+        versions = f"mcp-gauntlet {', '.join(known)} and an unrecorded earlier version"
+    elif known:
+        versions = f"mcp-gauntlet {', '.join(known)}"
+    else:
+        versions = "an unrecorded version of mcp-gauntlet"
+
     board = (
         _BOARD_HEAD
         + "".join(_board_row(r, str(i)) for i, r in enumerate(ranked, start=1))
@@ -342,9 +603,8 @@ def render_index(results: list[LeaderboardResult]) -> str:
     partial_section = ""
     if partial:
         partial_rows = "".join(
-            _board_row(r, "—")
-            + f'<tr class="failed"><td></td><td colspan="6">{_esc(_partial_reason(r.report))}'
-            "</td></tr>"
+            _board_row(r, "—") + f'<tr class="failed"><td></td><td colspan="{_BOARD_COLUMNS - 1}">'
+            f"{_esc(_partial_reason(r.report))}</td></tr>"
             for r in partial
             if r.report is not None
         )
@@ -374,7 +634,7 @@ def render_index(results: list[LeaderboardResult]) -> str:
             name_cell = f'<a href="{_esc(r.page)}">{_esc(r.name)}</a>' if r.page else _esc(r.name)
             unranked_rows.append(
                 f'<tr class="failed"><td class="num">—</td><td>{name_cell}</td>'
-                f'<td colspan="5">{_esc(reason)}</td></tr>'
+                f'<td colspan="{_BOARD_COLUMNS - 2}">{_esc(reason)}</td></tr>'
             )
         unranked_section = (
             "<h2>Not scored</h2>" + _BOARD_HEAD + "".join(unranked_rows) + "</tbody></table>"
@@ -410,8 +670,16 @@ def render_index(results: list[LeaderboardResult]) -> str:
         )
         + "⚠ = static tool-poisoning in a description (caps the grade), "
         "⚡ = injection in a live tool output (does not cap).</p>"
+        + f'<p class="note">Scored by {_esc(versions)}. Scoring changes between '
+        "releases, so compare scores only within the same version — each row's "
+        "<strong>Scanned</strong> date is when that score was measured, not when this page "
+        "was rebuilt.</p>"
         + partial_section
         + unranked_section
+        # `unranked` included deliberately: rerender writes badges for failed/N-A servers
+        # too, so they are legitimate examples — and on a board where nothing scored, they
+        # are the ONLY ones, which is exactly when a placeholder filename would be wrong.
+        + _badge_section(ranked + partial + unranked, board_url)
         + "</div>"
     )
     return (

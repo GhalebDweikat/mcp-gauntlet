@@ -124,6 +124,13 @@ def interaction_note(detail: AgenticDetail | None) -> str | None:
     )
 
 
+def _version() -> str:
+    """The running gauntlet version, stamped onto every report it produces."""
+    from mcp_gauntlet import __version__  # local import: the package __init__ owns the lookup
+
+    return __version__
+
+
 def _has_critical_security(dimensions: list[DimensionResult]) -> bool:
     """Whether the (server-authored) security dimension carries a HIGH finding.
 
@@ -145,6 +152,11 @@ class GauntletReport(BaseModel):
     generated_at: str
     security_critical: bool = False
     agentic: AgenticDetail | None = None
+    # The version that produced this score. Scoring changes between releases (new
+    # dimensions, re-weighting), so a bare number is not comparable across them — every
+    # published score has to say which methodology it came from. Defaulted, not required,
+    # so a report saved by an older version still loads.
+    gauntlet_version: str = ""
 
     @classmethod
     def build(
@@ -183,6 +195,7 @@ class GauntletReport(BaseModel):
                 generated_at=datetime.now(UTC).isoformat(timespec="seconds"),
                 security_critical=_has_critical_security(dimensions),
                 agentic=agentic,
+                gauntlet_version=_version(),
             )
 
         total_weight = sum(d.weight for d in dimensions) or 1.0
@@ -204,6 +217,7 @@ class GauntletReport(BaseModel):
             generated_at=datetime.now(UTC).isoformat(timespec="seconds"),
             security_critical=security_critical,
             agentic=agentic,
+            gauntlet_version=_version(),
         )
 
     @property

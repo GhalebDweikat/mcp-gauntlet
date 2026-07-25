@@ -11,6 +11,19 @@ and honest handling of servers that need capabilities the harness doesn't drive.
 
 ### Added
 
+- **A live badge for every server on the leaderboard.** The board writes a
+  [shields.io endpoint](https://shields.io/badges/endpoint-badge) document per server, so a
+  server author can paste one line into their README and show their current gauntlet grade;
+  it updates whenever the board is regenerated. The board prints the exact snippet, and
+  `--board-url` sets the public URL it points at. A badge for a server the board no longer
+  publishes is retired rather than left advertising a score that is no longer stood behind,
+  and a server that fails to evaluate reads "not evaluated" rather than keeping its last
+  grade.
+- **Every score now says when and by what it was measured.** Each leaderboard row carries
+  the date its score was *measured* (distinct from when the page was last rebuilt), and
+  reports record the gauntlet version that produced them. Scoring changes between releases,
+  so the board names the versions behind its numbers — including, explicitly, rows scored
+  before the version was recorded — rather than implying one methodology.
 - **Evaluate credential-needing servers.** `--env NAME` (or `NAME=VALUE`) passes an
   allow-listed environment variable to a stdio server, and `--header 'Name: Value'` sends an
   auth header to a remote one — so a server that needs a token (GitHub, Slack, a database)

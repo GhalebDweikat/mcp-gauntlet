@@ -434,12 +434,31 @@ def leaderboard(
         help="Rebuild the site from previously saved results in --out, without "
         "re-evaluating anything (no LLM spend).",
     ),
+    board_url: str | None = typer.Option(
+        None,
+        "--board-url",
+        help="Public URL this site will be published at (e.g. "
+        "https://you.github.io/mcp-gauntlet). Used to build the copy-paste badge snippet; "
+        "without it the snippet carries a placeholder host.",
+    ),
 ) -> None:
     """Evaluate many MCP servers and build a static leaderboard site."""
     if render_only:
-        results = rerender(out)
+        had_results_dir = (out / "servers").is_dir()
+        results = rerender(out, board_url)
         if not results:
-            console.print(f"[red]No saved results found in[/red] {out / 'servers'}.")
+            # Say which of the two happened. "Nothing found" while the board was in fact
+            # emptied — index blanked, every published badge retired — reads as a no-op.
+            if had_results_dir:
+                console.print(
+                    f"[yellow]No saved results left in[/yellow] {out / 'servers'} — the "
+                    "board is now empty and its badges have been retired."
+                )
+            else:
+                console.print(
+                    f"[red]No saved results directory at[/red] {out / 'servers'} — "
+                    "nothing was changed (is --out right?)."
+                )
             raise typer.Exit(code=1)
         console.print(
             f"[green]Re-rendered[/green] {len(results)} saved result(s) — "
@@ -493,6 +512,7 @@ def leaderboard(
             max_turns=max_turns,
             timeout_s=timeout,
             tool_timeout_s=tool_timeout,
+            board_url=board_url,
             log=lambda m: console.print(f"[dim]{m}[/dim]"),
         )
     )

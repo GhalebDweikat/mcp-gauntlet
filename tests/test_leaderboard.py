@@ -2,18 +2,23 @@
 
 from pathlib import Path
 
+import anyio
 import pytest
 
 from mcp_gauntlet.checks import run_static_checks
 from mcp_gauntlet.leaderboard import (
     LeaderboardResult,
+    ServerEntry,
     ServerListError,
     _result_payload,
-    _unique_slug,
+    assign_slugs,
+    badge_markdown,
+    badge_payload,
     load_results,
     load_servers,
     render_index,
     rerender,
+    run_leaderboard,
 )
 from mcp_gauntlet.models import DiscoveryResult, ServerInfo, ToolInfo
 from mcp_gauntlet.report import (
@@ -119,11 +124,37 @@ def test_load_servers_reports_bad_input_clearly(tmp_path: Path) -> None:
         load_servers(missing_key)
 
 
-def test_unique_slug_dedupes_collisions() -> None:
-    used: set[str] = set()
-    assert _unique_slug("My Server", used) == "my-server"
-    assert _unique_slug("my  server", used) == "my-server-2"  # slugs the same -> suffixed
-    assert _unique_slug("MY SERVER!", used) == "my-server-3"
+def test_slugs_are_clean_when_names_do_not_collide() -> None:
+    assert assign_slugs(["My Server", "Other"]) == ["my-server", "other"]
+
+
+def test_colliding_slugs_do_not_depend_on_list_order() -> None:
+    # A badge URL is a public contract pasted into someone else's README, so a slug must
+    # depend only on the name it belongs to. Handing the bare slug to whichever name came
+    # first would leave THAT url rebinding to a different server on a reorder.
+    forward = assign_slugs(["My Server", "my  server"])
+    reverse = assign_slugs(["my  server", "My Server"])
+    assert forward == list(reversed(reverse))  # each name kept its own slug
+    assert "my-server" not in forward  # nobody gets the ambiguous bare slug
+    assert all(s.startswith("my-server-") for s in forward)
+    assert len(set(forward)) == 2
+
+
+def test_identical_names_still_get_distinct_slugs() -> None:
+    slugs = assign_slugs(["Dup", "Dup"])
+    assert len(set(slugs)) == 2  # indistinguishable inputs, but files must not overwrite
+
+
+def test_a_suffixed_slug_never_collides_with_another_name() -> None:
+    # Deduping only WITHIN a colliding group lets a suffixed slug land on some other
+    # server's bare slug. Two servers would then share one saved-result file and one badge
+    # endpoint: the second overwrites the first, silently discarding a paid evaluation.
+    for names in (
+        ["My Server", "my  server", "my-server-c2d9a8"],
+        ["dup", "dup", "dup 9eb620"],
+    ):
+        slugs = assign_slugs(names)
+        assert len(set(slugs)) == len(names), (names, slugs)
 
 
 def test_na_server_listed_unranked_not_in_score_table() -> None:
@@ -330,3 +361,278 @@ def test_zero_tool_server_surfaces_its_security_finding() -> None:
     html = render_index([LeaderboardResult(name="empty", spec="e", report=report, page="p.html")])
     assert "exposes no tools" in html
     assert "critical security finding in its instructions" in html
+
+
+# --- Batch C: badges, scan dates, and methodology version --------------------------
+
+
+def test_badge_payload_is_a_valid_shields_endpoint() -> None:
+    import json as _json
+
+    result = _scored("alpha", [_dim("schema", 95.0), _dim("task_success", 92.0, 3.0)])
+    assert result.report is not None
+    payload = _json.loads(badge_payload(result.report))
+    assert payload["schemaVersion"] == 1
+    assert payload["label"] == "mcp-gauntlet"
+    assert payload["message"].startswith("A (")
+    assert payload["color"] == "brightgreen"
+
+
+def test_badge_says_when_a_grade_was_security_capped() -> None:
+    # A bare "C" would read as mediocre-but-fine; the cap is the headline finding.
+    import json as _json
+
+    security = DimensionResult(
+        key="security",
+        title="Security",
+        weight=2.0,
+        score=40.0,
+        findings=[Finding(severity=Severity.HIGH, message="poisoned")],
+    )
+    report = GauntletReport.build(
+        spec="x",
+        server=ServerInfo(name="bad"),
+        tool_count=1,
+        dimensions=[security, _dim("task_success", 100.0, 3.0)],
+    )
+    payload = _json.loads(badge_payload(report))
+    assert "critical security finding" in payload["message"]
+    assert payload["color"] == "red"
+
+
+def test_badge_keeps_the_security_warning_on_an_unscored_server() -> None:
+    # A zero-tool server can still ship poisoned `instructions`. The board shows a ⚠ for it;
+    # checking N/A before security_critical would replace that with a neutral grey badge on
+    # the surface that lands in the author's README.
+    import json as _json
+
+    security = DimensionResult(
+        key="security",
+        title="Security",
+        weight=2.0,
+        score=63.0,
+        findings=[Finding(severity=Severity.HIGH, message="instructions attempt an override")],
+    )
+    report = GauntletReport.build(
+        spec="e", server=ServerInfo(name="empty"), tool_count=0, dimensions=[security]
+    )
+    assert report.grade == "N/A" and report.security_critical
+    payload = _json.loads(badge_payload(report))
+    assert "critical security finding" in payload["message"]
+    assert payload["color"] == "red"
+
+
+def test_badge_score_never_contradicts_its_grade_at_a_boundary() -> None:
+    # Rounding to whole points made an 89.5 (a B) print "B (90)" — indistinguishable from a
+    # genuine A(90), and disagreeing with the board row, which shows one decimal.
+    import json as _json
+
+    report = GauntletReport.build(
+        spec="x",
+        server=ServerInfo(name="edge"),
+        tool_count=1,
+        dimensions=[_dim("a", 89.5)],
+    )
+    assert report.grade == "B"
+    assert _json.loads(badge_payload(report))["message"] == "B (89.5)"
+
+
+def test_badge_for_an_unscored_server_does_not_imply_a_grade() -> None:
+    import json as _json
+
+    report = GauntletReport.build(
+        spec="e", server=ServerInfo(name="empty"), tool_count=0, dimensions=[_dim("s", 100.0)]
+    )
+    payload = _json.loads(badge_payload(report))
+    assert payload["message"] == "not scored"
+    assert payload["color"] == "lightgrey"
+
+
+def test_badge_markdown_points_at_the_endpoint_json() -> None:
+    snippet = badge_markdown("my-server", "https://example.github.io/mcp-gauntlet/")
+    assert "img.shields.io/endpoint?url=" in snippet
+    assert "https://example.github.io/mcp-gauntlet/badges/my-server.json" in snippet
+    assert snippet.startswith("[![mcp-gauntlet]")  # a linked image, not a bare image
+
+
+def test_board_shows_each_row_scan_date_not_the_render_date() -> None:
+    # A re-render re-stamps the page timestamp; the rows must keep the date their score was
+    # actually measured, or stale scores silently read as fresh.
+    result = _scored("alpha", [_dim("schema", 90.0), _dim("task_success", 80.0, 3.0)])
+    assert result.report is not None
+    result.report.generated_at = "2020-01-02T03:04:05+00:00"
+    html = render_index([result])
+    assert "2020-01-02" in html
+    assert "Scanned" in html
+
+
+def test_board_reports_the_versions_that_produced_the_scores() -> None:
+    a = _scored("alpha", [_dim("schema", 90.0), _dim("task_success", 80.0, 3.0)])
+    b = _scored("beta", [_dim("schema", 70.0), _dim("task_success", 60.0, 3.0)])
+    assert a.report is not None and b.report is not None
+    a.report.gauntlet_version = "0.3.1"
+    b.report.gauntlet_version = "0.3.2"
+    html = render_index([a, b])
+    # A board rebuilt across an upgrade legitimately mixes versions; say so rather than
+    # implying every score came from one methodology.
+    assert "0.3.1" in html and "0.3.2" in html
+    assert "compare scores only within the same version" in html
+
+
+def test_board_discloses_rows_with_no_recorded_version() -> None:
+    # The realistic mixed board: one row re-scanned by the current release, the rest saved
+    # before the version was stamped. Dropping the unknowns would let the page claim a
+    # single methodology it does not have.
+    fresh = _scored("alpha", [_dim("schema", 90.0), _dim("task_success", 80.0, 3.0)])
+    old = _scored("beta", [_dim("schema", 70.0), _dim("task_success", 60.0, 3.0)])
+    assert fresh.report is not None and old.report is not None
+    fresh.report.gauntlet_version = "0.3.2"
+    old.report.gauntlet_version = ""
+    html = render_index([fresh, old])
+    assert "0.3.2" in html
+    assert "unrecorded" in html
+
+
+def test_badge_section_uses_a_placeholder_without_a_board_url() -> None:
+    # Defaulting to any real board would hand every other operator a snippet pointing at
+    # THAT board — and since slugs are generic server names, it would resolve and quietly
+    # advertise a different server's grade instead of 404ing.
+    result = _scored("alpha", [_dim("schema", 90.0), _dim("task_success", 80.0, 3.0)])
+    html = render_index([result])
+    assert "your-board.example" in html
+    assert "ghalebdweikat" not in html
+    assert "--board-url" in html
+
+    published = render_index([result], "https://example.github.io/board")
+    assert "https://example.github.io/board/badges/" in published
+    assert "your-board.example" not in published
+
+
+def test_badge_instructions_describe_the_slug_correctly() -> None:
+    # The row link is servers/<slug>.html, so "the last path segment" would send an author
+    # to badges/<slug>.html.json — a 404, on the flywheel's primary call to action.
+    html = render_index([_scored("alpha", [_dim("schema", 90.0), _dim("task_success", 80.0, 3.0)])])
+    assert "without the <code>.html</code>" in html
+
+
+def test_rerender_retires_badges_for_servers_the_board_no_longer_lists(tmp_path: Path) -> None:
+    # A badge claims to reflect "this board's published score"; one for a server that was
+    # renamed or dropped is a standing lie living in someone else's README.
+    servers_dir = tmp_path / "servers"
+    servers_dir.mkdir(parents=True)
+    scored = _scored("alpha", [_dim("schema", 90.0), _dim("task_success", 80.0, 3.0)])
+    (servers_dir / "alpha.json").write_text(_result_payload(scored), encoding="utf-8")
+    rerender(tmp_path)
+    assert (tmp_path / "badges" / "alpha.json").exists()
+
+    # The server is dropped from the board entirely.
+    (servers_dir / "alpha.json").unlink()
+    rerender(tmp_path)
+    assert not (tmp_path / "badges" / "alpha.json").exists()
+
+
+def test_rerender_without_a_results_directory_destroys_nothing(tmp_path: Path) -> None:
+    # A moved/misspelled --out, an interrupted sync, a fresh clone: there is nothing to
+    # rebuild FROM, so the rebuild must not delete the published badge endpoints (they live
+    # in other people's READMEs) or blank the index while the caller reports it found
+    # nothing. Note there is no servers/ directory here at all.
+    (tmp_path / "badges").mkdir(parents=True)
+    (tmp_path / "badges" / "alpha.json").write_text('{"schemaVersion": 1}', encoding="utf-8")
+    (tmp_path / "index.html").write_text("<html>previous board</html>", encoding="utf-8")
+
+    assert rerender(tmp_path) == []
+    assert (tmp_path / "badges" / "alpha.json").exists()
+    assert "previous board" in (tmp_path / "index.html").read_text(encoding="utf-8")
+
+
+def test_a_partial_run_does_not_retire_other_servers_badges(tmp_path: Path) -> None:
+    # Re-scanning one server that changed is the natural workflow; the others' saved results
+    # still stand, so their badges must survive rather than break and then be restored by
+    # the next --render-only.
+    servers_dir = tmp_path / "servers"
+    servers_dir.mkdir(parents=True)
+    for name in ("alpha", "beta"):
+        result = _scored(name, [_dim("schema", 90.0), _dim("task_success", 80.0, 3.0)])
+        (servers_dir / f"{name}.json").write_text(_result_payload(result), encoding="utf-8")
+    rerender(tmp_path)
+    assert (tmp_path / "badges" / "beta.json").exists()
+
+    async def _one_server() -> None:
+        await run_leaderboard(
+            [ServerEntry(name="alpha", spec="python -m mcp_gauntlet.fixtures.good_server")],
+            out_dir=tmp_path,
+            llm_config=None,
+            timeout_s=60.0,
+            log=lambda _m: None,
+        )
+
+    anyio.run(_one_server)
+    assert (tmp_path / "badges" / "beta.json").exists()  # bystander untouched
+
+
+def test_board_url_survives_a_render_only_rebuild(tmp_path: Path) -> None:
+    # --render-only is the documented free rebuild; it must not silently downgrade a correct
+    # badge snippet to the placeholder just because the flag wasn't repeated.
+    servers_dir = tmp_path / "servers"
+    servers_dir.mkdir(parents=True)
+    result = _scored("alpha", [_dim("schema", 90.0), _dim("task_success", 80.0, 3.0)])
+    (servers_dir / "alpha.json").write_text(_result_payload(result), encoding="utf-8")
+
+    rerender(tmp_path, "https://example.github.io/board")
+    rerender(tmp_path)  # no --board-url this time
+    html = (tmp_path / "index.html").read_text(encoding="utf-8")
+    assert "https://example.github.io/board/badges/" in html
+    assert "your-board.example" not in html
+
+
+def test_badge_example_uses_a_real_slug_on_a_board_with_no_scored_servers() -> None:
+    # rerender writes badges for failed/N-A servers too, so the snippet must name one that
+    # exists rather than a placeholder filename that 404s.
+    failed = LeaderboardResult(name="zeta", spec="z", error="connection refused", slug="zeta")
+    html = render_index([failed], "https://example.github.io/board")
+    assert "badges/zeta.json" in html
+    assert "your-server.json" not in html
+
+
+def test_unparseable_scan_date_renders_as_a_dash() -> None:
+    # generated_at is an unvalidated string; a hand-edited or foreign saved report must not
+    # print a truncated non-date in the column whose whole job is credibility.
+    result = _scored("alpha", [_dim("schema", 90.0), _dim("task_success", 80.0, 3.0)])
+    assert result.report is not None
+    result.report.generated_at = "not-a-date-at-all"
+    html = render_index([result])
+    assert "not-a-date" not in html
+
+
+def test_rerender_writes_badges_for_saved_results(tmp_path: Path) -> None:
+    servers_dir = tmp_path / "servers"
+    servers_dir.mkdir(parents=True)
+    scored = _scored("alpha", [_dim("schema", 90.0), _dim("task_success", 80.0, 3.0)])
+    (servers_dir / "alpha.json").write_text(_result_payload(scored), encoding="utf-8")
+
+    rerender(tmp_path)
+    badge = tmp_path / "badges" / "alpha.json"
+    assert badge.exists()  # backfilled from the saved report, with no re-evaluation
+    assert "schemaVersion" in badge.read_text(encoding="utf-8")
+
+
+def test_a_failed_server_does_not_keep_an_older_grade_badge(tmp_path: Path) -> None:
+    # An embedded badge must never keep advertising a score the board no longer stands
+    # behind: a server that scored A last run and fails this run gets an explicit
+    # "not evaluated" badge, not a stale A on its author's README.
+    import json as _json
+
+    servers_dir = tmp_path / "servers"
+    servers_dir.mkdir(parents=True)
+    scored = _scored("alpha", [_dim("schema", 90.0), _dim("task_success", 95.0, 3.0)])
+    (servers_dir / "alpha.json").write_text(_result_payload(scored), encoding="utf-8")
+    rerender(tmp_path)
+    assert "A (" in _json.loads((tmp_path / "badges" / "alpha.json").read_text())["message"]
+
+    # Now the saved result records a failure instead.
+    failed = LeaderboardResult(name="alpha", spec="a", error="connection refused")
+    (servers_dir / "alpha.json").write_text(_result_payload(failed), encoding="utf-8")
+    rerender(tmp_path)
+    payload = _json.loads((tmp_path / "badges" / "alpha.json").read_text())
+    assert payload["message"] == "not evaluated"
+    assert payload["color"] == "lightgrey"

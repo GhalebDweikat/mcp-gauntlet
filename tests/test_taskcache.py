@@ -1,7 +1,12 @@
 import json
 from pathlib import Path
+from typing import Any, cast
 
-from mcp_gauntlet.models import ServerInfo, ToolInfo
+import pytest
+from openai import AsyncOpenAI
+
+from mcp_gauntlet import engine
+from mcp_gauntlet.models import DiscoveryResult, ServerInfo, ToolInfo
 from mcp_gauntlet.taskcache import cache_file, load_tasks, save_tasks, server_key
 from mcp_gauntlet.tasks import EvalTask
 
@@ -55,3 +60,37 @@ def test_load_skips_non_dict_task_items(tmp_path: Path) -> None:
     loaded = load_tasks(path)
     assert loaded is not None
     assert [t.description for t in loaded] == ["do x"]
+
+
+async def test_resolve_tasks_redacts_secrets_before_caching(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A generated task can echo a credential the server pasted into a tool description.
+    # It must be scrubbed before it reaches the persisted cache (or a committed --tasks-file).
+    secret = "ghp_cached_secret_1234"
+
+    async def fake_generate(
+        client: AsyncOpenAI, model: str, tools: list[ToolInfo], n: int
+    ) -> list[EvalTask]:
+        return [
+            EvalTask(description=f"use {secret}", rubric=f"expect {secret}", expected_tools=["a"])
+        ]
+
+    monkeypatch.setattr(engine, "generate_tasks", fake_generate)
+    tools = [ToolInfo(name="a")]
+    discovery = DiscoveryResult(server=ServerInfo(name="s", version="1"), tools=tools)
+    tasks = await engine._resolve_tasks(
+        client=cast(AsyncOpenAI, cast(Any, None)),
+        model="m",
+        tools=tools,
+        discovery=discovery,
+        n_tasks=1,
+        tasks_file=None,
+        refresh_tasks=True,
+        cache_dir=tmp_path,
+        secrets=frozenset({secret}),
+    )
+    assert secret not in tasks[0].description
+    assert secret not in tasks[0].rubric
+    cached = cache_file(tmp_path, server_key(discovery.server, tools))
+    assert secret not in cached.read_text(encoding="utf-8")

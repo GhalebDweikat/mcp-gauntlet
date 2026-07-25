@@ -11,6 +11,16 @@ and honest handling of servers that need capabilities the harness doesn't drive.
 
 ### Added
 
+- **Evaluate credential-needing servers.** `--env NAME` (or `NAME=VALUE`) passes an
+  allow-listed environment variable to a stdio server, and `--header 'Name: Value'` sends an
+  auth header to a remote one — so a server that needs a token (GitHub, Slack, a database)
+  can finally be evaluated. A bare `--env NAME` pulls the value from your environment so it
+  never touches the command line, and only the vars you name are forwarded (the child still
+  gets a minimal safe base environment, not your whole shell). Credential values are
+  **redacted** from every persisted report, the console summary, the task cache, and error
+  messages — scrubbed from the data before it is serialized, so a token containing a quote
+  or backslash can't survive as its escaped form. Evaluate untrusted credentialed servers
+  only against sandbox/throwaway accounts.
 - **Honest handling of servers that request interactive capabilities.** mcp-gauntlet drives
   no user (elicitation) or server-side LLM (sampling), so a tool that needs one of those to
   finish can't complete here. Such requests are now counted and declined cleanly; a tool

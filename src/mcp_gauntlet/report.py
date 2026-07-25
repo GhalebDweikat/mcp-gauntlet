@@ -9,12 +9,32 @@ the weighted mean of the dimension scores.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
 from mcp_gauntlet.models import ServerInfo
+
+REDACTION_PLACEHOLDER = "***REDACTED***"
+
+
+def redact(text: str, secrets: Iterable[str]) -> str:
+    """Replace each known credential value in one string with a placeholder.
+
+    Defense-in-depth for credentialed evaluations: the tokens passed to a server via
+    --env / --header are kept out of the report by construction, but a hostile or careless
+    server can echo one back in a tool output, a finding, or its own name. Use this on RAW
+    text — a console line, or a field value before serialization. Do NOT run it on already
+    serialized JSON/HTML: a secret containing a quote or backslash is escaped there
+    (``ab"cd`` → ``ab\\"cd``) and a literal replace would miss the escaped form. For a
+    whole report, use :func:`redact_report`, which scrubs the fields before rendering.
+    """
+    for secret in secrets:
+        if secret:
+            text = text.replace(secret, REDACTION_PLACEHOLDER)
+    return text
 
 
 class Severity(StrEnum):
@@ -218,6 +238,40 @@ class GauntletReport(BaseModel):
         for dimension in self.dimensions:
             out.extend(dimension.findings)
         return out
+
+
+# Closed-vocabulary field values the report model must parse back exactly. If a credential
+# happened to equal one of these (e.g. --env X=high with a HIGH finding present), redacting
+# it whole would turn "high" into the placeholder and make model_validate reject the rebuilt
+# report — crashing the write and losing a paid run. These words are never credentials, so a
+# field whose ENTIRE value is one is left intact (a secret merely CONTAINING one as a
+# substring is still redacted).
+_STRUCTURAL_VALUES = frozenset(s.value for s in Severity)
+
+
+def _redact_tree(obj: object, secrets: frozenset[str]) -> object:
+    if isinstance(obj, str):
+        return obj if obj in _STRUCTURAL_VALUES else redact(obj, secrets)
+    if isinstance(obj, list):
+        return [_redact_tree(v, secrets) for v in obj]
+    if isinstance(obj, dict):
+        return {k: _redact_tree(v, secrets) for k, v in obj.items()}
+    return obj
+
+
+def redact_report(report: GauntletReport, secrets: frozenset[str]) -> GauntletReport:
+    """Return a copy of the report with every string field scrubbed of known secrets.
+
+    Redacts the DATA, before any serializer runs, so a token is caught whatever encoding
+    the output format would have applied to it — the escaping gap that makes scrubbing a
+    rendered JSON/HTML string unsafe. Walking the model dump covers every field, including
+    ones added later, rather than a hand-maintained list of places a secret might land.
+    Score fields are preserved verbatim: redacting text never changes a grade.
+    """
+    if not secrets:
+        return report
+    scrubbed = _redact_tree(report.model_dump(), secrets)
+    return GauntletReport.model_validate(scrubbed)
 
 
 def score_from_findings(findings: list[Finding]) -> float:

@@ -82,3 +82,24 @@ def test_interaction_note_renders_in_markdown_and_html() -> None:
     html = to_html(report)
     assert "elicitation/sampling" in md
     assert "elicitation/sampling" in html
+
+
+async def test_env_allowlist_reaches_a_stdio_child() -> None:
+    # The end-to-end credential path: an allow-listed env var must actually arrive in the
+    # spawned server process (the SDK merges it over a minimal safe base environment).
+    spec = ServerSpec.parse("python -m mcp_gauntlet.fixtures.env_echo_server")
+    spec.env = {"MCP_GAUNTLET_TEST_TOKEN": "sentinel-value-1234"}
+    async with open_session(spec) as (session, _init, _interactions):
+        result = await session.call_tool("whoami", {})
+        text = "".join(getattr(b, "text", "") for b in (result.content or []))
+        assert text == "sentinel-value-1234"
+
+
+async def test_env_not_passed_stays_unset_in_the_child() -> None:
+    # Without --env the child gets only the SDK's minimal safe environment — no leak of the
+    # parent's variables into an untrusted server.
+    spec = ServerSpec.parse("python -m mcp_gauntlet.fixtures.env_echo_server")
+    async with open_session(spec) as (session, _init, _interactions):
+        result = await session.call_tool("whoami", {})
+        text = "".join(getattr(b, "text", "") for b in (result.content or []))
+        assert text == "<unset>"

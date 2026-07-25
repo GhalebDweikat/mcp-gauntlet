@@ -16,7 +16,7 @@ from mcp_gauntlet.config import ServerSpec
 from mcp_gauntlet.evaluate import run_agentic_eval
 from mcp_gauntlet.llm import LLMConfig, make_async_client
 from mcp_gauntlet.models import DiscoveryResult, ToolInfo
-from mcp_gauntlet.report import AgenticDetail, GauntletReport
+from mcp_gauntlet.report import AgenticDetail, GauntletReport, redact
 from mcp_gauntlet.robustness import run_robustness_probes
 from mcp_gauntlet.safety import filter_read_only
 from mcp_gauntlet.taskcache import (
@@ -39,6 +39,7 @@ async def _resolve_tasks(
     tasks_file: Path | None,
     refresh_tasks: bool,
     cache_dir: Path,
+    secrets: frozenset[str] = frozenset(),
 ) -> list[EvalTask]:
     """Load a pinned/cached task set if present, otherwise generate and save one."""
     path = tasks_file or cache_file(cache_dir, server_key(discovery.server, tools))
@@ -47,6 +48,19 @@ async def _resolve_tasks(
         if cached:  # non-empty hit; an empty/failed set is a miss, not a cached "no tasks"
             return cached
     tasks = await generate_tasks(client, model, tools, n_tasks)
+    if secrets and tasks:
+        # A task is LLM-generated from server-controlled tool descriptions, and the cache
+        # (or a committed --tasks-file) is persisted to disk. If a server echoed a credential
+        # into a description and the model copied it into a task, scrub it before it lands.
+        tasks = [
+            task.model_copy(
+                update={
+                    "description": redact(task.description, secrets),
+                    "rubric": redact(task.rubric, secrets),
+                }
+            )
+            for task in tasks
+        ]
     if tasks:  # never cache a failed (empty) generation — that would reproduce the failure
         save_tasks(path, tasks)
     return tasks
@@ -88,6 +102,7 @@ async def evaluate_server(
                 tasks_file=tasks_file,
                 refresh_tasks=refresh_tasks,
                 cache_dir=cache_dir,
+                secrets=spec.secret_values(),
             )
             agentic_dims, agentic_detail = await run_agentic_eval(
                 session=session,

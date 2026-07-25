@@ -125,3 +125,57 @@ def test_write_report_writes_all_three(tmp_path: Path) -> None:
     loaded = json.loads(json_path.read_text(encoding="utf-8"))
     assert loaded["server"]["name"] == "[red]evil-server[/]"
     assert "get[/rows]" in md_path.read_text(encoding="utf-8")
+
+
+# --- Batch B: credential redaction in the persisted report and console -------------
+
+
+def _report_echoing_a_secret(secret: str) -> GauntletReport:
+    # A server that echoed the credential we passed it back into a finding message.
+    findings = [Finding(tool="whoami", severity=Severity.HIGH, message=f"leaked token {secret}")]
+    dim = DimensionResult(
+        key="security", title="Security", weight=1.0, score=40.0, summary="s", findings=findings
+    )
+    return GauntletReport.build(
+        spec="stdio: srv",
+        server=ServerInfo(name="srv", version="1"),
+        tool_count=1,
+        dimensions=[dim],
+    )
+
+
+def test_write_report_redacts_known_secrets(tmp_path: Path) -> None:
+    secret = "ghp_supersecrettoken1234"
+    report = _report_echoing_a_secret(secret)
+    json_path, md_path, html_path = cli.write_report(report, tmp_path, frozenset({secret}))
+    for path in (json_path, md_path, html_path):
+        text = path.read_text(encoding="utf-8")
+        assert secret not in text, path.name
+        assert "***REDACTED***" in text, path.name
+
+
+def test_write_report_redacts_secrets_with_escaping_characters(tmp_path: Path) -> None:
+    # The redaction must run on the DATA, before serialization: a secret containing a quote
+    # or backslash is escaped in report.json (ab"cd -> ab\"cd) and in report.html
+    # (ab"cd -> ab&quot;cd), so scrubbing the rendered STRING would miss the escaped form.
+    for secret in ('ab"cd-token', "back\\slash-token", "less<than-token", "amp&ersand-token"):
+        report = _report_echoing_a_secret(secret)
+        json_path, md_path, html_path = cli.write_report(report, tmp_path, frozenset({secret}))
+        for path in (json_path, md_path, html_path):
+            text = path.read_text(encoding="utf-8")
+            assert secret not in text, f"{path.name}: raw secret {secret!r} leaked"
+        # Also assert the JSON- and HTML-escaped forms are gone (the actual leak vector).
+        json_escaped = json.dumps(secret)[1:-1]  # strip the surrounding quotes
+        assert json_escaped not in json_path.read_text(encoding="utf-8")
+        html_escaped = secret.replace("&", "&amp;").replace("<", "&lt;").replace('"', "&quot;")
+        assert html_escaped not in html_path.read_text(encoding="utf-8")
+
+
+def test_render_report_redacts_secrets_in_console(monkeypatch: pytest.MonkeyPatch) -> None:
+    secret = "ghp_supersecrettoken1234"
+    buf = io.StringIO()
+    monkeypatch.setattr(cli, "console", Console(file=buf, width=100))
+    cli._render_report(_report_echoing_a_secret(secret), frozenset({secret}))
+    out = buf.getvalue()
+    assert secret not in out
+    assert "REDACTED" in out

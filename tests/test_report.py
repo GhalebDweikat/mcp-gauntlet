@@ -156,6 +156,79 @@ def test_score_from_findings_floors_at_zero() -> None:
     assert score_from_findings([Finding(severity=Severity.HIGH, message="x")] * 20) == 0.0
 
 
+# --- Batch B: report-level credential redaction ------------------------------------
+
+
+def test_redact_report_scrubs_every_string_field_and_keeps_scores() -> None:
+    from mcp_gauntlet.report import redact_report
+
+    secret = 'tok"en-with-quote'  # a quote is exactly what the string-scrub approach missed
+    security = _dim(
+        "security",
+        40.0,
+        weight=2.0,
+        findings=[
+            Finding(
+                severity=Severity.HIGH,
+                tool=f"whoami-{secret}",
+                message=f"echoed {secret}",
+                detail=f"in output: {secret}",
+            )
+        ],
+    )
+    detail = AgenticDetail(provider="p", model="m", tasks_generated=1, repeats=1)
+    detail.results.append(
+        TaskResult(
+            description=f"call whoami expecting {secret}",
+            rubric="r",
+            expected_tools=[],
+            repeats=1,
+            successes=0,
+            success_rate=0.0,
+            mean_score=0.0,
+            sample_reasoning=f"got {secret}",
+        )
+    )
+    report = _build([security, _dim("a", 100.0)], agentic=detail)
+    before_score, before_grade = report.overall_score, report.grade
+
+    scrubbed = redact_report(report, frozenset({secret}))
+
+    dumped = scrubbed.model_dump_json()
+    assert secret not in dumped  # gone from every nested field, before serialization
+    f = scrubbed.dimensions[0].findings[0]
+    assert secret not in (f.tool or "")
+    assert secret not in f.message and secret not in (f.detail or "")
+    assert scrubbed.agentic is not None
+    assert secret not in scrubbed.agentic.results[0].description
+    assert secret not in scrubbed.agentic.results[0].sample_reasoning
+    # Redacting text must never move a score or grade.
+    assert scrubbed.overall_score == before_score
+    assert scrubbed.grade == before_grade
+    assert scrubbed.security_critical is True
+
+
+def test_redact_report_is_a_noop_without_secrets() -> None:
+    from mcp_gauntlet.report import redact_report
+
+    report = _build([_dim("a", 100.0)])
+    assert redact_report(report, frozenset()) is report
+
+
+def test_redact_report_does_not_corrupt_a_severity_valued_secret() -> None:
+    # A credential that happens to equal a Severity value ("high"/"medium"/"info") must not
+    # turn the structural severity field into the placeholder — that would make the rebuilt
+    # report fail validation and crash the write, losing a paid run.
+    from mcp_gauntlet.report import redact_report
+
+    for word in ("high", "medium", "info"):
+        report = _build(
+            [_dim("security", 40.0, findings=[Finding(severity=Severity.HIGH, message="x")])]
+        )
+        scrubbed = redact_report(report, frozenset({word}))  # must not raise ValidationError
+        assert scrubbed.dimensions[0].findings[0].severity is Severity.HIGH
+
+
 # --- R10: report.md must not render untrusted text as Markdown/HTML structure ------
 
 

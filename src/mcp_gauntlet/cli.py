@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import functools
 import inspect
+import os
 from pathlib import Path
 
 import anyio
@@ -13,7 +14,7 @@ from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
-from mcp_gauntlet.config import ServerSpec
+from mcp_gauntlet.config import ServerSpec, TransportKind, parse_env_args, parse_header_args
 from mcp_gauntlet.engine import evaluate_server
 from mcp_gauntlet.env import load_env
 from mcp_gauntlet.htmlreport import to_html
@@ -23,6 +24,8 @@ from mcp_gauntlet.report import (
     GauntletReport,
     Severity,
     interaction_note,
+    redact,
+    redact_report,
     sort_findings,
     to_markdown,
 )
@@ -93,14 +96,22 @@ def doctor(
         )
 
 
-def write_report(report: GauntletReport, out_dir: Path) -> tuple[Path, Path, Path]:
+def write_report(
+    report: GauntletReport, out_dir: Path, secrets: frozenset[str] = frozenset()
+) -> tuple[Path, Path, Path]:
     """Persist the report as JSON + Markdown + HTML.
 
     Lives next to the CLI (its only caller) so ``report.py`` needn't import the HTML
     renderer — that report<->htmlreport import cycle is what previously forced a lazy
     in-function import. Here the composition happens at the top level, cycle-free.
+
+    ``secrets`` (credential values from --env/--header) are scrubbed from the report's
+    fields BEFORE each format is serialized, so a token a server echoed back never lands in
+    a committed report — including in a form (JSON/HTML escaping) that a scrub of the
+    rendered string would miss.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
+    report = redact_report(report, secrets)
     json_path = out_dir / "report.json"
     md_path = out_dir / "report.md"
     html_path = out_dir / "report.html"
@@ -110,12 +121,15 @@ def write_report(report: GauntletReport, out_dir: Path) -> tuple[Path, Path, Pat
     return json_path, md_path, html_path
 
 
-def _render_report(report: GauntletReport) -> None:
+def _render_report(report: GauntletReport, secrets: frozenset[str] = frozenset()) -> None:
+    def r(text: str) -> str:  # scrub any echoed credential from server-controlled console text
+        return redact(text, secrets)
+
     color = _GRADE_COLOR.get(report.grade, "white")
     console.print(
         Panel.fit(
             f"[bold {color}]{report.grade}[/]   [bold]{report.overall_score:.1f}[/]/100",
-            title=f"{escape(report.server.name or 'server')} — gauntlet score",
+            title=f"{escape(r(report.server.name or 'server'))} — gauntlet score",
         )
     )
     if report.security_critical:
@@ -151,12 +165,12 @@ def _render_report(report: GauntletReport) -> None:
             for result in detail.results:
                 if result.inconclusive:
                     tasks_table.add_row(
-                        escape(result.description[:58]), "—", "[dim]incon.[/dim]", "—"
+                        escape(r(result.description[:58])), "—", "[dim]incon.[/dim]", "—"
                     )
                     continue
                 sel = f"{result.selection_score:.0f}" if result.selection_score is not None else "—"
                 tasks_table.add_row(
-                    escape(result.description[:58]),
+                    escape(r(result.description[:58])),
                     f"{result.successes}/{result.repeats}",
                     f"{result.mean_score:.0f}",
                     sel,
@@ -193,7 +207,7 @@ def _render_report(report: GauntletReport) -> None:
         for finding in notable[:15]:
             tag = f"[{_SEVERITY_COLOR[finding.severity]}]{finding.severity.upper():<6}[/]"
             scope = finding.tool or "server"
-            console.print(f"  {tag} [cyan]{escape(scope)}[/]: {escape(finding.message)}")
+            console.print(f"  {tag} [cyan]{escape(r(scope))}[/]: {escape(r(finding.message))}")
         if len(notable) > 15:
             console.print(f"  [dim]… and {len(notable) - 15} more (see report.md)[/dim]")
     else:
@@ -228,6 +242,19 @@ def run(
         "--api-key",
         help="API key for the endpoint (overrides the provider's env var; a keyless "
         "--base-url endpoint needs neither).",
+    ),
+    env: list[str] = typer.Option(
+        [],
+        "--env",
+        help="Pass an env var to a stdio server: NAME (from your environment) or NAME=VALUE. "
+        "Repeatable. For servers that need a credential (e.g. GITHUB_TOKEN). Redacted from "
+        "reports.",
+    ),
+    header: list[str] = typer.Option(
+        [],
+        "--header",
+        help="Send an HTTP header to a remote server: 'Name: Value' (e.g. "
+        "'Authorization: Bearer …'). Repeatable. Redacted from reports.",
     ),
     tasks: int = typer.Option(3, "--tasks", help="Tasks to generate for the agentic eval."),
     repeats: int = typer.Option(2, "--repeats", help="Times to run each task (success rate)."),
@@ -267,6 +294,17 @@ def run(
 ) -> None:
     """Connect to an MCP server, run the gauntlet, and write a scored report."""
     spec = ServerSpec.parse(server)
+    try:
+        spec.env = parse_env_args(env, dict(os.environ))
+        spec.headers = parse_header_args(header)
+    except ValueError as exc:
+        console.print(f"[red]Invalid credential option:[/red] {escape(str(exc))}")
+        raise typer.Exit(code=1) from exc
+    if spec.env and spec.kind is not TransportKind.STDIO:
+        console.print("[yellow]⚠ --env applies to stdio servers only; ignored for a URL.[/yellow]")
+    if spec.headers and spec.kind is TransportKind.STDIO:
+        console.print("[yellow]⚠ --header applies to remote (http) servers only; ignored.[/yellow]")
+    secrets = spec.secret_values()
 
     llm_config: LLMConfig | None = None
     if agentic is None:
@@ -330,20 +368,23 @@ def run(
         )
         raise typer.Exit(code=1) from exc
     except Exception as exc:  # noqa: BLE001 - surface any connection/eval failure
-        console.print(f"[red]Evaluation failed:[/red] {exc}")
+        # A connection/DSN error can echo a credential (e.g. a Postgres URI with the
+        # password); redact before it reaches the terminal or a CI log.
+        console.print(f"[red]Evaluation failed:[/red] {escape(redact(str(exc), secrets))}")
         raise typer.Exit(code=1) from exc
 
     # Persist BEFORE rendering: a console-rendering glitch (unencodable glyph on a legacy
     # code page, stray markup from a hostile server name) must never discard the report of
     # a run the user just paid for. Rendering is best-effort on top of a written artifact.
-    json_path, md_path, html_path = write_report(report, out)
+    json_path, md_path, html_path = write_report(report, out, secrets)
 
     console.print()
     try:
-        _render_report(report)
+        _render_report(report, secrets)
     except Exception as exc:  # noqa: BLE001 - the report is already on disk; don't crash on it
         console.print(
-            f"[yellow]Could not render the summary to console:[/yellow] {escape(str(exc))}"
+            "[yellow]Could not render the summary to console:[/yellow] "
+            f"{escape(redact(str(exc), secrets))}"
         )
     console.print(f"\n[dim]Reports written:[/dim] {json_path} | {md_path} | {html_path}")
 

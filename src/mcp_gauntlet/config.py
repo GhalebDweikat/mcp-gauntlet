@@ -37,6 +37,12 @@ class ServerSpec:
     args: list[str] = field(default_factory=list)
     url: str | None = None
     raw: str = ""
+    # Credentials for reaching a server that needs auth. Kept OUT of ``raw``/``label`` so
+    # they never reach a report, a log line, or the leaderboard. ``env`` is passed to a
+    # stdio child (merged over a minimal safe base environment by the SDK); ``headers`` is
+    # sent with each HTTP request. Populated from --env / --header, never from the spec text.
+    env: dict[str, str] = field(default_factory=dict)
+    headers: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def parse(cls, spec: str) -> ServerSpec:
@@ -51,5 +57,53 @@ class ServerSpec:
         return cls(kind=TransportKind.STDIO, command=tokens[0], args=tokens[1:], raw=s)
 
     def label(self) -> str:
-        """A short human-readable identifier for the server."""
+        """A short human-readable identifier for the server (never includes credentials)."""
         return self.url or self.raw
+
+    def secret_values(self) -> frozenset[str]:
+        """The credential values to redact from any published output.
+
+        Bounded to values of length >= 4 so a pathological one-character token can't turn
+        every digit in a report into ``***``; real tokens are far longer.
+        """
+        return frozenset(v for v in (*self.env.values(), *self.headers.values()) if len(v) >= 4)
+
+
+def parse_env_args(entries: list[str], environ: dict[str, str]) -> dict[str, str]:
+    """Resolve ``--env`` entries into name→value for a stdio child.
+
+    ``NAME`` pulls the value from the parent environment (so a secret never appears on the
+    command line); ``NAME=VALUE`` sets it explicitly. An unset bare ``NAME`` is an error —
+    silently dropping it would send an unauthenticated server a call that looks authorized.
+    """
+    resolved: dict[str, str] = {}
+    for entry in entries:
+        name, sep, value = entry.partition("=")
+        name = name.strip()
+        if not name:
+            # Never echo the entry: for NAME=VALUE it carries the secret VALUE, and this
+            # error can reach a CI log.
+            raise ValueError(
+                "an --env entry has an empty variable name (expected NAME or NAME=VALUE)"
+            )
+        if sep:
+            resolved[name] = value
+        elif name in environ:
+            resolved[name] = environ[name]
+        else:
+            raise ValueError(f"--env {name}: not set in the environment (use NAME=VALUE to inline)")
+    return resolved
+
+
+def parse_header_args(entries: list[str]) -> dict[str, str]:
+    """Resolve ``--header 'Name: Value'`` entries into a header map for an HTTP server."""
+    headers: dict[str, str] = {}
+    for entry in entries:
+        name, sep, value = entry.partition(":")
+        name = name.strip()
+        if not sep or not name:
+            # A malformed header (no colon) may be a bare token — don't echo it; a valid
+            # 'Name: Value' would also carry the secret VALUE. Report only that it's malformed.
+            raise ValueError("an --header entry is malformed (expected 'Name: Value')")
+        headers[name] = value.strip()
+    return headers

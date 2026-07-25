@@ -146,6 +146,28 @@ gateway does want one, pass `--api-key` (or the provider's env var):
 uv run mcp-gauntlet run "npx -y @scope/pkg" --base-url http://localhost:11434/v1 --model llama3.1
 ```
 
+### Servers that need credentials
+
+A server that talks to GitHub, Slack, or a database needs a token to do anything. Pass one
+without putting it in the report or your shell history:
+
+```bash
+# stdio server: forward an allow-listed env var (value pulled from your environment)
+export GITHUB_TOKEN=ghp_...
+uv run mcp-gauntlet run "npx -y @modelcontextprotocol/server-github" --env GITHUB_TOKEN
+
+# remote server: send an auth header
+uv run mcp-gauntlet run "https://mcp.example.com" --header "Authorization: Bearer $TOKEN"
+```
+
+`--env`/`--header` are repeatable. Only the variables you name are forwarded — the child
+process otherwise gets a minimal safe environment, not your whole shell. Credential values
+are redacted from the report, the console, and the task cache, so a server that echoes its
+own token back can't leak it into a committed artifact. **Point credentialed runs at
+sandbox or throwaway accounts:** the read-only filter trusts a server's own
+`readOnlyHint`/name and is defense-in-depth, not a guarantee, so a mislabeled tool could
+still act on a real account.
+
 ### No API key? Static mode
 
 Everything except the live agent runs without an LLM. `mcp-gauntlet run <server>`

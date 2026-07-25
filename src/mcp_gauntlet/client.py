@@ -112,7 +112,14 @@ async def open_session(
     """
     interactions = InteractionLog()
     if spec.kind is TransportKind.STDIO:
-        params = StdioServerParameters(command=_resolve_command(spec.command), args=spec.args)
+        params = StdioServerParameters(
+            command=_resolve_command(spec.command),
+            args=spec.args,
+            # None → the SDK's minimal safe default child environment (no secrets leak).
+            # A dict → those vars merged over that safe base, so an allow-listed token
+            # reaches a server that needs it without exposing the whole parent environment.
+            env=spec.env or None,
+        )
         async with (
             stdio_client(params) as (read, write),
             _RecordingSession(read, write, interactions=interactions) as session,
@@ -126,7 +133,7 @@ async def open_session(
         if spec.url is None:  # pragma: no cover - guarded by ServerSpec.parse
             raise MCPConnectionError("http server spec has no url")
         async with (
-            streamablehttp_client(spec.url) as (read, write, _),
+            streamablehttp_client(spec.url, headers=spec.headers or None) as (read, write, _),
             _RecordingSession(read, write, interactions=interactions) as session,
         ):
             init = await session.initialize()

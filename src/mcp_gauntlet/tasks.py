@@ -8,6 +8,7 @@ from typing import Any
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field, ValidationError
 
+from mcp_gauntlet.llm import chat_completion
 from mcp_gauntlet.models import ToolInfo
 
 _PROMPT = """\
@@ -60,7 +61,8 @@ async def generate_tasks(
 ) -> list[EvalTask]:
     prompt = _PROMPT.format(n=n_tasks, tools=_tools_blurb(tools))
     try:
-        completion = await client.chat.completions.create(
+        completion = await chat_completion(
+            client,
             model=model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0,

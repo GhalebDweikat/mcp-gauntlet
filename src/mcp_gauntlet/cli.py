@@ -55,10 +55,16 @@ def doctor(
         "--base-url",
         help="Custom OpenAI-compatible endpoint (overrides the provider default).",
     ),
+    api_key: str | None = typer.Option(
+        None,
+        "--api-key",
+        help="API key for the endpoint (overrides the provider's env var; a keyless "
+        "--base-url endpoint needs neither).",
+    ),
 ) -> None:
     """Check that the configured LLM backend is reachable (verifies your API key)."""
     try:
-        config = LLMConfig.from_env(provider, model=model, base_url=base_url)
+        config = LLMConfig.from_env(provider, model=model, base_url=base_url, api_key=api_key)
     except LLMConfigError as exc:
         console.print(f"[red]LLM not configured:[/red] {exc}")
         raise typer.Exit(code=1) from exc
@@ -208,6 +214,12 @@ def run(
         "--base-url",
         help="Custom OpenAI-compatible endpoint (overrides the provider default).",
     ),
+    api_key: str | None = typer.Option(
+        None,
+        "--api-key",
+        help="API key for the endpoint (overrides the provider's env var; a keyless "
+        "--base-url endpoint needs neither).",
+    ),
     tasks: int = typer.Option(3, "--tasks", help="Tasks to generate for the agentic eval."),
     repeats: int = typer.Option(2, "--repeats", help="Times to run each task (success rate)."),
     max_turns: int = typer.Option(8, "--max-turns", help="Max agent turns per task."),
@@ -250,12 +262,16 @@ def run(
     llm_config: LLMConfig | None = None
     if agentic is None:
         try:
-            llm_config = LLMConfig.from_env(provider, model=model, base_url=base_url)
+            llm_config = LLMConfig.from_env(
+                provider, model=model, base_url=base_url, api_key=api_key
+            )
         except LLMConfigError:
             llm_config = None
     elif agentic:
         try:
-            llm_config = LLMConfig.from_env(provider, model=model, base_url=base_url)
+            llm_config = LLMConfig.from_env(
+                provider, model=model, base_url=base_url, api_key=api_key
+            )
         except LLMConfigError as exc:
             console.print(f"[red]--agentic requested but no LLM is configured:[/red] {exc}")
             raise typer.Exit(code=1) from exc
@@ -346,6 +362,12 @@ def leaderboard(
         "--base-url",
         help="Custom OpenAI-compatible endpoint (overrides the provider default).",
     ),
+    api_key: str | None = typer.Option(
+        None,
+        "--api-key",
+        help="API key for the endpoint (overrides the provider's env var; a keyless "
+        "--base-url endpoint needs neither).",
+    ),
     tasks: int = typer.Option(3, "--tasks", help="Tasks generated per server."),
     repeats: int = typer.Option(2, "--repeats", help="Times each task is run."),
     max_turns: int = typer.Option(8, "--max-turns", help="Max agent turns per task."),
@@ -396,7 +418,7 @@ def leaderboard(
         )
     llm_config: LLMConfig | None = None
     try:
-        llm_config = LLMConfig.from_env(provider, model=model, base_url=base_url)
+        llm_config = LLMConfig.from_env(provider, model=model, base_url=base_url, api_key=api_key)
     except LLMConfigError:
         llm_config = None  # static-only leaderboard (no LLM key configured)
 

@@ -14,6 +14,7 @@ from mcp_gauntlet.report import (
     Finding,
     GauntletReport,
     Severity,
+    TaskResult,
     grade_for,
     score_from_findings,
     to_markdown,
@@ -153,3 +154,71 @@ def test_score_from_findings_floors_at_zero() -> None:
     assert score_from_findings([]) == 100.0
     assert score_from_findings([Finding(severity=Severity.INFO, message="fyi")]) == 100.0
     assert score_from_findings([Finding(severity=Severity.HIGH, message="x")] * 20) == 0.0
+
+
+# --- R10: report.md must not render untrusted text as Markdown/HTML structure ------
+
+
+def test_md_sanitizer_units() -> None:
+    from mcp_gauntlet.report import _md, _md_code
+
+    assert _md("a|b") == "a\\|b"
+    # Escape the backslash FIRST: an attacker-supplied "\|" must not become "\\|"
+    # (escaped backslash + LIVE pipe) — that's a table-cell breakout.
+    assert _md("a\\|b") == "a\\\\\\|b"
+    assert _md("x`y") == "x\\`y"
+    assert _md("<img onerror=x>") == "&lt;img onerror=x>"
+    assert _md("line1\nline2\r\n#  heading") == "line1 line2 # heading"
+    # Inline link/image syntax must not survive: escaping the opening bracket disarms
+    # both [text](url) and ![alt](url) (a phishing link / auto-loading tracking pixel).
+    assert _md("[trusted](https://evil)") == "\\[trusted](https://evil)"
+    assert _md("![x](https://evil/p.png)") == "!\\[x](https://evil/p.png)"
+    assert _md_code("spec `with` ticks\nand newline") == "spec 'with' ticks and newline"
+
+
+def test_markdown_report_neutralizes_hostile_server_text() -> None:
+    hostile_tool = "get`</code>|rows\n<script>alert(1)</script>"
+    hostile_detail = (
+        "pwned | cell\n\n# fake heading\n[phish](https://evil) ![x](https://evil/p.png)"
+    )
+    dim = _dim(
+        "security",
+        50.0,
+        findings=[
+            Finding(severity=Severity.HIGH, message="bad", tool=hostile_tool, detail=hostile_detail)
+        ],
+    )
+    detail = AgenticDetail(provider="p", model="m", tasks_generated=1, repeats=1)
+    detail.results.append(
+        TaskResult(
+            description="do the thing | with pipes\nand `ticks` <b>bold</b>",
+            rubric="r",
+            expected_tools=[],
+            repeats=1,
+            successes=1,
+            success_rate=1.0,
+            mean_score=100.0,
+        )
+    )
+    md = to_markdown(_build([dim], agentic=detail))
+    assert "<img" not in md  # plain-text fields get `<` neutralized outright
+    assert "\n# fake heading" not in md  # can't open a new block
+    # The link/image brackets are escaped, so GitHub renders them as literal text, not
+    # a clickable link / auto-loading pixel. No UNescaped opening bracket survives.
+    assert "\\[phish](https://evil)" in md
+    assert "!\\[x](https://evil/p.png)" in md
+    for line in md.splitlines():
+        for idx, ch in enumerate(line):
+            if ch == "[" and not (idx and line[idx - 1] == "\\"):
+                assert line.lstrip().startswith("- **[") and "HIGH" in line, line
+    # The hostile tool name ends up in ONE intact inline code span: its own backticks
+    # were stripped so it can't terminate the span, and inside a span `<script>` is
+    # literal text, never HTML. Outside the span, no raw `<` may survive.
+    finding_line = next(line for line in md.splitlines() if "**[HIGH]**" in line)
+    assert "alert(1)" in finding_line  # payload text is present but inert, on one line
+    assert finding_line.count("`") == 2
+    before, _inside, after = finding_line.split("`")
+    assert "<" not in before and "<" not in after
+    task_row = next(line for line in md.splitlines() if "do the thing" in line)
+    assert task_row.count("|") == 6  # 5 structural delimiters + the one escaped \| in the label
+    assert "\\|" in task_row

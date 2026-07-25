@@ -223,14 +223,47 @@ def sort_findings(findings: list[Finding]) -> list[Finding]:
     return sorted(findings, key=lambda f: (_SEVERITY_ORDER[f.severity], f.tool or "", f.message))
 
 
+def _md(value: object) -> str:
+    """Sanitize untrusted text for one Markdown line or table cell.
+
+    Server- and LLM-authored strings (tool names, finding text, task descriptions)
+    are interpolated into report.md, which users commit and GitHub renders —
+    including any raw HTML that slips through. Flatten whitespace so a value can't
+    open a new block, escape the backslash first so a crafted trailing escape can't
+    neutralize ours, then pipes (table structure), backticks (code-span breakout),
+    ``<`` (inline HTML / autolinks), and ``[`` (inline links/images — ``[text](url)``
+    and ``![alt](url)`` both need it, so escaping the opening bracket disarms a
+    server-supplied phishing link or auto-loading tracking pixel in the report).
+    """
+    text = " ".join(str(value).split())
+    return (
+        text.replace("\\", "\\\\")
+        .replace("|", "\\|")
+        .replace("`", "\\`")
+        .replace("<", "&lt;")
+        .replace("[", "\\[")
+    )
+
+
+def _md_code(value: object) -> str:
+    """Sanitize untrusted text destined for an inline code span.
+
+    Backslash escapes don't apply inside a span, so drop the one character that can
+    break out of it: the backtick. Everything else (``<``, pipes) can stay — a code
+    span renders its content as literal text, never as HTML or table structure, so
+    containment holds as long as the span itself can't be terminated early.
+    """
+    return " ".join(str(value).split()).replace("`", "'")
+
+
 def to_markdown(report: GauntletReport) -> str:
     server_name = report.server.name or "unknown server"
     version = report.server.version or "?"
     lines: list[str] = [
-        f"# mcp-gauntlet report — {server_name}",
+        f"# mcp-gauntlet report — {_md(server_name)}",
         "",
-        f"- **Server spec:** `{report.spec}`",
-        f"- **Server:** {report.server.name or '(unknown)'} v{version}",
+        f"- **Server spec:** `{_md_code(report.spec)}`",
+        f"- **Server:** {_md(report.server.name or '(unknown)')} v{_md(version)}",
         f"- **Tools:** {report.tool_count}",
         f"- **Overall:** **{report.grade}** ({report.overall_score:.1f}/100)",
         f"- **Generated:** {report.generated_at}",
@@ -265,9 +298,11 @@ def to_markdown(report: GauntletReport) -> str:
             continue
         lines.append("")
         for finding in findings:
-            scope = f"`{finding.tool}`" if finding.tool else "_server_"
-            detail = f" — {finding.detail}" if finding.detail else ""
-            lines.append(f"- **[{finding.severity.upper()}]** {scope}: {finding.message}{detail}")
+            scope = f"`{_md_code(finding.tool)}`" if finding.tool else "_server_"
+            detail = f" — {_md(finding.detail)}" if finding.detail else ""
+            lines.append(
+                f"- **[{finding.severity.upper()}]** {scope}: {_md(finding.message)}{detail}"
+            )
         lines.append("")
 
     if report.agentic:
@@ -280,10 +315,10 @@ def to_markdown(report: GauntletReport) -> str:
                 "the overall grade reflects the static checks only."
             )
             lines.append("")
-        lines.append(f"- **Model:** {agentic.provider}:{agentic.model}")
+        lines.append(f"- **Model:** {_md(agentic.provider)}:{_md(agentic.model)}")
         lines.append(f"- **Tasks:** {agentic.tasks_generated} × {agentic.repeats} repeat(s)")
         if agentic.excluded_write_tools:
-            excluded = ", ".join(agentic.excluded_write_tools)
+            excluded = ", ".join(_md(tool) for tool in agentic.excluded_write_tools)
             lines.append(f"- **Excluded (possibly-mutating) tools:** {excluded}")
         if agentic.results:
             lines.extend(
@@ -294,7 +329,7 @@ def to_markdown(report: GauntletReport) -> str:
                 ]
             )
             for result in agentic.results:
-                task_label = result.description.replace("\n", " ")[:70]
+                task_label = _md(result.description[:70])
                 if result.inconclusive:
                     lines.append(f"| {task_label} | — | inconclusive | — |")
                     continue

@@ -45,3 +45,14 @@ def test_html_shows_security_cap_banner() -> None:
     report = _report([dim])
     assert report.security_critical is True
     assert "grade capped" in to_html(report)
+
+
+def test_score_bar_color_matches_grade_bands() -> None:
+    # S3: the bar bins had drifted (90/75/60) from the grade bins (90/80/70/60),
+    # so a 78 dimension wore a B-green bar while grading C.
+    from mcp_gauntlet.htmlreport import _GRADE_COLORS, _score_color
+    from mcp_gauntlet.report import grade_for
+
+    for score in (100.0, 95.0, 85.0, 80.0, 78.0, 70.0, 65.0, 60.0, 42.0, 0.0):
+        assert _score_color(score) == _GRADE_COLORS[grade_for(score)], score
+    assert _score_color(78.0) == _GRADE_COLORS["C"]

@@ -634,3 +634,121 @@ async def test_inconclusive_when_judge_errors_keeps_reliability() -> None:
     assert detail.inconclusive is True
     assert not any(d.key == "task_success" for d in dims)
     assert any(d.key == "tool_reliability" for d in dims)
+
+
+# --- R11: malformed tool arguments are the agent's fault, not the server's ---------
+
+
+async def test_malformed_arguments_are_not_dispatched() -> None:
+    bridge = build_tool_bridge([_ADD])
+    fn = bridge.tools[0]["function"]["name"]
+    dispatched: list[str] = []
+
+    def handler(name: str, args: dict[str, object]) -> object:
+        dispatched.append(name)
+        return _tool_result("3")
+
+    client = _client(
+        [
+            _completion(_msg(tool_calls=[_tool_call("c1", fn, '{"a": 1, "b": 2')])),  # bad JSON
+            _completion(_msg(content="done")),
+        ]
+    )
+    trace = await run_agent_task(
+        session=_session(handler), bridge=bridge, client=client, model="m", task="t"
+    )
+    assert dispatched == []  # the server never saw the call
+    call = trace.tool_calls[0]
+    assert call.bad_arguments and not call.ok and not call.unknown_tool
+    assert call.agent_fault
+    assert trace.had_tool_error is False  # not a server-reliability signal
+    assert trace.called_tools == ["add"]  # the right tool was still *chosen*
+    assert "ERROR" in call.result_text  # and the model was told, so it can retry
+
+
+async def test_non_object_json_arguments_count_as_malformed() -> None:
+    bridge = build_tool_bridge([_ADD])
+    fn = bridge.tools[0]["function"]["name"]
+    client = _client(
+        [
+            _completion(_msg(tool_calls=[_tool_call("c1", fn, "[1, 2]")])),
+            _completion(_msg(content="done")),
+        ]
+    )
+    trace = await run_agent_task(
+        session=_session(lambda n, a: _tool_result("3")),
+        bridge=bridge,
+        client=client,
+        model="m",
+        task="t",
+    )
+    assert trace.tool_calls[0].bad_arguments
+
+
+async def test_empty_arguments_still_dispatch_as_no_args() -> None:
+    # Providers legitimately send "" for a zero-argument tool; that's not malformed.
+    noop = ToolInfo(name="noop", description="noop", input_schema={"type": "object"})
+    bridge = build_tool_bridge([noop])
+    fn = bridge.tools[0]["function"]["name"]
+    seen: list[dict[str, object]] = []
+
+    def handler(name: str, args: dict[str, object]) -> object:
+        seen.append(args)
+        return _tool_result("ok")
+
+    client = _client(
+        [
+            _completion(_msg(tool_calls=[_tool_call("c1", fn, "")])),
+            _completion(_msg(content="done")),
+        ]
+    )
+    trace = await run_agent_task(
+        session=_session(handler), bridge=bridge, client=client, model="m", task="t"
+    )
+    assert seen == [{}]
+    assert trace.tool_calls[0].ok
+    assert not trace.tool_calls[0].bad_arguments
+
+
+async def test_bad_arguments_excluded_from_reliability_dimension() -> None:
+    # A run whose only tool call was a malformed-args agent error must not produce a
+    # Tool Reliability dimension at all — the server executed nothing.
+    bridge_fn = build_tool_bridge([_ADD]).tools[0]["function"]["name"]
+    client = _client(
+        [
+            _completion(_msg(tool_calls=[_tool_call("c1", bridge_fn, "{oops")])),
+            _completion(_msg(content="gave up")),
+        ],
+        judge_verdict={"success": False, "score": 0, "reasoning": "nothing ran"},
+    )
+    dims, _ = await run_agentic_eval(
+        session=_session(lambda n, a: _tool_result("3")),
+        tools=[_ADD],
+        client=client,
+        model="m",
+        provider="test",
+        tasks=[EvalTask(description="add 1 and 2", rubric="r", expected_tools=["add"])],
+        repeats=1,
+        max_turns=4,
+        excluded_write_tools=[],
+    )
+    assert not any(d.key == "tool_reliability" for d in dims)
+
+
+# --- R12: hallucinated tool names earn no selection credit --------------------------
+
+
+def test_hallucinated_name_earns_no_selection_credit() -> None:
+    # The bridge offers sanitized names (search.web -> search_web). A model calling the
+    # ORIGINAL spelling hits the unknown-tool path — but that string equals the expected
+    # tool, so counting it would score selection 100 for a call that never existed.
+    from mcp_gauntlet.judge import selection_score
+
+    trace = AgentTrace(
+        task="t",
+        tool_calls=[
+            ToolCallRecord(tool="search.web", ok=False, unknown_tool=True, error="unknown tool")
+        ],
+    )
+    assert trace.called_tools == []
+    assert selection_score(["search.web"], trace.called_tools) == 0.0

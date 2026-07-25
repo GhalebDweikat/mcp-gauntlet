@@ -16,6 +16,7 @@ from mcp import ClientSession
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 
+from mcp_gauntlet.llm import chat_completion
 from mcp_gauntlet.toolconv import ToolBridge
 
 AGENT_SYSTEM = (
@@ -34,6 +35,12 @@ class ToolCallRecord(BaseModel):
     result_text: str = ""
     error: str | None = None
     unknown_tool: bool = False  # model invented a tool the server never offered (agent error)
+    bad_arguments: bool = False  # model emitted non-JSON-object arguments (agent error)
+
+    @property
+    def agent_fault(self) -> bool:
+        """This failed call was the agent's mistake — excluded from server signals."""
+        return self.unknown_tool or self.bad_arguments
 
 
 class AgentTrace(BaseModel):
@@ -48,12 +55,16 @@ class AgentTrace(BaseModel):
 
     @property
     def called_tools(self) -> list[str]:
-        return [call.tool for call in self.tool_calls]
+        # Only tools that exist on this server: a hallucinated name must not earn
+        # selection credit just because it matches an expected tool's original
+        # (pre-sanitization) spelling that the bridge never offered under that name.
+        return [call.tool for call in self.tool_calls if not call.unknown_tool]
 
     @property
     def had_tool_error(self) -> bool:
-        # A hallucinated-tool call is an agent error, not a server-reliability signal.
-        return any(not call.ok and not call.unknown_tool for call in self.tool_calls)
+        # Hallucinated-tool and malformed-argument calls are agent errors, not
+        # server-reliability signals.
+        return any(not call.ok and not call.agent_fault for call in self.tool_calls)
 
 
 def _render_tool_result(result: Any) -> tuple[bool, str]:
@@ -70,12 +81,16 @@ def _render_tool_result(result: Any) -> tuple[bool, str]:
     return (not is_error, "\n".join(parts) if parts else "(no content)")
 
 
-def _parse_args(raw: str | None) -> dict[str, Any]:
-    try:
-        parsed = json.loads(raw or "{}")
-    except json.JSONDecodeError:
+def _parse_args(raw: str | None) -> dict[str, Any] | None:
+    """None means malformed. Dispatching ``{}`` instead would send the server a call
+    the model never made and record the server's rejection against ITS reliability."""
+    if not raw:  # providers legitimately send "" for a no-argument tool
         return {}
-    return parsed if isinstance(parsed, dict) else {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
 
 
 async def run_agent_task(
@@ -98,7 +113,8 @@ async def run_agent_task(
     for turn in range(1, max_turns + 1):
         trace.turns = turn
         try:
-            completion = await client.chat.completions.create(  # type: ignore[call-overload]
+            completion = await chat_completion(
+                client,
                 model=model,
                 messages=messages,
                 tools=bridge.tools,
@@ -139,7 +155,7 @@ async def run_agent_task(
                 # model, rather than dispatching a bogus name and blaming the server.
                 record = ToolCallRecord(
                     tool=tc.function.name,
-                    arguments=args,
+                    arguments=args or {},
                     ok=False,
                     unknown_tool=True,
                     error="unknown tool (not offered by this server)",
@@ -152,6 +168,24 @@ async def run_agent_task(
                 continue
 
             original = bridge.original(tc.function.name)
+            if args is None:
+                # The tool exists but the arguments weren't a JSON object. Don't
+                # dispatch {} — the server rejecting a call the model never made would
+                # count against the SERVER's reliability for the agent's garbage.
+                record = ToolCallRecord(
+                    tool=original,
+                    ok=False,
+                    bad_arguments=True,
+                    error="malformed tool arguments (not a JSON object)",
+                    result_text="ERROR: tool arguments were not a valid JSON object; "
+                    "retry the call with valid JSON",
+                )
+                trace.tool_calls.append(record)
+                messages.append(
+                    {"role": "tool", "tool_call_id": tc.id, "content": record.result_text}
+                )
+                continue
+
             record = ToolCallRecord(tool=original, arguments=args)
             timed_out = False
             try:

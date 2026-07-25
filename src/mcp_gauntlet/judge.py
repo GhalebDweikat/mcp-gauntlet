@@ -32,6 +32,7 @@ from openai import AsyncOpenAI
 from pydantic import BaseModel
 
 from mcp_gauntlet.agent import AgentTrace
+from mcp_gauntlet.llm import chat_completion
 from mcp_gauntlet.tasks import EvalTask
 
 _PROMPT = """\
@@ -139,7 +140,8 @@ def _build_prompt(task: EvalTask, trace: AgentTrace) -> str:
 async def judge_task(client: AsyncOpenAI, model: str, task: EvalTask, trace: AgentTrace) -> Verdict:
     try:
         prompt = _build_prompt(task, trace)  # inside try: never let record-building sink the run
-        completion = await client.chat.completions.create(
+        completion = await chat_completion(
+            client,
             model=model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0,

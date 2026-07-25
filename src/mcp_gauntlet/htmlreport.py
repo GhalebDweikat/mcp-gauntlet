@@ -5,7 +5,7 @@ from __future__ import annotations
 import html
 from typing import Any
 
-from mcp_gauntlet.report import GauntletReport, Severity, sort_findings
+from mcp_gauntlet.report import GauntletReport, Severity, grade_for, sort_findings
 
 _GRADE_COLORS = {"A": "#1a7f37", "B": "#2da44e", "C": "#9a6700", "D": "#bc4c00", "F": "#cf222e"}
 _SEV_COLORS: dict[Severity, str] = {
@@ -63,13 +63,9 @@ def _esc(value: Any) -> str:
 
 
 def _score_color(score: float) -> str:
-    if score >= 90:
-        return "#1a7f37"
-    if score >= 75:
-        return "#2da44e"
-    if score >= 60:
-        return "#9a6700"
-    return "#cf222e"
+    # Derive from the grade bands rather than a second threshold list: the two had
+    # drifted (90/75/60), so a 78 dimension wore a B-green bar while grading C.
+    return _GRADE_COLORS.get(grade_for(score), "#57606a")
 
 
 def _body(report: GauntletReport) -> str:

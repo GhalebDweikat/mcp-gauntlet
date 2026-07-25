@@ -3,6 +3,46 @@
 All notable changes to mcp-gauntlet are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+An audit-proofing release: the last batch of correctness and hardening fixes to survive a
+close outside read before the project is promoted more widely.
+
+### Added
+
+- **`--api-key`** flag on `run` / `leaderboard` / `doctor`, and a keyless `--base-url`
+  endpoint (a local vLLM / LM Studio / a gateway that needs no auth) now works with no key
+  configured at all — the README's "any OpenAI-compatible endpoint" claim finally holds.
+- **Bounded retry with backoff on transient LLM failures** (HTTP 429/408/5xx and connection
+  errors). Groq's free tier — the default backend — rate-limits bursty runs; without a
+  retry every 429 voided a repeat (or a whole task set). Retries honor a `Retry-After`
+  header unless it is long enough to mean an exhausted daily quota, in which case the run
+  degrades to inconclusive rather than sleeping uselessly against the evaluation's timeout.
+
+### Fixed
+
+- **report.md no longer renders untrusted text as Markdown or HTML.** Server- and
+  LLM-authored strings (tool names, finding text, task labels) are sanitized before they
+  land in the committed, GitHub-rendered report — whitespace is flattened so a value can't
+  open a new block, and `<`, backticks, pipes, and link/image brackets are escaped so a
+  hostile name can't inject a `<img onerror=…>`, break a table row, or plant a phishing
+  link. The HTML report already escaped; the Markdown one didn't.
+- **A malformed-arguments tool call is attributed to the agent, not the server.** When the
+  model emits arguments that aren't a JSON object, the call is no longer dispatched as `{}`
+  and the server's rejection no longer counts against its Tool Reliability.
+- **A hallucinated tool name earns no tool-selection credit.** A call to a tool the server
+  never offered is excluded from the selection score, so inventing the expected tool's name
+  can't score 100.
+- **Score bars match the grade they represent.** The bar color drifted from the grade
+  thresholds (a 78 dimension wore a B-green bar while grading C); both now derive from one
+  set of bands.
+
+### Changed
+
+- The README's competitive framing was corrected — the previously cited static tools were
+  not the real comparison — and the security claim narrowed to what holds: no *evaluator*
+  folds a runtime scan of live tool output into a CI-gateable score.
+
 ## [0.3.0] — 2026-07-24
 
 A reliability and scoring-integrity release. A second adversarial review of the whole

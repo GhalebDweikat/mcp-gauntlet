@@ -9,14 +9,22 @@ real tasks using this server's tools?**
 
 ## Why
 
-The existing MCP quality tools (`mcp-lighthouse`, `mcp-scorecard`, `mcp-checkup`)
-are all **static** — they inspect schemas, count tokens, and lint descriptions.
-None of them run an LLM agent against the server to see whether it can actually
-complete tasks. That dynamic, agent-in-the-loop evaluation — with a real
-**task-success rate**, not just a conformance check — is what mcp-gauntlet does.
-The same live run also scans the tools' actual **outputs** for prompt-injection,
-catching tool-poisoning that a static description scan can't (a server that looks
-clean at list-time but poisons at call-time).
+Plenty of tools already inspect MCP servers **statically**: registry quality
+scores (Glama, Smithery), security scanners (Snyk Agent Scan, Cisco's
+mcp-scanner), and interactive testers (the official MCP Inspector, MCPJam).
+Academic benchmarks (MCP-Universe, MCPMark, MCP-Bench) do run live agents — but
+over fixed, hand-picked server sets, not as something you can point at *your*
+server.
+
+mcp-gauntlet fills the gap between the two: a pip-installable CLI that runs a
+live LLM agent against **any** MCP server and measures a real **task-success
+rate**, then folds it — together with static checks, robustness probes, and a
+runtime scan of what the tools actually **return** — into one graded score you
+can gate CI on. To our knowledge, no other *evaluator* scores runtime output
+injection: runtime guardrails (MCP gateways, Trail of Bits' context-protector)
+protect a session after you've adopted a server, while mcp-gauntlet grades the
+server *before* you adopt it — catching a server that looks clean at list-time
+but poisons at call-time.
 
 > Google Lighthouse tells you your web page is *well-formed*.
 > mcp-gauntlet tells you your MCP server is *usable by an agent* — with a
@@ -90,7 +98,10 @@ uv run mcp-gauntlet run "npx -y @modelcontextprotocol/server-everything"
 ```
 
 The LLM backend is provider-agnostic — any OpenAI-compatible endpoint (Groq by
-default; also OpenRouter, Together, or a local Ollama / vLLM). Runs are read-only by
+default; also OpenRouter, Together, or a local Ollama / vLLM). Transient 429/5xx
+responses are retried with bounded backoff, so a free-tier rate limit costs a
+short wait, not the run — only a truly exhausted quota (a long Retry-After) makes
+a run inconclusive. Runs are read-only by
 default: tools that *look* mutating (by name/description or a self-declared MCP
 `destructiveHint`) are excluded unless you pass `--allow-writes`. That exclusion is a
 best-effort heuristic, not a guarantee — pair it with read-only credentials or a
@@ -127,7 +138,9 @@ or real environment variables:
 | `MCP_GAUNTLET_MODEL` | Model override for that provider (e.g. `gemini-flash-latest`). Defaults to a sensible per-provider model. |
 
 The `--provider` / `--model` CLI flags override these, and `--base-url` points at
-any OpenAI-compatible endpoint — a local Ollama / vLLM / LM Studio or a gateway:
+any OpenAI-compatible endpoint — a local Ollama / vLLM / LM Studio or a gateway.
+A keyless local endpoint needs no key configured at all; if your endpoint or
+gateway does want one, pass `--api-key` (or the provider's env var):
 
 ```bash
 uv run mcp-gauntlet run "npx -y @scope/pkg" --base-url http://localhost:11434/v1 --model llama3.1

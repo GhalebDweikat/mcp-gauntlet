@@ -331,6 +331,23 @@ def _between_ascii_word(text: str, i: int) -> bool:
     )
 
 
+def _between_ascii_letters(text: str, i: int) -> bool:
+    """Stricter than _between_ascii_word: LETTERS on both sides, not merely word chars.
+
+    The signature for a smuggled *space* — "instru<NBSP>ctions" splits a word — whereas a
+    non-breaking space between a number and its unit ("10<NBSP>km") is what the character
+    is for. Requiring letters keeps the honest typography out of it.
+    """
+    return (
+        i > 0
+        and i + 1 < len(text)
+        and text[i - 1].isascii()
+        and text[i - 1].isalpha()
+        and text[i + 1].isascii()
+        and text[i + 1].isalpha()
+    )
+
+
 def _adjacent_ascii_letter(text: str, i: int) -> bool:
     """True when a neighbor is an ASCII letter — the signature of a selector/ZWJ smuggled
     into a Latin word ("Ignore<VS> …"), as opposed to a keycap (digit) or CJK/emoji base."""
@@ -352,9 +369,10 @@ def _hidden_chars(text: str) -> list[str]:
     """Return invisible / non-printable characters used to smuggle text past the scan.
 
     Zero-width, format, control chars, and stray bidi overrides are flagged anywhere.
-    Context-dependent chars — variation selectors, ZWJ/ZWNJ, and combining marks — are
-    flagged only with the smuggle signature (adjacent to ASCII letters), so legitimate
-    emoji, CJK variation sequences, keycaps, accented text, and non-Latin scripts aren't.
+    Context-dependent chars — variation selectors, ZWJ/ZWNJ, combining marks, and exotic
+    spaces — are flagged only with the smuggle signature (adjacent to ASCII letters), so
+    legitimate emoji, CJK variation sequences, keycaps, accented text, non-Latin scripts,
+    and an honest non-breaking space in "10 km" aren't.
     (Evasion is handled independently by _clean_for_match, so scoping the flag is safe.)
     """
     out: list[str] = []
@@ -365,6 +383,13 @@ def _hidden_chars(text: str) -> list[str]:
         category = unicodedata.category(ch)
         is_selector = _is_variation_selector(o)
         is_combining = category in {"Mn", "Me"}
+        # An exotic space is visible, so it escaped this check entirely, and it isn't
+        # stripped for matching — wedged inside a word it breaks the keyword just as a
+        # zero-width character does. Between words it is ordinary typography.
+        if category == "Zs":
+            if _between_ascii_letters(text, i):
+                out.append(ch)
+            continue
         if not (category in {"Cf", "Cc", "Co"} or is_selector or is_combining):
             continue
         if o in _BENIGN_BIDI:
@@ -394,6 +419,46 @@ def _excerpt(text: str, match: re.Match[str], width: int = 60) -> str:
     return f"{prefix}{snippet}{suffix}"
 
 
+# Letters from other scripts that are drawn like ASCII ones. Compatibility folding (NFKD)
+# does not touch these — Cyrillic "a" and Latin "a" are genuinely different letters, not
+# different encodings of one — so "Ignore <U+0430>ll previous instructions" reads perfectly
+# to a model and matched nothing at all. Folded for MATCHING only; the raw text is what gets
+# quoted and what the mixed-script check below examines.
+_CONFUSABLE_FOLD = str.maketrans(
+    {
+        # Cyrillic
+        "а": "a", "е": "e", "о": "o", "р": "p", "с": "c",
+        "у": "y", "х": "x", "і": "i", "ј": "j", "ѕ": "s",
+        "к": "k", "м": "m", "н": "h", "т": "t", "в": "b",
+        "А": "A", "Е": "E", "О": "O", "Р": "P", "С": "C",
+        "У": "Y", "Х": "X", "К": "K", "М": "M", "Н": "H",
+        "В": "B", "Т": "T",
+        # Greek
+        "α": "a", "ο": "o", "ρ": "p", "ν": "v", "τ": "t",
+        "υ": "u", "χ": "x", "ε": "e", "ι": "i", "κ": "k",
+        "Α": "A", "Β": "B", "Ε": "E", "Ζ": "Z", "Η": "H",
+        "Ι": "I", "Κ": "K", "Μ": "M", "Ν": "N", "Ο": "O",
+        "Ρ": "P", "Τ": "T", "Υ": "Y", "Χ": "X",
+    }
+)  # fmt: skip
+
+_CONFUSABLE_CHARS = frozenset(chr(code) for code in _CONFUSABLE_FOLD)
+
+
+def _mixed_script_words(text: str) -> list[str]:
+    """Words that mix ASCII letters with letters merely drawn like them.
+
+    Splitting a word across two alphabets is not something ordinary text does — genuine
+    Russian or Greek prose is written in one script per word — so it is a signal in its own
+    right, independent of whether the folded text happens to match a known phrase.
+    """
+    found: list[str] = []
+    for word in re.findall(r"[^\W\d_]+", text, flags=re.UNICODE):
+        if any(ch in _CONFUSABLE_CHARS for ch in word) and any(ch.isascii() for ch in word):
+            found.append(word)
+    return found
+
+
 def _clean_for_match(text: str) -> str:
     """Fold the text to a bare skeleton before the injection patterns run.
 
@@ -412,15 +477,23 @@ def _clean_for_match(text: str) -> str:
     ligatures, circled and fullwidth forms, and superscripts onto their ASCII skeletons;
     honest text (``½``, ``㎏``, CJK, accented prose) folds to an equally honest skeleton
     that matches no English injection phrase.
+
+    Two things NFKD leaves alone are handled after it. Cross-script lookalikes are folded
+    to ASCII (see ``_CONFUSABLE_FOLD``) — Cyrillic and Latin "a" are different letters, not
+    different encodings of one, so no normalization form will ever unify them. And exotic
+    spaces (non-breaking, en/em, ideographic) are turned into a plain space: they are not
+    invisible so the hidden-character check ignored them, and they are not stripped, so
+    ``ignore all<U+00A0>previous instructions`` broke the phrase for a pattern that expects
+    ordinary whitespace. One wedged INSIDE a word is a different matter and is flagged.
     """
     decomposed = unicodedata.normalize("NFKD", text)
     kept = [
-        ch
+        " " if unicodedata.category(ch) == "Zs" else ch
         for ch in decomposed
         if not _is_variation_selector(ord(ch))
         and unicodedata.category(ch) not in {"Cf", "Cc", "Mn", "Me"}
     ]
-    return "".join(kept)
+    return "".join(kept).translate(_CONFUSABLE_FOLD)
 
 
 def _scan_text(
@@ -487,6 +560,18 @@ def _scan_text(
         codes = ", ".join(sorted({f"U+{ord(c):04X}" for c in hidden}))
         findings.append(
             _f(tool, Severity.HIGH, f"{where} contains hidden/non-printable characters", codes)
+        )
+    if mixed := _mixed_script_words(text):
+        # Reported, not capping: the payload itself is caught by the patterns above once the
+        # text is folded, and this says only that the word was built from two alphabets.
+        # Ordinary prose never does that, but a typo or a bad paste can.
+        findings.append(
+            _f(
+                tool,
+                Severity.MEDIUM,
+                f"{where} mixes alphabets within a word (lookalike characters)",
+                detail=", ".join(sorted(set(mixed))[:5]),
+            )
         )
     return findings
 

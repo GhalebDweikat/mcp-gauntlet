@@ -351,6 +351,7 @@ def to_markdown(report: GauntletReport) -> str:
         "",
         f"- **Server spec:** `{_md_code(report.spec)}`",
         f"- **Server:** {_md(report.server.name or '(unknown)')} v{_md(version)}",
+        f"- **MCP protocol:** {_md(report.server.protocol_version or '(not reported)')}",
         f"- **Tools:** {report.tool_count}",
         f"- **Overall:** **{report.grade}** ({report.overall_score:.1f}/100)",
         f"- **Generated:** {report.generated_at}",

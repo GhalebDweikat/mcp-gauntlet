@@ -1,5 +1,6 @@
 """Leaderboard rendering: only mutually comparable scores share a ranked table."""
 
+import sys
 from pathlib import Path
 
 import anyio
@@ -559,7 +560,11 @@ def test_a_partial_run_does_not_retire_other_servers_badges(tmp_path: Path) -> N
 
     async def _one_server() -> None:
         await run_leaderboard(
-            [ServerEntry(name="alpha", spec="python -m mcp_gauntlet.fixtures.good_server")],
+            [
+                ServerEntry(
+                    name="alpha", spec=f"{sys.executable} -m mcp_gauntlet.fixtures.good_server"
+                )
+            ],
             out_dir=tmp_path,
             llm_config=None,
             timeout_s=60.0,

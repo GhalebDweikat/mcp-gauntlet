@@ -80,6 +80,20 @@ async def test_discover_captures_every_model_visible_string() -> None:
     assert tool.read_only_hint is True
 
 
+async def test_discover_records_the_negotiated_protocol_version() -> None:
+    # A score is only interpretable against the spec the server was speaking, and the
+    # protocol is changing — this is the field that will say which servers moved.
+    init = cast(
+        InitializeResult,
+        SimpleNamespace(
+            serverInfo=SimpleNamespace(name="s", version="1"), protocolVersion="2025-06-18"
+        ),
+    )
+    session = _PaginatedSession([([_tool("a")], None)])
+    found = await discover_in_session(cast(ClientSession, session), init)
+    assert found.server.protocol_version == "2025-06-18"
+
+
 async def test_discover_tolerates_a_server_without_the_newer_fields() -> None:
     # Older servers (and the existing fixtures) send no title/outputSchema at all.
     session = _PaginatedSession([([_tool("a")], None)])

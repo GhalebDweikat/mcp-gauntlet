@@ -34,6 +34,10 @@ class ServerInfo(BaseModel):
     # Shown in place of the name by clients that support it — the server-level twin of
     # ToolInfo.title, and the same injection surface.
     title: str | None = None
+    # The MCP revision this session negotiated. Recorded because the protocol is changing:
+    # a score is only interpretable against the spec the server was speaking, and this is
+    # the field that will tell us which servers moved when it does.
+    protocol_version: str | None = None
     # The server's init "instructions" string — fed to the model as system context by many
     # clients, so it's a server-authored prompt-injection surface (scanned in checks).
     instructions: str | None = None

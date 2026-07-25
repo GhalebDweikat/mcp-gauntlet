@@ -7,6 +7,8 @@ All notable changes to mcp-gauntlet are documented here. This project adheres to
 
 ### Added
 
+- **The negotiated MCP protocol revision is recorded** on every report. A score is only
+  interpretable against the spec the server was speaking, and the protocol is changing.
 - **All three MCP primitives are now scanned.** Prompts and resources were never touched,
   which mattered most for prompts: a `prompts/get` response is placed in the model's
   context *verbatim*, with none of the framing a tool result gets, making it the most
@@ -35,6 +37,17 @@ All notable changes to mcp-gauntlet are documented here. This project adheres to
 
 ### Fixed
 
+- **Lookalike letters and exotic spaces no longer evade the scan.** No normalization form
+  unifies Cyrillic `а` with Latin `a` — they are different letters, not different encodings
+  of one — so `Ignore аll previous instructions` read perfectly to a model and matched
+  nothing. Confusable letters are now folded to ASCII before matching, and a word that
+  mixes alphabets is itself reported. Likewise a non-breaking or ideographic space, which
+  is visible (so the hidden-character check ignored it) and unstripped (so it broke the
+  phrase): those now fold to a plain space, and one wedged *inside* a word is flagged —
+  while a non-breaking space between a number and its unit stays untouched.
+- **The test suite no longer needs the virtualenv on `PATH`.** Fixture servers were spawned
+  with a bare `python`, which resolves to whatever the shell finds first; six tests failed
+  for anyone whose `PATH` didn't happen to be right.
 - **Security Signals no longer scans display titles for credential references.** A tool
   honestly called "Reset Password" or "Credentials Vault" was reported for naming a
   credential; titles are short human labels and get the same exemption schema titles

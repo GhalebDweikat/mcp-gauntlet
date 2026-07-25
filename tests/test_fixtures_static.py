@@ -3,6 +3,8 @@
 These spawn a real MCP subprocess but make no LLM calls, so they run in CI.
 """
 
+import sys
+
 import anyio
 
 from mcp_gauntlet.checks import run_static_checks
@@ -24,7 +26,7 @@ def _static_report(spec_str: str) -> GauntletReport:
 
 
 def test_bad_fixture_is_flagged_and_capped() -> None:
-    report = _static_report("python -m mcp_gauntlet.fixtures.bad_server")
+    report = _static_report(f"{sys.executable} -m mcp_gauntlet.fixtures.bad_server")
     assert report.security_critical is True
     assert report.overall_score <= 75.0  # a poisoned server cannot earn an A/B
     high_security = [
@@ -38,6 +40,6 @@ def test_bad_fixture_is_flagged_and_capped() -> None:
 
 
 def test_good_fixture_is_clean() -> None:
-    report = _static_report("python -m mcp_gauntlet.fixtures.good_server")
+    report = _static_report(f"{sys.executable} -m mcp_gauntlet.fixtures.good_server")
     assert report.security_critical is False
     assert report.grade in ("A", "B")

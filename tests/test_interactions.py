@@ -6,6 +6,8 @@ the recording session (the SDK plumbing), and that the count turns into an hones
 in the rendered reports.
 """
 
+import sys
+
 from mcp_gauntlet.client import open_session
 from mcp_gauntlet.config import ServerSpec
 from mcp_gauntlet.htmlreport import to_html
@@ -23,7 +25,7 @@ async def test_recording_session_counts_a_real_elicitation() -> None:
     # The interactive fixture's `confirm_and_run` asks the client to elicit a confirmation.
     # The harness declines (it drives no user), so the tool fails — but the request must be
     # counted, which is what lets the evaluation attribute that failure to the harness.
-    spec = ServerSpec.parse("python -m mcp_gauntlet.fixtures.interactive_server")
+    spec = ServerSpec.parse(f"{sys.executable} -m mcp_gauntlet.fixtures.interactive_server")
     async with open_session(spec) as (session, _init, interactions):
         result = await session.call_tool("confirm_and_run", {"item": "x"})
         assert result.isError is True  # can't proceed without the confirmation we declined
@@ -87,7 +89,7 @@ def test_interaction_note_renders_in_markdown_and_html() -> None:
 async def test_env_allowlist_reaches_a_stdio_child() -> None:
     # The end-to-end credential path: an allow-listed env var must actually arrive in the
     # spawned server process (the SDK merges it over a minimal safe base environment).
-    spec = ServerSpec.parse("python -m mcp_gauntlet.fixtures.env_echo_server")
+    spec = ServerSpec.parse(f"{sys.executable} -m mcp_gauntlet.fixtures.env_echo_server")
     spec.env = {"MCP_GAUNTLET_TEST_TOKEN": "sentinel-value-1234"}
     async with open_session(spec) as (session, _init, _interactions):
         result = await session.call_tool("whoami", {})
@@ -98,7 +100,7 @@ async def test_env_allowlist_reaches_a_stdio_child() -> None:
 async def test_env_not_passed_stays_unset_in_the_child() -> None:
     # Without --env the child gets only the SDK's minimal safe environment — no leak of the
     # parent's variables into an untrusted server.
-    spec = ServerSpec.parse("python -m mcp_gauntlet.fixtures.env_echo_server")
+    spec = ServerSpec.parse(f"{sys.executable} -m mcp_gauntlet.fixtures.env_echo_server")
     async with open_session(spec) as (session, _init, _interactions):
         result = await session.call_tool("whoami", {})
         text = "".join(getattr(b, "text", "") for b in (result.content or []))

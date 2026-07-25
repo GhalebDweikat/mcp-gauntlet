@@ -1,3 +1,4 @@
+import sys
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -415,7 +416,7 @@ async def test_no_schema_cannot_outscore_a_declared_schema() -> None:
 
 
 async def test_good_fixture_rejects_malformed() -> None:
-    spec = ServerSpec.parse("python -m mcp_gauntlet.fixtures.good_server")
+    spec = ServerSpec.parse(f"{sys.executable} -m mcp_gauntlet.fixtures.good_server")
     async with open_session(spec) as (session, _init, _interactions):
         listed = await session.list_tools()
         tools = [

@@ -200,6 +200,7 @@ async def discover_in_session(
         version=getattr(init.serverInfo, "version", None),
         title=getattr(init.serverInfo, "title", None),
         instructions=getattr(init, "instructions", None),
+        protocol_version=str(pv) if (pv := getattr(init, "protocolVersion", None)) else None,
     )
     prompts = await _discover_prompts(session, fetch_prompts)
     resources = await _discover_resources(session)

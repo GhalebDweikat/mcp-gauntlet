@@ -83,6 +83,25 @@ class AgenticDetail(BaseModel):
     results: list[TaskResult] = Field(default_factory=list)
     inconclusive: bool = False  # the whole agentic eval was inconclusive (e.g. rate-limited)
     truncated: bool = False  # stopped early because a tool hung — fewer samples than planned
+    interactive_requests: int = 0  # elicitation/sampling/roots the harness declined
+    interactive_summary: str = ""  # e.g. "2 elicitation, 1 sampling" (for the report note)
+
+
+def interaction_note(detail: AgenticDetail | None) -> str | None:
+    """Human-readable note when the server needed interactive capabilities we decline.
+
+    Returned as plain prose (no Markdown/HTML) so every renderer can wrap it as it
+    sees fit. ``None`` when the server made no such request.
+    """
+    if detail is None or detail.interactive_requests <= 0:
+        return None
+    what = detail.interactive_summary or f"{detail.interactive_requests}"
+    return (
+        f"This server made {what} request(s) for interactive capabilities "
+        "(elicitation/sampling) that mcp-gauntlet declines — it drives no user or LLM "
+        "for a server to call back into. Tool calls that failed only for that reason are "
+        "not counted against Tool Reliability, but tasks needing them may still not pass."
+    )
 
 
 def _has_critical_security(dimensions: list[DimensionResult]) -> bool:
@@ -314,6 +333,10 @@ def to_markdown(report: GauntletReport) -> str:
                 "> ⚠️ **Inconclusive** — the LLM backend errored (e.g. rate limit); "
                 "the overall grade reflects the static checks only."
             )
+            lines.append("")
+        note = interaction_note(agentic)
+        if note:
+            lines.append(f"> ℹ️ {_md(note)}")
             lines.append("")
         lines.append(f"- **Model:** {_md(agentic.provider)}:{_md(agentic.model)}")
         lines.append(f"- **Tasks:** {agentic.tasks_generated} × {agentic.repeats} repeat(s)")

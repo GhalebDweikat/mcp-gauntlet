@@ -5,11 +5,19 @@ All notable changes to mcp-gauntlet are documented here. This project adheres to
 
 ## [Unreleased]
 
-An audit-proofing release: the last batch of correctness and hardening fixes to survive a
-close outside read before the project is promoted more widely.
+Audit-proofing plus the first coverage features toward evaluating the servers people
+actually run — a batch of correctness and hardening fixes to survive a close outside read,
+and honest handling of servers that need capabilities the harness doesn't drive.
 
 ### Added
 
+- **Honest handling of servers that request interactive capabilities.** mcp-gauntlet drives
+  no user (elicitation) or server-side LLM (sampling), so a tool that needs one of those to
+  finish can't complete here. Such requests are now counted and declined cleanly; a tool
+  call that failed *only* because of a declined interaction is no longer charged to the
+  server's Tool Reliability, the task failure is attributed to the harness's limit rather
+  than the agent, and the report carries a note explaining it. (A bundled
+  `interactive_server` fixture demonstrates the path.)
 - **`--api-key`** flag on `run` / `leaderboard` / `doctor`, and a keyless `--base-url`
   endpoint (a local vLLM / LM Studio / a gateway that needs no auth) now works with no key
   configured at all — the README's "any OpenAI-compatible endpoint" claim finally holds.

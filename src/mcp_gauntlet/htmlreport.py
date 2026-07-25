@@ -5,7 +5,13 @@ from __future__ import annotations
 import html
 from typing import Any
 
-from mcp_gauntlet.report import GauntletReport, Severity, grade_for, sort_findings
+from mcp_gauntlet.report import (
+    GauntletReport,
+    Severity,
+    grade_for,
+    interaction_note,
+    sort_findings,
+)
 
 _GRADE_COLORS = {"A": "#1a7f37", "B": "#2da44e", "C": "#9a6700", "D": "#bc4c00", "F": "#cf222e"}
 _SEV_COLORS: dict[Severity, str] = {
@@ -140,6 +146,9 @@ def _body(report: GauntletReport) -> str:
                 "timeout, so the evaluation ended before every planned run completed. "
                 "The scores below rest on a smaller sample than configured.</div>"
             )
+        note = interaction_note(agentic)
+        if note:
+            p.append(f'<div class="banner">ℹ {_esc(note)}</div>')
         p.append(
             f'<div class="muted" style="margin-bottom:12px">{agentic.tasks_generated} tasks × '
             f'{agentic.repeats} repeat(s) &nbsp;<span class="chip">'

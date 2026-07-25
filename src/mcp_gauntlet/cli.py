@@ -19,7 +19,13 @@ from mcp_gauntlet.env import load_env
 from mcp_gauntlet.htmlreport import to_html
 from mcp_gauntlet.leaderboard import ServerListError, load_servers, rerender, run_leaderboard
 from mcp_gauntlet.llm import LLMConfig, LLMConfigError, list_models
-from mcp_gauntlet.report import GauntletReport, Severity, sort_findings, to_markdown
+from mcp_gauntlet.report import (
+    GauntletReport,
+    Severity,
+    interaction_note,
+    sort_findings,
+    to_markdown,
+)
 from mcp_gauntlet.robustness import run_robustness_probes
 
 app = typer.Typer(
@@ -164,6 +170,9 @@ def _render_report(report: GauntletReport) -> None:
                 else "this server exposed no tools for the agent to call"
             )
             console.print(f"[yellow]⚠ Agent evaluation did not run — {why}.[/yellow]")
+        note = interaction_note(detail)
+        if note:
+            console.print(f"[cyan]ℹ {escape(note)}[/cyan]")
         if report.agent_eval_truncated:
             console.print(
                 f"[yellow]⚠ Agent evaluation stopped early after a tool hung — "

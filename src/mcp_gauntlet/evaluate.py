@@ -16,6 +16,7 @@ from openai import AsyncOpenAI
 
 from mcp_gauntlet.agent import run_agent_task
 from mcp_gauntlet.checks import scan_runtime_outputs
+from mcp_gauntlet.client import InteractionLog
 from mcp_gauntlet.judge import judge_task, selection_score
 from mcp_gauntlet.models import ToolInfo
 from mcp_gauntlet.report import AgenticDetail, DimensionResult, Finding, Severity, TaskResult
@@ -35,6 +36,7 @@ async def run_agentic_eval(
     max_turns: int,
     excluded_write_tools: list[str],
     tool_timeout_s: float = 60.0,
+    interactions: InteractionLog | None = None,
 ) -> tuple[list[DimensionResult], AgenticDetail]:
     bridge = build_tool_bridge(tools)
     detail = AgenticDetail(
@@ -65,6 +67,7 @@ async def run_agentic_eval(
         valid_repeats = 0
         errored_repeats = 0
         any_tool_error = False
+        any_interaction_block = False
         sample_reasoning = ""
         sample_error = ""
         attempts = 0
@@ -79,6 +82,7 @@ async def run_agentic_eval(
                 task=task.description,
                 max_turns=max_turns,
                 tool_timeout_s=tool_timeout_s,
+                interactions=interactions,
             )
             # Latch the hang BEFORE any of the paths below that `continue` — a rate-limited
             # judge is exactly when a hang is most likely, and letting that skip the check
@@ -95,15 +99,25 @@ async def run_agentic_eval(
                 sample_error = sample_error or (trace.error or "agent LLM error")
                 continue
 
-            # Tool Reliability is a SERVER signal, so it counts only calls actually
-            # dispatched to the server — a hallucinated tool name or malformed-argument
-            # call the model produced is an agent error the server never saw.
-            server_calls = [call for call in trace.tool_calls if not call.agent_fault]
-            total_calls += len(server_calls)
-            ok_calls += sum(1 for call in server_calls if call.ok)
+            # Tool Reliability is a SERVER signal, so it counts only calls that are a fair
+            # signal for the server: not an agent mistake (hallucinated tool / malformed
+            # args the server never saw) and not a failure the server couldn't avoid
+            # because it needed an interactive capability the harness declines.
+            reliability_calls = [c for c in trace.tool_calls if c.counts_for_reliability]
+            total_calls += len(reliability_calls)
+            ok_calls += sum(1 for call in reliability_calls if call.ok)
             any_tool_error = any_tool_error or trace.had_tool_error
+            any_interaction_block = any_interaction_block or trace.blocked_on_interaction
+            # Response Safety scans everything the SERVER actually returned, keyed on a
+            # DIFFERENT filter than reliability on purpose: a poisoned output must be
+            # scanned even when the same call also triggered a declined interaction (and
+            # is excused from the reliability score). Only the agent's own never-dispatched
+            # calls — hallucinated names, malformed args — are skipped; their "output" is a
+            # harness-authored error string, not server content.
             runtime_outputs.extend(
-                (call.tool, call.result_text) for call in server_calls if call.result_text
+                (call.tool, call.result_text)
+                for call in trace.tool_calls
+                if call.result_text and not call.agent_fault
             )
 
             verdict = await judge_task(client, model, task, trace)
@@ -169,11 +183,17 @@ async def run_agentic_eval(
         if not inconclusive:
             if successes < valid_repeats:
                 severity = Severity.MEDIUM if successes == 0 else Severity.LOW
-                attribution = (
-                    "tool errors blocked it (server signal)"
-                    if any_tool_error
-                    else "agent did not complete it (agent signal)"
-                )
+                # Attribution order: a real server tool error dominates; failing that, a
+                # declined interactive capability is the harness's limit (not the agent's);
+                # otherwise the agent itself didn't get there.
+                if any_tool_error:
+                    attribution = "tool errors blocked it (server signal)"
+                elif any_interaction_block:
+                    attribution = (
+                        "needed an interactive capability gauntlet declines (harness limit)"
+                    )
+                else:
+                    attribution = "agent did not complete it (agent signal)"
                 message = (
                     f"agent failed a task ({successes}/{valid_repeats} passed) — {attribution}"
                 )
@@ -200,6 +220,12 @@ async def run_agentic_eval(
     conclusive = [r for r in detail.results if not r.inconclusive]
     detail.inconclusive = len(conclusive) == 0
     detail.truncated = hung  # record the fact; downstream must not have to infer it
+    if interactions is not None:
+        # Record how many interactive requests the server made and we declined, so the
+        # report can explain any interaction-blocked failures instead of leaving them to
+        # look like server unreliability.
+        detail.interactive_requests = interactions.total
+        detail.interactive_summary = interactions.summary()
 
     dimensions: list[DimensionResult] = []
     if conclusive:

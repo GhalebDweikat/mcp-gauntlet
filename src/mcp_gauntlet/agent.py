@@ -16,6 +16,7 @@ from mcp import ClientSession
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 
+from mcp_gauntlet.client import InteractionLog
 from mcp_gauntlet.llm import chat_completion
 from mcp_gauntlet.toolconv import ToolBridge
 
@@ -36,11 +37,34 @@ class ToolCallRecord(BaseModel):
     error: str | None = None
     unknown_tool: bool = False  # model invented a tool the server never offered (agent error)
     bad_arguments: bool = False  # model emitted non-JSON-object arguments (agent error)
+    needed_interaction: bool = False  # the server asked for elicitation/sampling we declined
 
     @property
     def agent_fault(self) -> bool:
         """This failed call was the agent's mistake — excluded from server signals."""
         return self.unknown_tool or self.bad_arguments
+
+    @property
+    def counts_for_reliability(self) -> bool:
+        """Whether this call is a fair Tool Reliability signal for the *server*.
+
+        Excludes the agent's own mistakes (unknown tool, malformed args) and — only
+        when the call failed — a call the server could not complete because it needed
+        an interactive capability the harness declines. A call that *succeeded* despite
+        requesting interaction still counts: the server handled the decline gracefully.
+
+        This is deliberately benefit-of-the-doubt: it excuses a *failed* call whenever an
+        interaction was requested during it, without proving the decline *caused* the
+        failure (which isn't generally observable). A server could exploit that to hide
+        unrelated failures by always requesting an interaction — but it gains little,
+        because those failed tasks still sink Agent Task Success (the heaviest dimension),
+        and the excused calls are surfaced in the report's interaction note. The clean
+        fix — routing a server whose tools are predominantly interaction-blocked to a
+        "not evaluable" bucket — is tracked for the leaderboard rework.
+        """
+        if self.agent_fault:
+            return False
+        return self.ok or not self.needed_interaction
 
 
 class AgentTrace(BaseModel):
@@ -62,9 +86,17 @@ class AgentTrace(BaseModel):
 
     @property
     def had_tool_error(self) -> bool:
-        # Hallucinated-tool and malformed-argument calls are agent errors, not
-        # server-reliability signals.
-        return any(not call.ok and not call.agent_fault for call in self.tool_calls)
+        # A *server* tool error: the call was dispatched, counts as a reliability signal,
+        # and failed. Agent mistakes (hallucinated tool, malformed args) and
+        # interaction-blocked failures don't count against the server.
+        return any(call.counts_for_reliability and not call.ok for call in self.tool_calls)
+
+    @property
+    def blocked_on_interaction(self) -> bool:
+        # A call the server couldn't complete because it needed an elicitation/sampling
+        # capability the harness declines — a harness limitation, not a server or agent
+        # fault. Used to attribute the task failure honestly.
+        return any(call.needed_interaction and not call.ok for call in self.tool_calls)
 
 
 def _render_tool_result(result: Any) -> tuple[bool, str]:
@@ -103,6 +135,7 @@ async def run_agent_task(
     max_turns: int = 8,
     result_char_limit: int = 4000,
     tool_timeout_s: float = 60.0,
+    interactions: InteractionLog | None = None,
 ) -> AgentTrace:
     trace = AgentTrace(task=task)
     messages: list[dict[str, Any]] = [
@@ -188,6 +221,12 @@ async def run_agent_task(
 
             record = ToolCallRecord(tool=original, arguments=args)
             timed_out = False
+            # Snapshot the decline counter: any elicitation/sampling/roots request the
+            # server makes lands here, during the call, on the session's receive loop. If
+            # the count grows, this tool needed an interactive capability we declined — so
+            # a failure is the harness's limit, not the server's, and won't count against
+            # Tool Reliability.
+            interactions_before = interactions.total if interactions is not None else 0
             try:
                 # Bound every dispatch: an unbounded call_tool lets one hung tool hang the
                 # whole CLI forever (the MCP session has no read timeout of its own).
@@ -208,6 +247,8 @@ async def run_agent_task(
                 record.ok = False
                 record.error = str(exc)
                 record.result_text = f"ERROR: {exc}"[:result_char_limit]
+            if interactions is not None and interactions.total > interactions_before:
+                record.needed_interaction = True
             trace.tool_calls.append(record)
             messages.append(
                 {

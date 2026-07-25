@@ -11,8 +11,9 @@ import logging
 import shutil
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 
-from mcp import ClientSession, StdioServerParameters
+from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
 from mcp.types import InitializeResult
 
@@ -24,6 +25,64 @@ _log = logging.getLogger(__name__)
 
 class MCPConnectionError(RuntimeError):
     """Raised when we cannot establish a usable session with the server."""
+
+
+@dataclass
+class InteractionLog:
+    """Counts the server-initiated requests the harness declines.
+
+    mcp-gauntlet is a non-interactive harness: it drives no elicitation (asking the
+    user to fill a form), sampling (asking the client to run an LLM completion), or
+    roots (asking for the client's filesystem roots). A server that needs one of these
+    to finish a tool call gets a clean "not supported" decline — but the tool may then
+    fail *for that reason*, which is the harness's limitation, not the server's defect.
+    Counting the declines lets the evaluation attribute such failures honestly instead
+    of charging them to the server's Tool Reliability.
+    """
+
+    sampling: int = 0
+    elicitation: int = 0
+    roots: int = 0
+
+    @property
+    def total(self) -> int:
+        return self.sampling + self.elicitation + self.roots
+
+    def summary(self) -> str:
+        parts = []
+        if self.elicitation:
+            parts.append(f"{self.elicitation} elicitation")
+        if self.sampling:
+            parts.append(f"{self.sampling} sampling")
+        if self.roots:
+            parts.append(f"{self.roots} roots")
+        return ", ".join(parts)
+
+
+class _RecordingSession(ClientSession):
+    """A ClientSession that tallies incoming elicitation/sampling/roots requests.
+
+    Counting happens by overriding ``_received_request`` rather than by passing custom
+    callbacks *on purpose*: the SDK advertises a client capability whenever its callback
+    differs from the default, so a custom callback would tell the server "I support
+    sampling" and invite the very requests we then decline. Leaving the callbacks at
+    their defaults keeps the honest "not supported" signal in ``initialize`` while still
+    letting us observe the requests a non-compliant (or optimistic) server sends anyway.
+    """
+
+    def __init__(self, *args: object, interactions: InteractionLog, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)  # type: ignore[arg-type]
+        self._interactions = interactions
+
+    async def _received_request(self, responder: object) -> None:
+        root = getattr(getattr(responder, "request", None), "root", None)
+        if isinstance(root, types.CreateMessageRequest):
+            self._interactions.sampling += 1
+        elif isinstance(root, types.ElicitRequest):
+            self._interactions.elicitation += 1
+        elif isinstance(root, types.ListRootsRequest):
+            self._interactions.roots += 1
+        await super()._received_request(responder)  # type: ignore[arg-type]
 
 
 def _resolve_command(command: str | None) -> str:
@@ -43,20 +102,23 @@ def _resolve_command(command: str | None) -> str:
 @asynccontextmanager
 async def open_session(
     spec: ServerSpec,
-) -> AsyncIterator[tuple[ClientSession, InitializeResult]]:
+) -> AsyncIterator[tuple[ClientSession, InitializeResult, InteractionLog]]:
     """Open an initialized MCP session for the given server spec.
 
-    Yields the live session together with the server's ``InitializeResult`` (which
-    carries the server name/version and advertised capabilities).
+    Yields the live session, the server's ``InitializeResult`` (server name/version
+    and advertised capabilities), and an :class:`InteractionLog` that accrues any
+    elicitation/sampling/roots requests the server makes so the caller can attribute
+    interaction-blocked tool failures correctly.
     """
+    interactions = InteractionLog()
     if spec.kind is TransportKind.STDIO:
         params = StdioServerParameters(command=_resolve_command(spec.command), args=spec.args)
         async with (
             stdio_client(params) as (read, write),
-            ClientSession(read, write) as session,
+            _RecordingSession(read, write, interactions=interactions) as session,
         ):
             init = await session.initialize()
-            yield session, init
+            yield session, init, interactions
     else:
         # Imported lazily so the stdio path doesn't pay for the HTTP stack.
         from mcp.client.streamable_http import streamablehttp_client
@@ -65,10 +127,10 @@ async def open_session(
             raise MCPConnectionError("http server spec has no url")
         async with (
             streamablehttp_client(spec.url) as (read, write, _),
-            ClientSession(read, write) as session,
+            _RecordingSession(read, write, interactions=interactions) as session,
         ):
             init = await session.initialize()
-            yield session, init
+            yield session, init, interactions
 
 
 async def discover_in_session(session: ClientSession, init: InitializeResult) -> DiscoveryResult:
@@ -117,5 +179,5 @@ async def discover_in_session(session: ClientSession, init: InitializeResult) ->
 
 async def discover(spec: ServerSpec) -> DiscoveryResult:
     """Connect to the server and return its advertised tools."""
-    async with open_session(spec) as (session, init):
+    async with open_session(spec) as (session, init, _interactions):
         return await discover_in_session(session, init)

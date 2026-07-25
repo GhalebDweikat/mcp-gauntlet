@@ -416,7 +416,7 @@ async def test_no_schema_cannot_outscore_a_declared_schema() -> None:
 
 async def test_good_fixture_rejects_malformed() -> None:
     spec = ServerSpec.parse("python -m mcp_gauntlet.fixtures.good_server")
-    async with open_session(spec) as (session, _init):
+    async with open_session(spec) as (session, _init, _interactions):
         listed = await session.list_tools()
         tools = [
             ToolInfo(name=t.name, description=t.description, input_schema=dict(t.inputSchema or {}))

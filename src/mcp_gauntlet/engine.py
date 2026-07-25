@@ -67,7 +67,7 @@ async def evaluate_server(
     tool_timeout_s: float = 60.0,
 ) -> GauntletReport:
     agentic_detail: AgenticDetail | None = None
-    async with open_session(spec) as (session, init):
+    async with open_session(spec) as (session, init, interactions):
         discovery = await discover_in_session(session, init)
         dimensions = run_static_checks(discovery)
 
@@ -100,6 +100,7 @@ async def evaluate_server(
                 max_turns=max_turns,
                 excluded_write_tools=excluded,
                 tool_timeout_s=tool_timeout_s,
+                interactions=interactions,
             )
             dimensions.extend(agentic_dims)
         elif llm_config is not None:

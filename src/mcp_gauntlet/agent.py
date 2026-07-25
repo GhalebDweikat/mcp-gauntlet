@@ -33,7 +33,13 @@ class ToolCallRecord(BaseModel):
     tool: str
     arguments: dict[str, Any] = Field(default_factory=dict)
     ok: bool = True
-    result_text: str = ""
+    result_text: str = ""  # what the MODEL sees — bounded by the prompt budget
+    # What the SCANNER sees, bounded far higher. One string serving both purposes meant the
+    # security scan inherited the prompt budget, so a server could push a payload past it by
+    # returning a few thousand characters of ordinary text first. Whichever end was clipped
+    # went unexamined, and reordering the render only chose which one to sacrifice.
+    scan_text: str = ""
+    scan_truncated: bool = False  # the output exceeded even the scan budget — say so
     error: str | None = None
     unknown_tool: bool = False  # model invented a tool the server never offered (agent error)
     bad_arguments: bool = False  # model emitted non-JSON-object arguments (agent error)
@@ -99,17 +105,70 @@ class AgentTrace(BaseModel):
         return any(call.needed_interaction and not call.ok for call in self.tool_calls)
 
 
+# Every server-authored string a content block can carry. `text` is the common case; an
+# embedded resource carries its text one level down; a resource link advertises its target
+# through title/name/description/uri, and the SDK's own display helper prefers `title`.
+_BLOCK_FIELDS = ("text", "title", "name", "description", "uri")
+_RESOURCE_FIELDS = ("text", "uri")
+
+
+def _strings(obj: Any, fields: tuple[str, ...]) -> list[str]:
+    out: list[str] = []
+    for field in fields:
+        value = getattr(obj, field, None)
+        if value is None:
+            continue
+        text = value if isinstance(value, str) else str(value)
+        if text:
+            out.append(text)
+    return out
+
+
+def _block_text(block: Any) -> str | None:
+    """*All* server-authored text carried by one content block, whatever its type.
+
+    Collects every surface rather than returning the first one found. MCP content models
+    permit extra fields, so a server can hang a harmless top-level ``text`` on an embedded
+    resource: a first-match reader takes that decoy while a spec-compliant client renders
+    the poisoned ``resource.text`` to the model. The scanner is fed from this string, so
+    first-match reading was a complete bypass of it — the payload reached the model and the
+    scan saw "All good."
+    """
+    parts = _strings(block, _BLOCK_FIELDS)
+    resource = getattr(block, "resource", None)
+    if resource is not None:
+        parts.extend(_strings(resource, _RESOURCE_FIELDS))
+        # A blob is base64, not model-readable prose: identify it rather than decode it.
+        if getattr(resource, "blob", None) is not None:
+            parts.append("[binary resource]")
+    return "\n".join(dict.fromkeys(parts)) if parts else None
+
+
 def _render_tool_result(result: Any) -> tuple[bool, str]:
     """Turn an MCP CallToolResult into (ok, text-for-the-model)."""
     is_error = bool(getattr(result, "isError", False))
     parts: list[str] = []
     for block in getattr(result, "content", None) or []:
-        text = getattr(block, "text", None)
+        text = _block_text(block)
         parts.append(text if text is not None else f"[{getattr(block, 'type', 'content')}]")
-    if not parts:
-        structured = getattr(result, "structuredContent", None)
-        if structured is not None:
-            parts.append(json.dumps(structured))
+    # ALWAYS include the structured result, not only as a fallback for empty content: a
+    # tool declaring an outputSchema must return structuredContent, and nothing stops it
+    # also returning a clean text block. Gating on empty content let that pairing carry a
+    # payload straight past the scan while the decoy text was all it examined.
+    #
+    # Order is presentation only — content first, as a client renders it. The scan does NOT
+    # depend on it: the caller keeps a separately-budgeted `scan_text`, because while this
+    # string was doing both jobs, whichever end the prompt budget clipped went unexamined
+    # and the ordering merely chose which one to sacrifice.
+    #
+    # `ensure_ascii=False` matters as much: escaping to \uXXXX turns a zero-width space or
+    # a smuggled combining mark into ordinary ASCII letters, which is exactly what the
+    # normalization and hidden-character checks look for — the escape neutralized the scan
+    # on the path this was opened to cover. A real client hands the model the parsed object
+    # with the characters intact, so the scanner must see them intact too.
+    structured = getattr(result, "structuredContent", None)
+    if structured is not None:
+        parts.append(json.dumps(structured, ensure_ascii=False, default=str))
     return (not is_error, "\n".join(parts) if parts else "(no content)")
 
 
@@ -134,6 +193,9 @@ async def run_agent_task(
     task: str,
     max_turns: int = 8,
     result_char_limit: int = 4000,
+    # Bounded so a server can't exhaust memory, but far above the prompt budget: the scan
+    # must not be evadable by padding a result past what the model is shown.
+    scan_char_limit: int = 64_000,
     tool_timeout_s: float = 60.0,
     interactions: InteractionLog | None = None,
 ) -> AgentTrace:
@@ -235,6 +297,15 @@ async def run_agent_task(
                 ok, text = _render_tool_result(result)
                 record.ok = ok
                 record.result_text = text[:result_char_limit]
+                # The scanner gets its own, far larger budget: the prompt budget exists to
+                # bound what the model reads, and letting it also bound what the SECURITY
+                # scan reads made "return 4000 characters of filler first" an evasion.
+                record.scan_text = text[:scan_char_limit]
+                # An output too large even for the scan budget is itself a way to push a
+                # payload past a bounded scanner, so it is recorded and reported rather
+                # than left to read as a clean result — the same rule the schema scan
+                # already follows.
+                record.scan_truncated = len(text) > scan_char_limit
                 if not ok:
                     record.error = "tool reported an error"
             except TimeoutError:
@@ -246,7 +317,10 @@ async def run_agent_task(
             except Exception as exc:  # noqa: BLE001 - a failed tool call is data, not fatal
                 record.ok = False
                 record.error = str(exc)
+                # An McpError's message is server-authored, so it gets the scan budget too —
+                # symmetry, so no path can drift into scanning less than the model reads.
                 record.result_text = f"ERROR: {exc}"[:result_char_limit]
+                record.scan_text = f"ERROR: {exc}"[:scan_char_limit]
             if interactions is not None and interactions.total > interactions_before:
                 record.needed_interaction = True
             trace.tool_calls.append(record)

@@ -56,6 +56,7 @@ async def run_agentic_eval(
     selection_findings: list[Finding] = []
     timeout_findings: list[Finding] = []
     runtime_outputs: list[tuple[str, str]] = []  # (tool, output) for dynamic poisoning scan
+    scan_truncated_tools: set[str] = set()  # outputs too large to examine completely
     total_calls = 0
     ok_calls = 0
     hung = False  # a tool blew the per-call timeout — stop after finishing this repeat
@@ -114,10 +115,17 @@ async def run_agentic_eval(
             # is excused from the reliability score). Only the agent's own never-dispatched
             # calls — hallucinated names, malformed args — are skipped; their "output" is a
             # harness-authored error string, not server content.
+            # `scan_text` carries the full result, not the clipped copy the model was shown,
+            # so a payload can't be pushed past the scan by padding the output. It falls back
+            # to result_text for the records that never reached a server (timeouts, transport
+            # errors), where the two are the same short string.
             runtime_outputs.extend(
-                (call.tool, call.result_text)
+                (call.tool, call.scan_text or call.result_text)
                 for call in trace.tool_calls
-                if call.result_text and not call.agent_fault
+                if (call.scan_text or call.result_text) and not call.agent_fault
+            )
+            scan_truncated_tools.update(
+                call.tool for call in trace.tool_calls if call.scan_truncated
             )
 
             verdict = await judge_task(client, model, task, trace)
@@ -258,7 +266,7 @@ async def run_agentic_eval(
         dimensions.append(reliability)
     # Dynamic tool-poisoning: scan what the tools actually RETURNED. Independent of judge
     # conclusiveness — the outputs were collected whenever the agent ran.
-    response_safety = scan_runtime_outputs(runtime_outputs)
+    response_safety = scan_runtime_outputs(runtime_outputs, scan_truncated_tools)
     if response_safety is not None:
         dimensions.append(response_safety)
     return dimensions, detail

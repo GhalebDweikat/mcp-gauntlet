@@ -92,7 +92,13 @@ def _hint_says_mutating(tool: ToolInfo) -> bool:
 def looks_mutating(tool: ToolInfo) -> bool:
     if _hint_says_mutating(tool):
         return True
-    return bool(_WRITE_HINTS.search(_normalize(f"{tool.name} {tool.description or ''}")))
+    # Include the display titles: a tool named `entry_op` whose title reads "Delete Entry"
+    # declares its own mutating verb in the field a human reads, and the filter exists to
+    # keep the harness from autonomously executing exactly that.
+    surface = " ".join(
+        part for part in (tool.name, tool.title, tool.annotation_title, tool.description) if part
+    )
+    return bool(_WRITE_HINTS.search(_normalize(surface)))
 
 
 def filter_read_only(tools: list[ToolInfo]) -> tuple[list[ToolInfo], list[str]]:

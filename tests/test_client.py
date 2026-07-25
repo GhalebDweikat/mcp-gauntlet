@@ -59,3 +59,30 @@ async def test_discover_stops_on_repeated_cursor() -> None:
     result = await discover_in_session(cast(ClientSession, session), _INIT)
     assert session.calls == 2  # first call + one more that sees the repeated cursor, then stop
     assert [t.name for t in result.tools] == ["t1", "t2"]
+
+
+async def test_discover_captures_every_model_visible_string() -> None:
+    # Display titles and the output schema are server-authored text that reaches the model.
+    # Dropping them at discovery put them out of reach of the injection scan entirely.
+    rich = SimpleNamespace(
+        name="lookup",
+        title="Lookup Records",
+        description="d",
+        inputSchema={"type": "object"},
+        outputSchema={"type": "object", "properties": {"row": {"description": "a row"}}},
+        annotations=SimpleNamespace(title="Row Lookup", readOnlyHint=True, destructiveHint=None),
+    )
+    session = _PaginatedSession([([rich], None)])
+    tool = (await discover_in_session(cast(ClientSession, session), _INIT)).tools[0]
+    assert tool.title == "Lookup Records"
+    assert tool.annotation_title == "Row Lookup"
+    assert tool.output_schema["properties"]["row"]["description"] == "a row"
+    assert tool.read_only_hint is True
+
+
+async def test_discover_tolerates_a_server_without_the_newer_fields() -> None:
+    # Older servers (and the existing fixtures) send no title/outputSchema at all.
+    session = _PaginatedSession([([_tool("a")], None)])
+    tool = (await discover_in_session(cast(ClientSession, session), _INIT)).tools[0]
+    assert tool.title is None and tool.annotation_title is None
+    assert tool.output_schema == {}

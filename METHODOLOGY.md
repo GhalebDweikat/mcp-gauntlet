@@ -26,7 +26,7 @@ for having more tools. The **overall** is the weighted mean of the dimensions *p
 | Dimension | Weight | What it measures | Needs an LLM |
 |---|---:|---|---|
 | Agent Task Success | 3.0 | A live agent attempts generated tasks using only this server's tools; LLM-judged, repeated for a success rate | yes |
-| Security Signals | 2.0 | Static scan for tool-poisoning / prompt-injection markers and hidden characters across every string in every tool schema, plus the server's init `instructions` | no |
+| Security Signals | 2.0 | Static scan for tool-poisoning / prompt-injection markers and hidden characters across every server-authored string a client can show the model: server name/title/`instructions`, tool descriptions and display titles, and every string in each tool's input *and output* schema | no |
 | Tool-Selection Accuracy | 1.5 | Whether the agent called the tools each task was expected to use | yes |
 | Schema Health | 1.0 | Valid JSON Schema, typed and described parameters, coherent `required` | no |
 | Description Quality | 1.0 | Offline heuristics on description presence and length | no |
@@ -53,7 +53,10 @@ whether the server is at fault is left to the reader.
 - **Not a security audit.** The static scan is pattern-based. It catches known
   tool-poisoning shapes and hidden-character smuggling; it cannot catch plain-prose social
   engineering, and it will never be complete. A clean security score is not a clean bill of
-  health.
+  health. Known gaps, stated rather than implied: the **resources** and **prompts**
+  primitives are not evaluated at all (a `prompts/get` response goes straight into the
+  model's context and would not be scanned), and a tool's `_meta` block is not scanned.
+  Both are tracked work, not claims already met.
 - **Not deterministic.** Agent and judge runs are stochastic even at temperature 0. Task
   sets are cached per server so they don't drift between runs, and tasks are repeated and
   averaged, but two runs of the same server can differ by a few points. Treat small gaps as

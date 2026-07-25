@@ -171,6 +171,13 @@ async def discover_in_session(session: ClientSession, init: InitializeResult) ->
             name=tool.name,
             description=tool.description,
             input_schema=dict(tool.inputSchema or {}),
+            # Display titles and the output schema are server-authored text that reaches the
+            # model in some clients, so they are captured here to be scanned. Dropping them
+            # at discovery made them unreachable by the injection scan — a payload placed in
+            # one was invisible to the check that exists to find it.
+            title=getattr(tool, "title", None),
+            annotation_title=getattr(tool.annotations, "title", None),
+            output_schema=dict(getattr(tool, "outputSchema", None) or {}),
             read_only_hint=getattr(tool.annotations, "readOnlyHint", None),
             destructive_hint=getattr(tool.annotations, "destructiveHint", None),
         )
@@ -179,6 +186,7 @@ async def discover_in_session(session: ClientSession, init: InitializeResult) ->
     server = ServerInfo(
         name=getattr(init.serverInfo, "name", None),
         version=getattr(init.serverInfo, "version", None),
+        title=getattr(init.serverInfo, "title", None),
         instructions=getattr(init, "instructions", None),
     )
     return DiscoveryResult(server=server, tools=tools)

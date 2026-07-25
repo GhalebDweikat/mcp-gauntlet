@@ -21,7 +21,7 @@ from statistics import mean
 import jsonschema
 from jsonschema.exceptions import SchemaError
 
-from mcp_gauntlet.models import DiscoveryResult, ToolInfo
+from mcp_gauntlet.models import DiscoveryResult, ServerInfo, ToolInfo
 from mcp_gauntlet.report import DimensionResult, Finding, Severity, score_from_findings
 from mcp_gauntlet.schemas import arg_surface, schema_texts
 
@@ -363,15 +363,28 @@ def _excerpt(text: str, match: re.Match[str], width: int = 60) -> str:
 
 
 def _clean_for_match(text: str) -> str:
-    """NFC-compose (folding decomposed accents back into é etc.), then drop zero-width /
-    format / control / variation-selector / combining chars, so an invisible smuggled into
-    a keyword ("in<VS>structions", "ignore<VS> instructions") can't split it before the
-    injection patterns run. Detection of the smuggled char itself happens on the raw text.
+    """Fold the text to a bare skeleton before the injection patterns run.
+
+    NFKD-*decompose* first, then drop zero-width / format / control / variation-selector /
+    combining chars. Decomposing (rather than composing) is what makes accent smuggling
+    fail: a combining acute dropped into a keyword — ``in<U+0301>structions`` — composes
+    under NFC into the single letter ``ń``, which is not a combining mark and so survives
+    the strip, leaving the keyword broken and the pattern unmatched. Decomposing pulls
+    every diacritic back out as a strippable mark, so the keyword reassembles as
+    ``instructions`` whether the attacker used an invisible, a combining mark, or a
+    precomposed accented letter.
+
+    The *compatibility* form (NFKD, not NFD) additionally folds the lookalike alphabets a
+    model reads perfectly but a byte-wise regex does not: fullwidth ``Ｉｇｎｏｒｅ`` and
+    math-bold ``𝐈𝐠𝐧𝐨𝐫𝐞`` both scored a clean 100 under canonical folding alone. It maps
+    ligatures, circled and fullwidth forms, and superscripts onto their ASCII skeletons;
+    honest text (``½``, ``㎏``, CJK, accented prose) folds to an equally honest skeleton
+    that matches no English injection phrase.
     """
-    composed = unicodedata.normalize("NFC", text)
+    decomposed = unicodedata.normalize("NFKD", text)
     kept = [
         ch
-        for ch in composed
+        for ch in decomposed
         if not _is_variation_selector(ord(ch))
         and unicodedata.category(ch) not in {"Cf", "Cc", "Mn", "Me"}
     ]
@@ -407,7 +420,12 @@ def _scan_text(
     # Match phrase patterns against the normalized text so smuggled invisibles can't break
     # a keyword; detect the smuggled chars themselves against the raw text.
     cleaned = _clean_for_match(text)
-    obfuscated = " (obfuscating characters removed)" if cleaned != text else ""
+    # Neutral wording on purpose: the fold also normalizes honest accented and non-Latin
+    # prose, so calling every difference "obfuscation" accused a German or Spanish server
+    # of hiding something. When characters really were smuggled, the separate
+    # hidden-character finding below says so explicitly. This note only warns the reader
+    # that the quoted excerpt is the folded form, not the server's literal bytes.
+    obfuscated = " (normalized for matching)" if cleaned != text else ""
     patterns = _INJECTION_PATTERNS + _REFERENCE_PATTERNS if references else _INJECTION_PATTERNS
     for pattern, severity, label in patterns:
         match = pattern.search(cleaned)
@@ -420,7 +438,13 @@ def _scan_text(
                 severity = Severity.MEDIUM
             detail = _excerpt(cleaned, match) + obfuscated
             findings.append(_f(tool, severity, f"{where} {label}", detail))
-    if prose and (hidden := _hidden_chars(text)):
+    # Detect smuggled characters on the NFC-composed text: a decomposed accent (macOS and
+    # many localized strings are NFD) is "e" + combining acute, which is adjacent to ASCII
+    # letters and so matched the smuggle signature — capping honest servers for writing
+    # "Creer" with an accent. Composing first collapses those into ordinary letters while
+    # leaving every real vector (zero-width, bidi override, variation selector, and
+    # combining marks with no composed form) untouched.
+    if prose and (hidden := _hidden_chars(unicodedata.normalize("NFC", text))):
         codes = ", ".join(sorted({f"U+{ord(c):04X}" for c in hidden}))
         findings.append(
             _f(tool, Severity.HIGH, f"{where} contains hidden/non-printable characters", codes)
@@ -430,33 +454,74 @@ def _scan_text(
 
 def _check_tool_security(tool: ToolInfo) -> list[Finding]:
     findings = _scan_text(tool.description or "", tool.name, "description")
+    # Scan BOTH display titles, deduped by text. Newer clients render `title` and older ones
+    # render `annotations.title`, so scanning only the winner of that precedence leaves the
+    # other a blind spot — a clean `title` beside a poisoned `annotations.title` scored a
+    # perfect 100. Deduping is what removes the double-penalty for a server that (as the
+    # spec encourages) sets both to the same string. `references=False` matches the rule
+    # schemas.py already applies to schema titles: a title is a short human label, so a tool
+    # legitimately called "Reset Password" must not be reported for naming a credential.
+    for title in dict.fromkeys(t for t in (tool.title, tool.annotation_title) if t):
+        findings.extend(_scan_text(title, tool.name, "title", references=False))
     # Walk the whole schema, not just its top-level properties: a poisoned description can
     # sit inside an `allOf` branch, behind a `$ref`, or in a NESTED object's property, and
     # a scanner that reads one level down is evaded by writing the payload two levels down.
     # That is an evasion of the check whose entire purpose is catching tool poisoning, not
-    # merely a scoring gap.
-    scan = schema_texts(tool.input_schema)
-    for item in scan.texts:
-        findings.extend(
-            _scan_text(
-                item.text, tool.name, item.label, prose=item.prose, references=item.references
+    # merely a scoring gap. The OUTPUT schema is serialized into the model's context the
+    # same way the input one is, so it gets the identical treatment — but as ONE deduped
+    # pass: pydantic emits the same `$defs` block into a request and a response model, and
+    # two independent scans would report that shared text (and its truncation) twice.
+    truncated = False
+    # text -> (label, prose, references), keeping the STRICTEST treatment the string was
+    # seen under in EITHER schema. Deduping on text alone was a grade-cap bypass: a literal
+    # (enum entry, property name) never caps, so recording the input schema's literal first
+    # and skipping the output schema's prose occurrence of the same string let one enum
+    # entry buy immunity for a poisoned description. `schema_texts` already applies this
+    # rule within a single walk; merging two walks has to preserve it.
+    merged: dict[str, tuple[str, bool, bool]] = {}
+    for schema, where in (
+        (tool.input_schema, "input schema"),
+        (tool.output_schema, "output schema"),
+    ):
+        if not schema:
+            continue
+        scan = schema_texts(schema)
+        truncated = truncated or scan.truncated
+        for item in scan.texts:
+            label = item.label if where == "input schema" else f"output {item.label}"
+            previous = merged.get(item.text)
+            if previous is None:
+                merged[item.text] = (label, item.prose, item.references)
+                continue
+            prev_label, prev_prose, prev_refs = previous
+            merged[item.text] = (
+                # Report against the prose placement when one exists — that is the
+                # occurrence a reviewer needs to look at.
+                label if item.prose and not prev_prose else prev_label,
+                prev_prose or item.prose,
+                prev_refs or item.references,
             )
-        )
-    if scan.truncated:
+    for text, (label, prose, references) in merged.items():
+        findings.extend(_scan_text(text, tool.name, label, prose=prose, references=references))
+    if truncated:
         # Say so rather than let partial coverage read as a clean result — an enormous or
         # deeply nested schema is itself a way to push a payload past a bounded scanner.
         findings.append(
             _f(
                 tool.name,
                 Severity.MEDIUM,
-                "input schema too large or deeply nested to scan completely",
+                "schema too large or deeply nested to scan completely",
                 detail="Some of its text was not examined for injection markers.",
             )
         )
     return findings
 
 
-def check_security(tools: list[ToolInfo], instructions: str | None = None) -> DimensionResult:
+def check_security(
+    tools: list[ToolInfo],
+    instructions: str | None = None,
+    server: ServerInfo | None = None,
+) -> DimensionResult:
     all_findings: list[Finding] = []
     scores: list[float] = []
     for tool in tools:
@@ -465,8 +530,25 @@ def check_security(tools: list[ToolInfo], instructions: str | None = None) -> Di
         scores.append(score_from_findings(tool_findings))
     # The server's own init "instructions" are server-authored (not passthrough), so
     # injection there is genuine tool-poisoning and counts like a poisoned description.
+    # Its display name/title ride along: they are shown to the user and reach the model in
+    # clients that render them, so they are the server-level twin of a tool title.
+    server_findings: list[Finding] = []
+    seen_server_text: set[str] = set()
     if instructions:
-        server_findings = _scan_text(instructions, None, "server instructions")
+        server_findings.extend(_scan_text(instructions, None, "server instructions"))
+    if server is not None:
+        # Both, deduped — same rule as the tool titles. `name` is if anything the stronger
+        # surface: `Implementation.title` is newer than `Tool.title`, so more clients render
+        # the name, and the harness itself puts it in the report heading, the HTML title and
+        # the console panel. First-match reading let a poisoned name hide behind a clean
+        # title and reach all three having been scanned zero times.
+        for field, displayed in (("title", server.title), ("name", server.name)):
+            if displayed and displayed not in seen_server_text:
+                seen_server_text.add(displayed)
+                server_findings.extend(
+                    _scan_text(displayed, None, f"server {field}", references=False)
+                )
+    if server_findings or instructions:
         all_findings.extend(server_findings)
         scores.append(score_from_findings(server_findings))
     return DimensionResult(
@@ -481,7 +563,9 @@ def check_security(tools: list[ToolInfo], instructions: str | None = None) -> Di
     )
 
 
-def scan_runtime_outputs(outputs: list[tuple[str, str]]) -> DimensionResult | None:
+def scan_runtime_outputs(
+    outputs: list[tuple[str, str]], truncated_tools: set[str] | None = None
+) -> DimensionResult | None:
     """Scan the server's live tool OUTPUTS (``(tool_name, text)``) for the same
     injection / poisoning markers as the static description scan — a server can pass a
     description scan yet return poisoned content at call time, and this catches it.
@@ -502,6 +586,18 @@ def scan_runtime_outputs(outputs: list[tuple[str, str]]) -> DimensionResult | No
             if key not in seen:
                 seen.add(key)
                 findings.append(finding)
+    # Partial coverage must not read as a clean result: an output too large to examine
+    # completely is itself a way to push a payload past a bounded scanner, exactly as an
+    # oversized schema is on the static side.
+    for tool in sorted(truncated_tools or ()):
+        findings.append(
+            _f(
+                tool,
+                Severity.MEDIUM,
+                "tool output too large to scan completely",
+                detail="Some of what this tool returned was not examined for injection markers.",
+            )
+        )
     return DimensionResult(
         key="response_safety",
         title="Response Safety (runtime)",
@@ -524,5 +620,5 @@ def run_static_checks(discovery: DiscoveryResult) -> list[DimensionResult]:
     return [
         check_schema_health(tools),
         check_description_quality(tools),
-        check_security(tools, discovery.server.instructions),
+        check_security(tools, discovery.server.instructions, discovery.server),
     ]

@@ -37,12 +37,15 @@ Each run produces a graded report card (JSON + Markdown) across:
 - **Schema Health** — valid JSON schemas, typed and described parameters.
 - **Description Quality** — can an agent tell when and how to use each tool?
 - **Security Signals** — a *static* scan for tool-poisoning / prompt-injection markers
-  and hidden characters, covering the server's init instructions, its tool descriptions,
-  and **every string in each tool's input schema** — titles, enums, defaults, examples,
-  `$defs` entries and unknown extension keywords included. The whole schema is serialized
-  into the model's prompt, so any string in it can carry a payload; scanning only
-  `description` fields at the top level is trivially evaded by nesting one behind a
-  `$ref`. A critical finding caps the overall grade.
+  and hidden characters, covering **every server-authored string a client can put in front
+  of the model**: the server's name, title and init instructions; each tool's description,
+  display titles, and **both its input and output schemas** — nested titles, enums,
+  defaults, examples, `$defs` entries and unknown extension keywords included. Anything in
+  that set can carry a payload, so scanning only top-level `description` fields is
+  trivially evaded by nesting one behind a `$ref` or parking it in a display title. Text is
+  folded to a compatibility skeleton before matching, so smuggled invisibles, combining
+  marks, and lookalike alphabets (fullwidth, math-bold) don't break a keyword. A critical
+  finding caps the overall grade.
 - **Agent Task Success** — a live LLM agent attempts generated tasks using only
   the server's tools; LLM-judged and repeated for a success rate.
 - **Tool-Selection Accuracy** — did the agent call the tools it was expected to?

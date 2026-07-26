@@ -770,7 +770,7 @@ def check_security(
     tools: list[ToolInfo],
     instructions: str | None = None,
     server: ServerInfo | None = None,
-    drift_findings: list[Finding] | None = None,
+    session_findings: list[Finding] | None = None,
     prompts: list[PromptInfo] | None = None,
     resources: list[ResourceInfo] | None = None,
 ) -> DimensionResult:
@@ -786,7 +786,7 @@ def check_security(
     # breaking the check, and a re-run could score higher than a first run of the same
     # server. Folding them in makes drift able only to lower a score.
     drift_by_tool: dict[str | None, list[Finding]] = {}
-    for finding in drift_findings or []:
+    for finding in session_findings or []:
         drift_by_tool.setdefault(finding.tool, []).append(finding)
 
     all_findings: list[Finding] = []
@@ -912,7 +912,7 @@ def scan_runtime_outputs(
 
 
 def run_static_checks(
-    discovery: DiscoveryResult, drift_findings: list[Finding] | None = None
+    discovery: DiscoveryResult, session_findings: list[Finding] | None = None
 ) -> list[DimensionResult]:
     tools = discovery.tools
     return [
@@ -922,7 +922,7 @@ def run_static_checks(
             tools,
             discovery.server.instructions,
             discovery.server,
-            drift_findings,
+            session_findings,
             discovery.prompts,
             discovery.resources,
         ),

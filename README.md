@@ -256,7 +256,7 @@ when the score drops below your threshold:
 
 ```yaml
 - name: Run the gauntlet
-  run: uvx mcp-gauntlet@0.5.0 run "python -m your_server" --no-agentic --fail-under 60
+  run: uvx mcp-gauntlet@0.6.0 run "python -m your_server" --no-agentic --fail-under 60
 ```
 
 Pin the version, as above: an unpinned `uvx mcp-gauntlet` would let a new release move

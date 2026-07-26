@@ -1,0 +1,90 @@
+"""Detecting a server that writes non-protocol output to its stdout.
+
+The detection reads the SDK's own parse failures, which couples it to SDK internals. That
+coupling is the risk: if a future SDK reports this differently, the check would quietly
+measure nothing and every server would look clean — the exact failure mode this project
+keeps running into. So the load-bearing test here drives a REAL fixture server through a
+REAL session and asserts we noticed. It fails loudly rather than silently passing.
+"""
+
+import sys
+
+import anyio
+
+from mcp_gauntlet.client import open_session
+from mcp_gauntlet.config import ServerSpec
+from mcp_gauntlet.engine import _protocol_findings
+from mcp_gauntlet.protocol import TransportLog, watch_transport
+from mcp_gauntlet.report import Severity
+
+NOISY = f"{sys.executable} -m mcp_gauntlet.fixtures.noisy_server"
+QUIET = f"{sys.executable} -m mcp_gauntlet.fixtures.good_server"
+
+
+def _transport_for(spec_str: str) -> TransportLog:
+    spec = ServerSpec.parse(spec_str)
+
+    async def _run() -> TransportLog:
+        async with open_session(spec) as (session, _init, interactions):
+            await session.list_tools()
+            return interactions.transport
+
+    return anyio.run(_run)
+
+
+def test_a_server_logging_to_stdout_is_detected_end_to_end() -> None:
+    """The one that matters: a real subprocess, a real session, a real violation."""
+    transport = _transport_for(NOISY)
+    assert transport.unparseable_lines > 0, (
+        "no protocol violation observed from a server that prints to stdout — the SDK "
+        "probably changed how it reports unparseable lines, and this check is now blind"
+    )
+    assert transport.summary()  # evidence, not just a count
+
+
+def test_a_well_behaved_server_produces_no_finding() -> None:
+    # The false positive that would matter: flagging every server for a check that
+    # misreads ordinary traffic.
+    transport = _transport_for(QUIET)
+    assert transport.unparseable_lines == 0
+    assert _protocol_findings(transport) == []
+
+
+def test_the_finding_lowers_the_score_but_never_caps_the_grade() -> None:
+    """MEDIUM on purpose. It is a real, objective defect — and not evidence of an attack.
+
+    Only near-certain attack signals are allowed to cap the grade. A framework logger
+    pointed at the wrong stream is a bug, not an adversary, and capping honest servers is
+    how a scanner loses the reader's trust.
+    """
+    log = TransportLog()
+    log.note("[info] mapped route {/, GET}")
+    log.note('    context: "Bootstrap"')
+    findings = _protocol_findings(log)
+
+    assert len(findings) == 1
+    assert findings[0].severity is Severity.MEDIUM
+    assert findings[0].tool is None  # a server-level defect, not any one tool's
+    assert "stdout" in findings[0].message
+    assert "2 non-protocol line" in findings[0].message
+
+
+def test_the_watcher_leaves_logging_configuration_as_it_found_it() -> None:
+    # It attaches a handler to a logger the host application may also be using.
+    import logging
+
+    logger = logging.getLogger("mcp.client.stdio")
+    before_handlers, before_level = list(logger.handlers), logger.level
+    with watch_transport():
+        assert len(logger.handlers) == len(before_handlers) + 1
+    assert list(logger.handlers) == before_handlers
+    assert logger.level == before_level
+
+
+def test_samples_are_bounded() -> None:
+    # A server can emit thousands of log lines; the report must not carry all of them.
+    log = TransportLog()
+    for i in range(500):
+        log.note(f"line {i}")
+    assert log.unparseable_lines == 500
+    assert len(log.samples) <= 3

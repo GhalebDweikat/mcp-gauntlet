@@ -98,6 +98,23 @@ whether the server is at fault is left to the reader.
 - **Not a measure of what the server does when it's used properly.** Runs are read-only by
   default and tasks are generated, not real workloads.
 
+### Breaking the transport
+
+Over stdio, a server's stdout carries JSON-RPC framing and nothing else — the spec is
+explicit. Servers violate this routinely by leaving a framework's default logger pointed at
+stdout: a NestJS banner, a stray `print`, a progress bar. Clients skip what they cannot
+parse, so the server usually still works and its author never sees a problem.
+
+It is reported anyway, as a **MEDIUM** finding in Security Signals that lowers the score
+without capping the grade. It corrupts the stream for every client, not only this one, and a
+stricter client may not be so forgiving. It is also a message-injection surface: nothing
+distinguishes a startup banner from a log line echoing user-supplied text, and any such line
+that happens to parse as JSON-RPC becomes a protocol message the server never meant to send.
+It does not cap, because a misdirected logger is a bug rather than an adversary, and only
+near-certain attack signals are allowed to cap.
+
+This applies to stdio only. Over HTTP a server's logs go nowhere near the wire.
+
 ### Servers that score whatever you point them at
 
 Some servers — filesystem, git, database servers — take a target as configuration. Their

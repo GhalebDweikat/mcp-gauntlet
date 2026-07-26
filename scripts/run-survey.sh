@@ -14,7 +14,7 @@ set -euo pipefail
 LIST="${1:?usage: run-survey.sh <servers.json> [--pilot N]}"
 shift || true
 
-VERSION="${MCP_GAUNTLET_VERSION:-0.5.0}"
+VERSION="${MCP_GAUNTLET_VERSION:-0.6.0}"
 OUT="${SURVEY_OUT:-survey-out}"
 TASKS="${SURVEY_TASKS:-3}"
 REPEATS="${SURVEY_REPEATS:-2}"

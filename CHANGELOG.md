@@ -3,6 +3,32 @@
 All notable changes to mcp-gauntlet are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] — 2026-07-26
+
+### Added
+
+- **Servers that break the stdio transport are now detected and scored.** Over stdio a
+  server's stdout carries JSON-RPC framing and nothing else, but servers violate this
+  constantly by leaving a framework's default logger pointed at it — a NestJS bootstrap, a
+  stray `print`. Clients skip the unparseable lines, so the server usually still works and
+  its author never finds out; meanwhile the stream is corrupted for every client, and any
+  such line that happens to parse as JSON-RPC becomes a message the server never meant to
+  send. Reported as a MEDIUM server-level finding in Security Signals: it lowers the score
+  and never caps the grade, because a misdirected logger is a bug rather than an adversary.
+
+  Found by running the survey: one server in a five-server pilot emitted 48 of these.
+
+  Detection reads the SDK's own parse failures, which couples it to SDK internals — so a
+  `noisy_server` fixture drives a real session end to end and asserts the violation is seen.
+  If a future SDK reports this differently that test fails loudly, instead of the check
+  quietly measuring nothing and scoring every server clean.
+- **A `noisy_server` fixture**: correct tools, valid schemas, and its logs on stdout. Nothing
+  in a static read of it reveals the problem; only watching the transport does.
+
+### Changed
+
+- **Scores are not comparable with 0.5.0** for a server that logs to stdout.
+
 ## [0.5.0] — 2026-07-25
 
 ### Fixed

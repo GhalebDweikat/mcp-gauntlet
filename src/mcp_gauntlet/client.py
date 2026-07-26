@@ -11,7 +11,7 @@ import logging
 import shutil
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from mcp import ClientSession, StdioServerParameters, types
@@ -28,6 +28,7 @@ from mcp_gauntlet.models import (
     ServerInfo,
     ToolInfo,
 )
+from mcp_gauntlet.protocol import TransportLog, watch_transport
 
 _log = logging.getLogger(__name__)
 
@@ -38,7 +39,11 @@ class MCPConnectionError(RuntimeError):
 
 @dataclass
 class InteractionLog:
-    """Counts the server-initiated requests the harness declines.
+    """What the harness observed over one session, beyond the answers it asked for.
+
+    Counts the server-initiated requests the harness declines, and carries the
+    :class:`TransportLog` of anything the server put on the wire that was not a protocol
+    message.
 
     mcp-gauntlet is a non-interactive harness: it drives no elicitation (asking the
     user to fill a form), sampling (asking the client to run an LLM completion), or
@@ -52,6 +57,8 @@ class InteractionLog:
     sampling: int = 0
     elicitation: int = 0
     roots: int = 0
+    # Protocol-invalid output seen during the session (stdout pollution on stdio).
+    transport: TransportLog = field(default_factory=TransportLog)
 
     @property
     def total(self) -> int:
@@ -149,12 +156,17 @@ async def open_session(
             # reaches a server that needs it without exposing the whole parent environment.
             env=spec.env or None,
         )
-        async with (
-            stdio_client(params) as (read, write),
-            _RecordingSession(read, write, interactions=interactions) as session,
-        ):
-            init = await _initialize(session)
-            yield session, init, interactions
+        # Only stdio can suffer this: there stdout IS the protocol channel, so a stray
+        # `print` becomes a malformed message. Over HTTP a server's logs go nowhere near
+        # the wire, and the check would always read zero.
+        with watch_transport() as transport:
+            interactions.transport = transport
+            async with (
+                stdio_client(params) as (read, write),
+                _RecordingSession(read, write, interactions=interactions) as session,
+            ):
+                init = await _initialize(session)
+                yield session, init, interactions
     else:
         # Imported lazily so the stdio path doesn't pay for the HTTP stack.
         from mcp.client.streamable_http import streamablehttp_client

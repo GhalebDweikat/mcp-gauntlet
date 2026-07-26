@@ -31,6 +31,7 @@ from mcp_gauntlet.evaluate import run_agentic_eval
 from mcp_gauntlet.llm import LLMConfig, make_async_client
 from mcp_gauntlet.models import DiscoveryResult, ToolInfo
 from mcp_gauntlet.preflight import probe_credentials
+from mcp_gauntlet.protocol import TransportLog
 from mcp_gauntlet.report import AgenticDetail, Finding, GauntletReport, Severity, redact
 from mcp_gauntlet.robustness import run_robustness_probes
 from mcp_gauntlet.safety import filter_read_only
@@ -86,6 +87,33 @@ def _grounding_context(spec: ServerSpec, discovery: DiscoveryResult, tools: list
         lines.append("- Resources the server exposes: " + ", ".join(uris))
 
     return "\n".join(lines)
+
+
+def _protocol_findings(transport: TransportLog) -> list[Finding]:
+    """A server writing non-protocol output to stdout is breaking the transport it speaks.
+
+    On stdio, stdout carries JSON-RPC framing and nothing else. A framework logger left
+    pointed at it — a NestJS banner, a stray `print` — puts lines on that channel that are
+    not messages. The SDK skips them, so the server usually still works and its author never
+    sees a problem, but it corrupts the stream for every client and a stricter one may not be
+    so forgiving.
+
+    Reported as a server-level finding, MEDIUM, so it lowers the score without capping the
+    grade: it is a real defect and an objective one, but it is not evidence of an attack,
+    and only near-certain attack signals are allowed to cap.
+    """
+    if not transport.unparseable_lines:
+        return []
+    return [
+        Finding(
+            severity=Severity.MEDIUM,
+            message=(
+                f"server wrote {transport.unparseable_lines} non-protocol line(s) to stdout, "
+                "which carries JSON-RPC framing only (logs belong on stderr)"
+            ),
+            detail=transport.summary() or None,
+        )
+    ]
 
 
 async def _resolve_tasks(
@@ -225,7 +253,8 @@ async def evaluate_server(
         drift_findings = await _check_definition_drift(
             session, init, spec, discovery, cache_dir.parent / "baselines", track_drift
         )
-        dimensions = run_static_checks(discovery, drift_findings)
+        session_findings = drift_findings + _protocol_findings(interactions.transport)
+        dimensions = run_static_checks(discovery, session_findings)
 
         # The set of tools we'll actually execute (probes + agent) — read-only by default.
         exec_tools = discovery.tools

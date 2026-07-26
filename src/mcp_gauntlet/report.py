@@ -204,6 +204,11 @@ class GauntletReport(BaseModel):
     # published score has to say which methodology it came from. Defaulted, not required,
     # so a report saved by an older version still loads.
     gauntlet_version: str = ""
+    # Why the live-agent evaluation was deliberately not run — currently only "this server
+    # needs credentials nobody gave it". Kept as prose because the board prints it verbatim:
+    # a reader deciding whether a missing score is the server's fault or the harness's needs
+    # the sentence, not a code.
+    unevaluated_reason: str = ""
 
     @classmethod
     def build(
@@ -214,6 +219,7 @@ class GauntletReport(BaseModel):
         tool_count: int,
         dimensions: list[DimensionResult],
         agentic: AgenticDetail | None = None,
+        unevaluated_reason: str = "",
     ) -> GauntletReport:
         # A server that exposes no tools can't be evaluated — every dimension is
         # vacuously perfect, which would otherwise average to 100/A. Report it as N/A
@@ -244,6 +250,7 @@ class GauntletReport(BaseModel):
                     security_critical=_has_critical_security(dimensions),
                     agentic=agentic,
                     gauntlet_version=_version(),
+                    unevaluated_reason=unevaluated_reason,
                 )
             )
 
@@ -268,6 +275,7 @@ class GauntletReport(BaseModel):
                 security_critical=security_critical,
                 agentic=agentic,
                 gauntlet_version=_version(),
+                unevaluated_reason=unevaluated_reason,
             )
         )
 

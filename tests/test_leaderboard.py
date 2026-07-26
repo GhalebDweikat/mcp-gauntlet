@@ -11,6 +11,7 @@ from mcp_gauntlet.leaderboard import (
     LeaderboardResult,
     ServerEntry,
     ServerListError,
+    _partial_reason,
     _result_payload,
     assign_slugs,
     badge_markdown,
@@ -641,3 +642,76 @@ def test_a_failed_server_does_not_keep_an_older_grade_badge(tmp_path: Path) -> N
     payload = _json.loads((tmp_path / "badges" / "alpha.json").read_text())
     assert payload["message"] == "not evaluated"
     assert payload["color"] == "lightgrey"
+
+
+def test_a_server_needing_credentials_says_so_instead_of_looking_untested() -> None:
+    """The skip is only useful if a reader can tell it apart from a criticism.
+
+    Without this, a commercial server we declined to authenticate lands under "Partially
+    evaluated" reading "no agent evaluation (static checks only)" — indistinguishable from a
+    keyless run, and easily read as the server's shortcoming. It is ours.
+    """
+    reason = "needs credentials that were not supplied — every probed tool reported an error"
+    report = GauntletReport.build(
+        spec="npx -y some-hosted-server",
+        server=ServerInfo(name="hosted", version="1"),
+        tool_count=2,
+        dimensions=[DimensionResult(key="security", title="Security", weight=2.0, score=100.0)],
+        unevaluated_reason=reason,
+    )
+    assert not report.agentically_scored  # so it cannot be co-ranked with tested servers
+    assert _partial_reason(report) == reason
+
+    # On a mixed board (some servers really were agent-scored), it lands in the partial
+    # section with its reason spelled out.
+    scored = GauntletReport.build(
+        spec="npx -y works",
+        server=ServerInfo(name="works", version="1"),
+        tool_count=1,
+        dimensions=[
+            DimensionResult(key="task_success", title="Agent Task Success", weight=3.0, score=90.0)
+        ],
+    )
+    html = render_index(
+        [
+            LeaderboardResult(name="hosted", spec="s", report=report),
+            LeaderboardResult(name="works", spec="s2", report=scored),
+        ],
+        "",
+    )
+    assert "needs credentials" in html
+    assert "Partially evaluated" in html
+
+
+def test_a_credential_blocked_server_is_not_promoted_onto_a_static_board() -> None:
+    """A static-only board pools everything into one table — but not this.
+
+    The pooling exists because on a keyless run every server was measured the same way. A
+    server the pre-flight found unusable was not: we know its tools do not work, while its
+    STATIC score is untouched by that. Promoting it would rank an unusable server against
+    working ones, and with nothing dragging its number down it would plausibly rank first.
+    """
+    blocked = GauntletReport.build(
+        spec="npx -y hosted",
+        server=ServerInfo(name="hosted", version="1"),
+        tool_count=2,
+        dimensions=[DimensionResult(key="security", title="Security", weight=2.0, score=100.0)],
+        unevaluated_reason="needs credentials that were not supplied",
+    )
+    plain = GauntletReport.build(
+        spec="npx -y plain",
+        server=ServerInfo(name="plain", version="1"),
+        tool_count=2,
+        dimensions=[DimensionResult(key="security", title="Security", weight=2.0, score=80.0)],
+    )
+    html = render_index(
+        [
+            LeaderboardResult(name="hosted", spec="s", report=blocked),
+            LeaderboardResult(name="plain", spec="s2", report=plain),
+        ],
+        "",
+    )
+    # `plain` (80) is ranked; `hosted` (100) is segregated despite the higher number.
+    assert "Partially evaluated" in html
+    assert html.index("plain") < html.index("Partially evaluated")
+    assert html.index("Partially evaluated") < html.rindex("hosted")

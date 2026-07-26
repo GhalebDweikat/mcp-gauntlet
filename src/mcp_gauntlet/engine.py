@@ -7,6 +7,7 @@ agent share one connection.
 from __future__ import annotations
 
 import contextlib
+import logging
 from pathlib import Path
 
 from mcp import ClientSession
@@ -29,6 +30,7 @@ from mcp_gauntlet.drift import (
 from mcp_gauntlet.evaluate import run_agentic_eval
 from mcp_gauntlet.llm import LLMConfig, make_async_client
 from mcp_gauntlet.models import DiscoveryResult, ToolInfo
+from mcp_gauntlet.preflight import probe_credentials
 from mcp_gauntlet.report import AgenticDetail, Finding, GauntletReport, Severity, redact
 from mcp_gauntlet.robustness import run_robustness_probes
 from mcp_gauntlet.safety import filter_read_only
@@ -40,6 +42,8 @@ from mcp_gauntlet.taskcache import (
     server_key,
 )
 from mcp_gauntlet.tasks import EvalTask, generate_tasks
+
+_log = logging.getLogger(__name__)
 
 
 def _grounding_context(spec: ServerSpec, discovery: DiscoveryResult, tools: list[ToolInfo]) -> str:
@@ -229,7 +233,18 @@ async def evaluate_server(
         if not allow_writes:
             exec_tools, excluded = filter_read_only(discovery.tools)
 
-        if llm_config is not None and exec_tools:
+        # Before any LLM spend: is this server usable at all without credentials? A hosted
+        # commercial server connects and lists its tools perfectly, then fails every call.
+        # Scoring that produces a published D or F for a configuration the harness chose not
+        # to supply. Skipped when credentials WERE supplied — then an auth error is a real
+        # finding about the server (or about the token), not a reason to stop.
+        needs_credentials = ""
+        if llm_config is not None and exec_tools and not spec.env and not spec.headers:
+            needs_credentials = await probe_credentials(session, exec_tools) or ""
+
+        if needs_credentials:
+            _log.info("skipping agent evaluation: %s", needs_credentials)
+        elif llm_config is not None and exec_tools:
             client = make_async_client(llm_config)
             tasks = await _resolve_tasks(
                 client=client,
@@ -271,7 +286,10 @@ async def evaluate_server(
             )
 
         # Robustness probes run last so a probe-induced hiccup can't disturb the agent run.
-        if probe and exec_tools:
+        # Skipped for a server that needs credentials: every call returns the same auth error
+        # regardless of the payload, so the probe would be measuring the auth wall, not the
+        # server's input validation.
+        if probe and exec_tools and not needs_credentials:
             robustness = await run_robustness_probes(session, exec_tools)
             if robustness is not None:
                 dimensions.append(robustness)
@@ -282,4 +300,5 @@ async def evaluate_server(
         tool_count=len(discovery.tools),
         dimensions=dimensions,
         agentic=agentic_detail,
+        unevaluated_reason=needs_credentials,
     )

@@ -406,6 +406,11 @@ def _security_glyph(report: GauntletReport) -> str:
 
 def _partial_reason(report: GauntletReport) -> str:
     """Why this server's overall isn't comparable with the ranked ones."""
+    # First, ahead of every other case: the harness declined to score this server at all.
+    # It is the only reason here that is explicitly NOT a criticism of the server, and
+    # collapsing it into "no agent evaluation" would read as one.
+    if report.unevaluated_reason:
+        return report.unevaluated_reason
     agentic = report.agentic
     if agentic is None:
         return "no agent evaluation (static checks only)"
@@ -557,7 +562,15 @@ def render_index(results: list[LeaderboardResult], board_url: str | None = None)
     # was measured the same way, so they are mutually comparable and belong in one table.
     static_board = not full
     if static_board:
-        full, partial = partial, []
+        # But promote only servers that merely went untested. One the pre-flight determined
+        # cannot work without credentials was NOT measured the same way: we know its tools
+        # do not function, and its static score is untouched by that, so promoting it would
+        # rank an unusable server against working ones — plausibly at the top.
+        def _blocked(r: LeaderboardResult) -> bool:
+            return bool(r.report and r.report.unevaluated_reason)
+
+        full = [r for r in partial if not _blocked(r)]
+        partial = [r for r in partial if _blocked(r)]
 
     ranked = sorted(full, key=_score_of, reverse=True)
     # Partials are NOT sorted by score: they carry different denominators from each other

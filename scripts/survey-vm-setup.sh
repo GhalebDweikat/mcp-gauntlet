@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Prepare an isolated Ubuntu VM to run the public-server survey.
+# Prepare a disposable Linux VM to run the public-server survey.
+#
+# Targets a Debian/Ubuntu base (it uses apt). On another distribution, install git, curl,
+# Node and uv however that distribution does it — nothing below is load-bearing except
+# having those four available.
 #
 # WHY A VM: the survey executes ~50 arbitrary npm and PyPI packages. That is remote code
 # execution by design — it is the product — and it does not belong on a machine holding
@@ -8,7 +12,8 @@
 # key; but a package can still read files, open sockets, and persist. Containment is the VM,
 # not the env scrubbing.
 #
-# BEFORE RUNNING: take a VirtualBox snapshot. After the survey, roll back to it.
+# BEFORE RUNNING: snapshot the VM (whatever your hypervisor calls it). Roll back to that
+# snapshot when the survey finishes, and treat anything that was in the VM as exposed.
 #
 #   ./survey-vm-setup.sh          # install toolchain + mcp-gauntlet
 #   ./survey-vm-setup.sh --check  # verify only
@@ -31,10 +36,14 @@ check() {
   fi
   echo
   echo "--- key hygiene ---"
-  if [ -n "${GEMINI_API_KEY:-}" ]; then
-    echo "GEMINI_API_KEY is set (length ${#GEMINI_API_KEY}) — value not printed"
+  key_var="${SURVEY_KEY_VAR:-$(printf '%s' "${SURVEY_PROVIDER:-gemini}" | tr '[:lower:]-' '[:upper:]_')_API_KEY}"
+  key_val="${!key_var:-}"
+  if [ -n "$key_val" ]; then
+    # Length only. Printing the key would write it into your scrollback and any log of
+    # this run, on a machine you are about to hand to fifty unvetted packages.
+    echo "$key_var is set (${#key_val} chars) — value not printed"
   else
-    echo "GEMINI_API_KEY is NOT set. The survey needs it; see the note at the bottom."
+    echo "$key_var is NOT set. The survey needs a key for its agent; see the note below."
   fi
 }
 
@@ -70,11 +79,12 @@ Before you run the survey
 --------------------------------------------------------------------------------
 1. SNAPSHOT the VM now if you have not. Roll back when the survey finishes.
 
-2. Use a SEPARATE, revocable Gemini key here — not the one on your host. The
+2. Use a SEPARATE, revocable API key here — not the one from your host. The
    survey runs untrusted code on this machine; assume anything reachable from
    this filesystem is compromised, and plan to revoke the key afterwards.
 
-       export GEMINI_API_KEY=...        # this shell only, not a dotfile
+       export GEMINI_API_KEY=...        # or GROQ_API_KEY, OPENAI_API_KEY, ...
+                                        # this shell only, never a dotfile
 
    Putting it in ~/.bashrc or a committed .env leaves it on disk for every
    package you are about to execute to read.

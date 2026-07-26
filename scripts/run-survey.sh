@@ -16,16 +16,26 @@ shift || true
 
 VERSION="${MCP_GAUNTLET_VERSION:-0.5.0}"
 OUT="${SURVEY_OUT:-survey-out}"
-MODEL="${SURVEY_MODEL:-gemini-flash-latest}"
 TASKS="${SURVEY_TASKS:-3}"
 REPEATS="${SURVEY_REPEATS:-2}"
+
+# Which LLM drives the agent. Defaults to Gemini Flash only because it is cheap enough to
+# scan fifty servers for a few dollars — nothing here depends on the provider. Override for
+# any OpenAI-compatible backend, including a local one:
+#
+#   SURVEY_PROVIDER=groq SURVEY_MODEL=llama-3.3-70b-versatile ./run-survey.sh list.json
+#
+PROVIDER="${SURVEY_PROVIDER:-gemini}"
+MODEL="${SURVEY_MODEL:-gemini-flash-latest}"
+# The env var mcp-gauntlet reads for this provider (GEMINI_API_KEY, GROQ_API_KEY, ...).
+KEY_VAR="${SURVEY_KEY_VAR:-$(printf '%s' "$PROVIDER" | tr '[:lower:]-' '[:upper:]_')_API_KEY}"
 
 PILOT=0
 if [ "${1:-}" = "--pilot" ]; then PILOT="${2:?--pilot needs a count}"; fi
 
 # ---------------------------------------------------------------- preconditions
-if [ -z "${GEMINI_API_KEY:-}" ]; then
-  echo "GEMINI_API_KEY is not set." >&2
+if [ -z "${!KEY_VAR:-}" ]; then
+  echo "$KEY_VAR is not set (provider: $PROVIDER)." >&2
   echo "Export it in THIS SHELL only — not in a dotfile. You are about to run untrusted" >&2
   echo "code on this machine, and anything on disk is readable by it." >&2
   exit 1
@@ -55,7 +65,7 @@ cat <<EOF
 mcp-gauntlet survey
   version   : $VERSION (pinned — the board records what produced each score)
   servers   : $COUNT
-  model     : $MODEL  ($TASKS tasks x $REPEATS repeats)
+  model     : $PROVIDER:$MODEL  ($TASKS tasks x $REPEATS repeats)
   output    : $OUT
   estimate  : ~\$$(python3 -c "print(f'{$COUNT*0.09:.2f}')") at ~\$0.09/server
 --------------------------------------------------------------------------------
@@ -72,7 +82,7 @@ set +e
 uvx "mcp-gauntlet@${VERSION}" leaderboard \
   --servers "$LIST_TO_RUN" \
   --out "$OUT" \
-  --provider gemini \
+  --provider "$PROVIDER" \
   --model "$MODEL" \
   --tasks "$TASKS" \
   --repeats "$REPEATS" \

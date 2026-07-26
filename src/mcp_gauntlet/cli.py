@@ -47,8 +47,25 @@ _SEVERITY_COLOR = {
 }
 
 
+def _show_version(value: bool) -> None:
+    if value:
+        from mcp_gauntlet import __version__
+
+        console.print(__version__)
+        raise typer.Exit()
+
+
 @app.callback()
-def main() -> None:
+def main(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        "-V",
+        callback=_show_version,
+        is_eager=True,
+        help="Show the installed mcp-gauntlet version and exit.",
+    ),
+) -> None:
     """An agentic evaluation harness for MCP servers."""
     load_env()
 

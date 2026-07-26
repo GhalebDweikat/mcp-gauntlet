@@ -3,7 +3,7 @@
 All notable changes to mcp-gauntlet are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.4.0] — 2026-07-25
 
 ### Added
 
@@ -31,6 +31,8 @@ All notable changes to mcp-gauntlet are documented here. This project adheres to
   only in the second listing raises its own finding rather than a bare "something moved".
   The change itself never caps a grade — MCP has a `tools.listChanged` capability and
   honest servers register tools lazily or edit descriptions without bumping a version.
+- **`mcp-gauntlet --version`.** Scores are only comparable within a version and the README
+  tells you to pin one, so the tool has to be able to say which one is installed.
 - **A bundled malicious demo server** (`mcp_gauntlet.fixtures.malicious_server`). Every
   tool has an innocuous description, so a description scanner finds nothing; the attacks
   live in a display title, in an output schema behind a `$ref`, in what a tool returns at
@@ -38,8 +40,36 @@ All notable changes to mcp-gauntlet are documented here. This project adheres to
   second. The server is fully functional — valid schemas, working tools — which is the
   point: it is flagged for what it says and returns, not for being broken.
 
+### Changed
+
+- **The `mcp` dependency is now upper-bounded (`>=1.9,<2`).** `mcp` 2.0.0 is targeted for
+  2026-07-28 — the same day the next protocol revision finalizes — and it renames
+  `FastMCP`, replaces `ClientSession` with `Client`, and moves the types into a separate
+  package. An unbounded pin would have broken every fresh `uvx mcp-gauntlet` on that date,
+  for a release that had worked the day before. The bound comes off once the harness is
+  tested against 2.0, not before.
+- **Scores in Security Signals and Response Safety are not comparable with 0.3.x.**
+  Prompts, resources and `_meta` are now scanned, definition drift is folded in, and
+  Response Safety is normalized differently (below). Every report and leaderboard row
+  records the version that produced it, which is what that stamp is for.
+
 ### Fixed
 
+- **A single unencodable character could discard a finished evaluation.** A lone surrogate
+  is valid JSON and a valid Python string but cannot be written as UTF-8, so one anywhere
+  in a server's output made the report fail to serialize — losing a run the user had
+  already paid an LLM provider for. Reports are now made encodable once at build time,
+  covering every writer, and the character is escaped rather than dropped so a reviewer
+  still sees what the server sent.
+- **Response Safety no longer punishes a server for having more tools.** The dimension
+  scored every finding against a single base instead of taking the mean of its per-subject
+  scores the way every other dimension does, so the penalty grew with however many tools
+  the agent happened to exercise: five tools each relaying one MEDIUM scored 40 where the
+  documented model gives 88. The subject is now the tool whose output was examined.
+- **Response Safety no longer loses outputs when the agent's own LLM call fails.** What a
+  server returned was discarded if the turn later died — and on the free tiers this
+  commonly runs against, a rate limit mid-task is the ordinary case, so real payloads could
+  vanish because the *agent* faltered rather than because the server was clean.
 - **Lookalike letters and exotic spaces no longer evade the scan.** No normalization form
   unifies Cyrillic `а` with Latin `a` — they are different letters, not different encodings
   of one — so `Ignore аll previous instructions` read perfectly to a model and matched

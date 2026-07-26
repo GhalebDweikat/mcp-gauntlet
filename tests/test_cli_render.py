@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 from rich.console import Console
+from typer.testing import CliRunner
 
 from mcp_gauntlet import cli
 from mcp_gauntlet.htmlreport import to_html
@@ -179,3 +180,16 @@ def test_render_report_redacts_secrets_in_console(monkeypatch: pytest.MonkeyPatc
     out = buf.getvalue()
     assert secret not in out
     assert "REDACTED" in out
+
+
+def test_version_flag_reports_the_installed_version() -> None:
+    """Scores are only comparable within a version, and the README tells users to pin one.
+
+    A tool that stamps its version into every report and every leaderboard row has to be
+    able to answer "which one am I running?" without importing Python.
+    """
+    from mcp_gauntlet import __version__
+
+    result = CliRunner().invoke(cli.app, ["--version"])
+    assert result.exit_code == 0
+    assert __version__ in result.output

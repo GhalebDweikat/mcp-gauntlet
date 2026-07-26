@@ -42,12 +42,55 @@ from mcp_gauntlet.taskcache import (
 from mcp_gauntlet.tasks import EvalTask, generate_tasks
 
 
+def _grounding_context(spec: ServerSpec, discovery: DiscoveryResult, tools: list[ToolInfo]) -> str:
+    """Facts about this server's environment, so task generation needn't guess at it.
+
+    The generator otherwise sees only tool *descriptions*, and for a server whose tools take
+    a path, a repository or a table name it has no choice but to invent one. It invents
+    plausibly — `/workspace/assets`, `/var/repos/data-pipeline` — and every call then fails,
+    scoring the server for the harness's guess. Anything listed here is real; anything not
+    listed, the task has to discover before using.
+    """
+    lines: list[str] = []
+
+    # The spec's own arguments are the cheapest ground truth there is: a filesystem server's
+    # root and a git server's repository are sitting right there in the command line.
+    if spec.args:
+        lines.append(
+            "- The server was started with these arguments (paths among them are real): "
+            + " ".join(spec.args)
+        )
+    if spec.url:
+        lines.append(f"- The server is reachable at: {spec.url}")
+
+    # Zero-argument tools are the server's own discovery surface — callable with nothing
+    # known, which is exactly the position a generated task starts from.
+    no_args = [
+        t.name
+        for t in tools
+        if not (t.input_schema.get("properties") or {}) and not t.input_schema.get("required")
+    ]
+    if no_args:
+        lines.append(
+            "- These tools take no arguments, so a task may call them first to find out "
+            "what exists: " + ", ".join(sorted(no_args))
+        )
+
+    # Resource URIs are real identifiers the server published about itself.
+    uris = [r.uri for r in discovery.resources if r.uri and not r.is_template][:12]
+    if uris:
+        lines.append("- Resources the server exposes: " + ", ".join(uris))
+
+    return "\n".join(lines)
+
+
 async def _resolve_tasks(
     *,
     client: AsyncOpenAI,
     model: str,
     tools: list[ToolInfo],
     discovery: DiscoveryResult,
+    spec: ServerSpec,
     n_tasks: int,
     tasks_file: Path | None,
     refresh_tasks: bool,
@@ -60,7 +103,9 @@ async def _resolve_tasks(
         cached = load_tasks(path)
         if cached:  # non-empty hit; an empty/failed set is a miss, not a cached "no tasks"
             return cached
-    tasks = await generate_tasks(client, model, tools, n_tasks)
+    tasks = await generate_tasks(
+        client, model, tools, n_tasks, context=_grounding_context(spec, discovery, tools)
+    )
     if secrets and tasks:
         # A task is LLM-generated from server-controlled tool descriptions, and the cache
         # (or a committed --tasks-file) is persisted to disk. If a server echoed a credential
@@ -191,6 +236,7 @@ async def evaluate_server(
                 model=llm_config.model,
                 tools=exec_tools,
                 discovery=discovery,
+                spec=spec,
                 n_tasks=n_tasks,
                 tasks_file=tasks_file,
                 refresh_tasks=refresh_tasks,

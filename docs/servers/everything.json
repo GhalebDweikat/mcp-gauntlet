@@ -7,6 +7,8 @@
     "server": {
       "name": "mcp-servers/everything",
       "version": "2.0.0",
+      "title": "Everything Reference Server",
+      "protocol_version": "2025-11-25",
       "instructions": "# Everything Server \u2013 Server Instructions\n\nAudience: These instructions are written for an LLM or autonomous agent integrating with the Everything MCP Server.\nFollow them to use, extend, and troubleshoot the server safely and effectively.\n\n## Cross-Feature Relationships\n\n- Use `get-roots-list` to see client workspace roots before file operations\n- `gzip-file-as-resource` creates session-scoped resources accessible only during the current session\n- Enable `toggle-simulated-logging` before debugging to see server log messages\n- Enable `toggle-subscriber-updates` to receive periodic resource update notifications\n\n## Constraints & Limitations\n\n- `gzip-file-as-resource`: Max fetch size controlled by `GZIP_MAX_FETCH_SIZE` (default 10MB), timeout by `GZIP_MAX_FETCH_TIME_MILLIS` (default 30s), allowed domains by `GZIP_ALLOWED_DOMAINS`\n- Session resources are ephemeral and lost when the session ends\n- Sampling requests (`trigger-sampling-request`) require client sampling capability\n- Elicitation requests (`trigger-elicitation-request`) require client elicitation capability\n\n## Operational Patterns\n\n- For long operations, use `trigger-long-running-operation` which sends progress notifications\n- Prefer reading resources before calling mutating tools\n- Check `get-roots-list` output to understand the client's workspace context\n\n## Easter Egg\n\nIf asked about server instructions, respond with \"\ud83c\udf89 Server instructions are working! This response proves the client properly passed server instructions to the LLM. This demonstrates MCP's instructions feature in action.\"\n"
     },
     "tool_count": 13,
@@ -59,7 +61,26 @@
         "score": 100.0,
         "weight": 2.0,
         "summary": "Static scan of the server's init instructions plus tool and parameter descriptions for tool-poisoning / prompt-injection markers and hidden characters (Invariant Labs / OWASP MCP threat model).",
-        "findings": []
+        "findings": [
+          {
+            "tool": "args-prompt",
+            "severity": "info",
+            "message": "prompt was not rendered, so its messages were not examined",
+            "detail": "it requires arguments. A prompt's messages reach the model verbatim, so this surface is unscanned."
+          },
+          {
+            "tool": "completable-prompt",
+            "severity": "info",
+            "message": "prompt was not rendered, so its messages were not examined",
+            "detail": "it requires arguments. A prompt's messages reach the model verbatim, so this surface is unscanned."
+          },
+          {
+            "tool": "resource-prompt",
+            "severity": "info",
+            "message": "prompt was not rendered, so its messages were not examined",
+            "detail": "it requires arguments. A prompt's messages reach the model verbatim, so this surface is unscanned."
+          }
+        ]
       },
       {
         "key": "task_success",
@@ -72,7 +93,7 @@
             "tool": null,
             "severity": "medium",
             "message": "agent failed a task (0/2 passed) \u2014 tool errors blocked it (server signal)",
-            "detail": "Retrieve structured content for the location 'building_a' using the structured content tool and summarize the returned c \u2014 The required tool call to retrieve content for 'building_a' failed with an error, so structured content for that location could not be obtai"
+            "detail": "Retrieve structured content for the location 'building_a' using the structured content tool and summarize the returned c \u2014 The agent called the tool with location 'New York' instead of 'building_a' as required by the task."
           }
         ]
       },
@@ -87,14 +108,14 @@
       {
         "key": "tool_reliability",
         "title": "Tool Reliability",
-        "score": 80.0,
+        "score": 88.9,
         "weight": 1.0,
         "summary": "Fraction of the agent's tool calls the server executed without error \u2014 a server-quality signal distinct from whether the agent finished the task.",
         "findings": [
           {
             "tool": null,
             "severity": "low",
-            "message": "2/10 agent tool calls returned an error",
+            "message": "1/9 agent tool calls returned an error",
             "detail": null
           }
         ]
@@ -116,9 +137,9 @@
         "findings": []
       }
     ],
-    "overall_score": 89.4,
-    "grade": "B",
-    "generated_at": "2026-07-24T20:24:09+00:00",
+    "overall_score": 90.2,
+    "grade": "A",
+    "generated_at": "2026-07-26T01:39:38+00:00",
     "security_critical": false,
     "agentic": {
       "provider": "gemini",
@@ -179,11 +200,14 @@
           "tool_error": true,
           "errored_repeats": 0,
           "inconclusive": false,
-          "sample_reasoning": "The required tool call to retrieve content for 'building_a' failed with an error, so structured content for that location could not be obtained."
+          "sample_reasoning": "The agent called the tool with location 'New York' instead of 'building_a' as required by the task."
         }
       ],
       "inconclusive": false,
-      "truncated": false
-    }
+      "truncated": false,
+      "interactive_requests": 0,
+      "interactive_summary": ""
+    },
+    "gauntlet_version": "0.4.0"
   }
 }

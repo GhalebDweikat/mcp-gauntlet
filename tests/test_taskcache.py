@@ -6,6 +6,7 @@ import pytest
 from openai import AsyncOpenAI
 
 from mcp_gauntlet import engine
+from mcp_gauntlet.config import ServerSpec
 from mcp_gauntlet.models import DiscoveryResult, ServerInfo, ToolInfo
 from mcp_gauntlet.taskcache import cache_file, load_tasks, save_tasks, server_key
 from mcp_gauntlet.tasks import EvalTask
@@ -70,7 +71,7 @@ async def test_resolve_tasks_redacts_secrets_before_caching(
     secret = "ghp_cached_secret_1234"
 
     async def fake_generate(
-        client: AsyncOpenAI, model: str, tools: list[ToolInfo], n: int
+        client: AsyncOpenAI, model: str, tools: list[ToolInfo], n: int, context: str = ""
     ) -> list[EvalTask]:
         return [
             EvalTask(description=f"use {secret}", rubric=f"expect {secret}", expected_tools=["a"])
@@ -84,6 +85,7 @@ async def test_resolve_tasks_redacts_secrets_before_caching(
         model="m",
         tools=tools,
         discovery=discovery,
+        spec=ServerSpec.parse("python -m srv"),
         n_tasks=1,
         tasks_file=None,
         refresh_tasks=True,

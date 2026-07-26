@@ -7,6 +7,8 @@
     "server": {
       "name": "sqlite",
       "version": "0.1.0",
+      "title": null,
+      "protocol_version": "2025-11-25",
       "instructions": null
     },
     "tool_count": 6,
@@ -46,7 +48,14 @@
         "score": 100.0,
         "weight": 2.0,
         "summary": "Static scan of the server's init instructions plus tool and parameter descriptions for tool-poisoning / prompt-injection markers and hidden characters (Invariant Labs / OWASP MCP threat model).",
-        "findings": []
+        "findings": [
+          {
+            "tool": "mcp-demo",
+            "severity": "info",
+            "message": "prompt was not rendered, so its messages were not examined",
+            "detail": "it requires arguments. A prompt's messages reach the model verbatim, so this surface is unscanned."
+          }
+        ]
       },
       {
         "key": "task_success",
@@ -59,7 +68,7 @@
             "tool": null,
             "severity": "low",
             "message": "agent failed a task (1/2 passed) \u2014 agent did not complete it (agent signal)",
-            "detail": "Retrieve and display the detailed schema information for the table named 'invoices'. \u2014 The table 'invoices' does not exist in the database, so the requested detailed schema information could not be retrieved or displayed."
+            "detail": "Retrieve and display the detailed schema information for the table named 'invoices'. \u2014 The agent called `describe_table` for 'invoices', but because the table does not exist in the database, it was unable to retrieve or display"
           }
         ]
       },
@@ -98,7 +107,7 @@
     ],
     "overall_score": 95.5,
     "grade": "A",
-    "generated_at": "2026-07-24T20:30:30+00:00",
+    "generated_at": "2026-07-26T01:44:56+00:00",
     "security_critical": false,
     "agentic": {
       "provider": "gemini",
@@ -142,7 +151,7 @@
           "tool_error": false,
           "errored_repeats": 0,
           "inconclusive": false,
-          "sample_reasoning": "The table 'invoices' does not exist in the database, so the requested detailed schema information could not be retrieved or displayed."
+          "sample_reasoning": "The agent called `describe_table` for 'invoices', but because the table does not exist in the database, it was unable to retrieve or display any schema information."
         },
         {
           "description": "Inspect the database to list all available tables, then retrieve and report the full schema for the 'users' table.",
@@ -163,7 +172,10 @@
         }
       ],
       "inconclusive": false,
-      "truncated": false
-    }
+      "truncated": false,
+      "interactive_requests": 0,
+      "interactive_summary": ""
+    },
+    "gauntlet_version": "0.4.0"
   }
 }

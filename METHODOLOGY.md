@@ -98,6 +98,27 @@ whether the server is at fault is left to the reader.
 - **Not a measure of what the server does when it's used properly.** Runs are read-only by
   default and tasks are generated, not real workloads.
 
+### Servers that score whatever you point them at
+
+Some servers — filesystem, git, database servers — take a target as configuration. Their
+Response Safety score is then largely a property of **the target, not the server**: a
+filesystem server rooted at a directory containing credentials will faithfully relay them
+and be flagged for it, having done nothing wrong.
+
+This is not hypothetical. An early run of this leaderboard rooted the filesystem server at
+the working checkout and pointed the git server at this repository, which produced two
+findings that were purely artifacts of one machine: the filesystem row was flagged for a
+sentence in a README that mentioned a credential filename, and the git row diffed the
+board's own generated HTML and read the previous run's findings back to itself. Neither
+result was reproducible by anyone else, and both risked publishing fragments of a private
+working tree.
+
+The board therefore points those servers at fixed, committed scan targets
+(`leaderboard-sandbox/`, and a scratch repository built by
+`scripts/make_leaderboard_fixtures.py`). Every operator scans the same bytes, and a score
+means the same thing twice. If you run one of these servers against your own data, read its
+Response Safety findings as being about that data.
+
 ## Comparability rules
 
 The overall is a weighted mean over the dimensions **present**, so a server the agent never

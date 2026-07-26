@@ -7,6 +7,8 @@
     "server": {
       "name": "memory-server",
       "version": "0.6.3",
+      "title": null,
+      "protocol_version": "2025-11-25",
       "instructions": null
     },
     "tool_count": 9,
@@ -70,15 +72,15 @@
       {
         "key": "task_success",
         "title": "Agent Task Success",
-        "score": 83.3,
+        "score": 66.7,
         "weight": 3.0,
         "summary": "Whether a live agent, given only this server's tools, completes generated tasks (LLM-judged, repeated for a success rate).",
         "findings": [
           {
             "tool": null,
-            "severity": "low",
-            "message": "agent failed a task (1/2 passed) \u2014 agent did not complete it (agent signal)",
-            "detail": "Search the knowledge graph for nodes related to 'Quantum Encryption' using search_nodes, and then inspect the node named \u2014 Although the agent called the requested tools, the knowledge graph was empty and the agent was unable to extract or report the key rotation "
+            "severity": "medium",
+            "message": "agent failed a task (0/2 passed) \u2014 agent did not complete it (agent signal)",
+            "detail": "Search the knowledge graph for nodes related to 'Quantum Encryption' using search_nodes, and then inspect the node named \u2014 Although the agent called search_nodes and open_nodes as instructed, the knowledge graph returned no data, preventing the agent from reporti"
           }
         ]
       },
@@ -115,9 +117,9 @@
         "findings": []
       }
     ],
-    "overall_score": 95.4,
+    "overall_score": 91.1,
     "grade": "A",
-    "generated_at": "2026-07-24T20:25:03+00:00",
+    "generated_at": "2026-07-26T01:40:35+00:00",
     "security_critical": false,
     "agentic": {
       "provider": "gemini",
@@ -141,14 +143,14 @@
             "open_nodes"
           ],
           "repeats": 2,
-          "successes": 1,
-          "success_rate": 0.5,
-          "mean_score": 50.0,
+          "successes": 0,
+          "success_rate": 0.0,
+          "mean_score": 0.0,
           "selection_score": 100.0,
           "tool_error": false,
           "errored_repeats": 0,
           "inconclusive": false,
-          "sample_reasoning": "Although the agent called the requested tools, the knowledge graph was empty and the agent was unable to extract or report the key rotation frequency."
+          "sample_reasoning": "Although the agent called search_nodes and open_nodes as instructed, the knowledge graph returned no data, preventing the agent from reporting the key rotation frequency."
         },
         {
           "description": "Retrieve the complete knowledge graph using read_graph to identify all top-level category nodes and list their names.",
@@ -184,7 +186,10 @@
         }
       ],
       "inconclusive": false,
-      "truncated": false
-    }
+      "truncated": false,
+      "interactive_requests": 0,
+      "interactive_summary": ""
+    },
+    "gauntlet_version": "0.4.0"
   }
 }

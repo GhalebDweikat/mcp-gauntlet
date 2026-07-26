@@ -7,6 +7,8 @@
     "server": {
       "name": "mcp-time",
       "version": "1.28.1",
+      "title": null,
+      "protocol_version": "2025-11-25",
       "instructions": null
     },
     "tool_count": 2,
@@ -51,7 +53,7 @@
       {
         "key": "task_success",
         "title": "Agent Task Success",
-        "score": 83.3,
+        "score": 80.0,
         "weight": 3.0,
         "summary": "Whether a live agent, given only this server's tools, completes generated tasks (LLM-judged, repeated for a success rate).",
         "findings": [
@@ -59,7 +61,7 @@
             "tool": null,
             "severity": "medium",
             "message": "agent failed a task (0/2 passed) \u2014 agent did not complete it (agent signal)",
-            "detail": "Convert the event time '2025-06-01 09:00:00' from 'UTC' to the 'Asia/Kolkata' timezone. \u2014 The agent failed to pass the required date '2025-06-01' in the `time` parameter to the `convert_time` tool, passing only '09:00' instead."
+            "detail": "Convert the event time '2025-06-01 09:00:00' from 'UTC' to the 'Asia/Kolkata' timezone. \u2014 The agent failed to include the specified date in the tool call arguments, passing '09:00' instead of '2025-06-01 09:00:00'."
           }
         ]
       },
@@ -96,9 +98,9 @@
         "findings": []
       }
     ],
-    "overall_score": 95.2,
+    "overall_score": 94.3,
     "grade": "A",
-    "generated_at": "2026-07-24T20:28:04+00:00",
+    "generated_at": "2026-07-26T01:42:45+00:00",
     "security_critical": false,
     "agentic": {
       "provider": "gemini",
@@ -132,12 +134,12 @@
           "repeats": 2,
           "successes": 0,
           "success_rate": 0.0,
-          "mean_score": 50.0,
+          "mean_score": 40.0,
           "selection_score": 100.0,
           "tool_error": false,
           "errored_repeats": 0,
           "inconclusive": false,
-          "sample_reasoning": "The agent failed to pass the required date '2025-06-01' in the `time` parameter to the `convert_time` tool, passing only '09:00' instead."
+          "sample_reasoning": "The agent failed to include the specified date in the tool call arguments, passing '09:00' instead of '2025-06-01 09:00:00'."
         },
         {
           "description": "Check the current time in 'Europe/Paris', and then convert that current time to 'America/New_York' timezone.",
@@ -158,7 +160,10 @@
         }
       ],
       "inconclusive": false,
-      "truncated": false
-    }
+      "truncated": false,
+      "interactive_requests": 0,
+      "interactive_summary": ""
+    },
+    "gauntlet_version": "0.4.0"
   }
 }

@@ -36,3 +36,6 @@ Thumbs.db
 /docs/prior-art.md
 /REVIEW.md
 /research/
+
+# Scratch scan targets for the leaderboard's git row (see scripts/make_leaderboard_fixtures.py)
+.gauntlet-fixtures/

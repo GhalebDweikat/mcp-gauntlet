@@ -7,6 +7,8 @@
     "server": {
       "name": "mcp-fetch",
       "version": "1.28.1",
+      "title": null,
+      "protocol_version": "2025-11-25",
       "instructions": null
     },
     "tool_count": 1,
@@ -33,12 +35,19 @@
         "score": 100.0,
         "weight": 2.0,
         "summary": "Static scan of the server's init instructions plus tool and parameter descriptions for tool-poisoning / prompt-injection markers and hidden characters (Invariant Labs / OWASP MCP threat model).",
-        "findings": []
+        "findings": [
+          {
+            "tool": "fetch",
+            "severity": "info",
+            "message": "prompt was not rendered, so its messages were not examined",
+            "detail": "it requires arguments. A prompt's messages reach the model verbatim, so this surface is unscanned."
+          }
+        ]
       }
     ],
     "overall_score": 100.0,
     "grade": "A",
-    "generated_at": "2026-07-24T20:27:25+00:00",
+    "generated_at": "2026-07-26T01:42:08+00:00",
     "security_critical": false,
     "agentic": {
       "provider": "gemini",
@@ -50,7 +59,10 @@
       ],
       "results": [],
       "inconclusive": false,
-      "truncated": false
-    }
+      "truncated": false,
+      "interactive_requests": 0,
+      "interactive_summary": ""
+    },
+    "gauntlet_version": "0.4.0"
   }
 }

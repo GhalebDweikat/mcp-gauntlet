@@ -7,6 +7,8 @@
     "server": {
       "name": "good-fixture",
       "version": "1.28.1",
+      "title": null,
+      "protocol_version": "2025-11-25",
       "instructions": null
     },
     "tool_count": 3,
@@ -103,7 +105,7 @@
     ],
     "overall_score": 99.4,
     "grade": "A",
-    "generated_at": "2026-07-24T20:30:46+00:00",
+    "generated_at": "2026-07-26T01:45:11+00:00",
     "security_critical": false,
     "agentic": {
       "provider": "gemini",
@@ -147,7 +149,10 @@
         }
       ],
       "inconclusive": false,
-      "truncated": false
-    }
+      "truncated": false,
+      "interactive_requests": 0,
+      "interactive_summary": ""
+    },
+    "gauntlet_version": "0.4.0"
   }
 }

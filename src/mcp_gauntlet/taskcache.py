@@ -14,17 +14,25 @@ from pathlib import Path
 
 from mcp_gauntlet.models import ServerInfo, ToolInfo
 from mcp_gauntlet.naming import slugify
-from mcp_gauntlet.tasks import EvalTask
+from mcp_gauntlet.tasks import PROMPT_VERSION, EvalTask
 
 DEFAULT_CACHE_DIR = Path(".gauntlet") / "tasks"
 
 
 def server_key(server: ServerInfo, tools: list[ToolInfo]) -> str:
-    """A stable id from the server name/version and the exposed tool set."""
+    """A stable id from the server name/version, the exposed tool set, and the prompt.
+
+    The generator's prompt is part of the key because a cached set is only interchangeable
+    with a freshly generated one if the same prompt would have produced it. Without this a
+    prompt fix looks like a no-op on every server already in the cache — it keeps serving
+    the tasks the old prompt wrote.
+    """
     name = server.name or "server"
     version = server.version or "0"
     tool_names = ",".join(sorted(tool.name for tool in tools))
-    digest = hashlib.sha256(f"{name}|{version}|{tool_names}".encode()).hexdigest()[:12]
+    digest = hashlib.sha256(
+        f"{name}|{version}|{tool_names}|p{PROMPT_VERSION}".encode()
+    ).hexdigest()[:12]
     slug = slugify(name)
     return f"{slug}-{digest}"
 

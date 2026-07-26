@@ -19,6 +19,7 @@ import anyio
 
 from mcp_gauntlet.config import ServerSpec
 from mcp_gauntlet.engine import evaluate_server
+from mcp_gauntlet.errors import describe
 from mcp_gauntlet.htmlreport import _GRADE_COLORS, _STYLE, _esc, to_html
 from mcp_gauntlet.jsonio import read_json_text
 from mcp_gauntlet.llm import LLMConfig
@@ -299,7 +300,10 @@ async def run_leaderboard(
         except TimeoutError:
             error = f"timed out after {timeout_s:.0f}s"
         except Exception as exc:  # noqa: BLE001 - one bad server shouldn't sink the batch
-            error = str(exc)[:200]
+            # Unwrapped: anyio wraps session failures in a task group, and the bare string
+            # is "unhandled errors in a TaskGroup (1 sub-exception)" — which names neither
+            # the server nor the cause, and is what a published row would have said.
+            error = describe(exc)
 
         result = LeaderboardResult(
             name=entry.name, spec=entry.spec, report=report, error=error, slug=slug

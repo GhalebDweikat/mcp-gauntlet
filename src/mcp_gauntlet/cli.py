@@ -17,6 +17,7 @@ from rich.table import Table
 from mcp_gauntlet.config import ServerSpec, TransportKind, parse_env_args, parse_header_args
 from mcp_gauntlet.engine import evaluate_server
 from mcp_gauntlet.env import load_env
+from mcp_gauntlet.errors import describe
 from mcp_gauntlet.htmlreport import to_html
 from mcp_gauntlet.leaderboard import ServerListError, load_servers, rerender, run_leaderboard
 from mcp_gauntlet.llm import LLMConfig, LLMConfigError, list_models
@@ -394,7 +395,9 @@ def run(
     except Exception as exc:  # noqa: BLE001 - surface any connection/eval failure
         # A connection/DSN error can echo a credential (e.g. a Postgres URI with the
         # password); redact before it reaches the terminal or a CI log.
-        console.print(f"[red]Evaluation failed:[/red] {escape(redact(str(exc), secrets))}")
+        console.print(
+            f"[red]Evaluation failed:[/red] {escape(redact(describe(exc, 400), secrets))}"
+        )
         raise typer.Exit(code=1) from exc
 
     # Persist BEFORE rendering: a console-rendering glitch (unencodable glyph on a legacy

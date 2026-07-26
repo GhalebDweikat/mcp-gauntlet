@@ -20,7 +20,6 @@ All notable changes to mcp-gauntlet are documented here. This project adheres to
   every `_meta` block. Prompts are rendered only when probing is enabled — `--no-probe`
   still promises to execute nothing — and only when they take no required arguments, since
   inventing values would mean calling the server with data it never asked for.
-
 - **Definition-drift detection.** A server can pass review, get installed, and *later*
   change what its tools say — the client re-reads the definitions on every connection but
   doesn't re-prompt, so the redefinition lands in the model's context silently. Registry

@@ -3,6 +3,55 @@
 All notable changes to mcp-gauntlet are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] — 2026-07-25
+
+### Fixed
+
+- **Task generation no longer invents the identifiers it tests with, and this was
+  mis-grading real servers by two letters.** The generator saw only tool *descriptions*, so
+  for any server whose tools take a path, a repository or a table name it had to make one
+  up — and it made plausible ones up: `/workspace/assets`, `/var/repos/data-pipeline`. Every
+  call then failed "not found" and the *server* was scored for it. On the public
+  leaderboard, `filesystem` graded **D 67.3** and `git` **C 72.5**; correctly grounded they
+  are **A 99.4** and **A 98.9**, with agent task success going 0.0 → 100.0 on both. Servers
+  whose tools are self-contained (sqlite, memory) were never affected and scored A
+  throughout, which is exactly why this looked like a real difference between servers.
+
+  Tasks may now only use identifiers the harness can state as fact — the server's own
+  command-line arguments, its zero-argument tools, its published resource URIs — or must
+  discover them at runtime as their first step. The task cache key includes a prompt
+  version, so servers already cached don't keep serving the old prompt's tasks.
+
+### Added
+
+- **A credential pre-flight.** Much of the public registry is hosted commercial software:
+  it installs, connects and lists its tools perfectly, then fails every call because no
+  account was supplied. Scored naively that is a published D or F for a server that is fine,
+  blamed for a configuration the harness declined to provide. One cheap call now runs before
+  any LLM spend; a server that reports an authentication error is reported as needing
+  credentials and is **not scored at all**, in its own section of the leaderboard.
+
+  Conservative by design, because refusing to score a working server is the worse error:
+  only zero-argument non-mutating tools are probed, one success clears the server, an
+  ordinary error is not a credential problem, and `forbidden` / `403` / `permission denied`
+  are deliberately *not* treated as auth failures — a sandboxed filesystem server says
+  exactly those when correctly refusing a path outside its root.
+- **A `gated_server` fixture** reproducing that shape: valid schemas, good descriptions,
+  grades A on a static read, and every call fails for want of an account.
+
+### Changed
+
+- **Scores are not comparable with 0.4.0** for any server whose tools take a path,
+  repository, or similar identifier. Those servers were scored against tasks that could not
+  succeed; they now are not.
+- **The leaderboard points filesystem and git at fixed, committed scan targets.** Those
+  servers score whatever you aim them at, so aiming them at a working checkout scored the
+  checkout: the filesystem row was flagged over a sentence in a README mentioning a
+  credential filename, and the git row diffed the board's own generated HTML and read the
+  previous run's findings back to itself. Neither was reproducible by anyone else.
+  `scripts/make_leaderboard_fixtures.py` builds the git target; METHODOLOGY explains the
+  class of server this applies to.
+
 ## [0.4.0] — 2026-07-25
 
 ### Added

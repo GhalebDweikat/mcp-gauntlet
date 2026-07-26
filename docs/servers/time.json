@@ -53,7 +53,7 @@
       {
         "key": "task_success",
         "title": "Agent Task Success",
-        "score": 80.0,
+        "score": 73.3,
         "weight": 3.0,
         "summary": "Whether a live agent, given only this server's tools, completes generated tasks (LLM-judged, repeated for a success rate).",
         "findings": [
@@ -61,7 +61,7 @@
             "tool": null,
             "severity": "medium",
             "message": "agent failed a task (0/2 passed) \u2014 agent did not complete it (agent signal)",
-            "detail": "Convert the event time '2025-06-01 09:00:00' from 'UTC' to the 'Asia/Kolkata' timezone. \u2014 The agent failed to include the specified date in the tool call arguments, passing '09:00' instead of '2025-06-01 09:00:00'."
+            "detail": "Convert the time '2024-10-15 14:30:00' from the 'America/New_York' timezone to 'Europe/London'. \u2014 The agent failed to pass the required date '2024-10-15' in the time argument to the convert_time tool, causing the conversion to be evaluate"
           }
         ]
       },
@@ -98,9 +98,9 @@
         "findings": []
       }
     ],
-    "overall_score": 94.3,
+    "overall_score": 92.6,
     "grade": "A",
-    "generated_at": "2026-07-26T01:42:45+00:00",
+    "generated_at": "2026-07-26T02:07:55+00:00",
     "security_critical": false,
     "agentic": {
       "provider": "gemini",
@@ -110,8 +110,8 @@
       "excluded_write_tools": [],
       "results": [
         {
-          "description": "Find out what the current time is in the 'Asia/Tokyo' timezone.",
-          "rubric": "Verify that the agent calls `get_current_time` with `timezone='Asia/Tokyo'`. Verify that the agent's final response states the time returned by the tool.",
+          "description": "Determine the current local time in Tokyo using the Asia/Tokyo timezone.",
+          "rubric": "Verify that the agent invokes `get_current_time` with `timezone` set to 'Asia/Tokyo' (or equivalent valid timezone identifier for Tokyo) and clearly reports the current time returned by the tool.",
           "expected_tools": [
             "get_current_time"
           ],
@@ -126,24 +126,24 @@
           "sample_reasoning": ""
         },
         {
-          "description": "Convert the event time '2025-06-01 09:00:00' from 'UTC' to the 'Asia/Kolkata' timezone.",
-          "rubric": "Verify that the agent calls `convert_time` with `source_timezone='UTC'`, `time='2025-06-01 09:00:00'`, and `target_timezone='Asia/Kolkata'`. Verify that the final answer correctly identifies the converted time as 14:30:00 / 2:30 PM on June 1, 2025.",
+          "description": "Convert the time '2024-10-15 14:30:00' from the 'America/New_York' timezone to 'Europe/London'.",
+          "rubric": "Verify that the agent calls `convert_time` with `source_timezone` as 'America/New_York', `time` as '2024-10-15 14:30:00', and `target_timezone` as 'Europe/London', and correctly presents the resulting converted time.",
           "expected_tools": [
             "convert_time"
           ],
           "repeats": 2,
           "successes": 0,
           "success_rate": 0.0,
-          "mean_score": 40.0,
+          "mean_score": 20.0,
           "selection_score": 100.0,
           "tool_error": false,
           "errored_repeats": 0,
           "inconclusive": false,
-          "sample_reasoning": "The agent failed to include the specified date in the tool call arguments, passing '09:00' instead of '2025-06-01 09:00:00'."
+          "sample_reasoning": "The agent failed to pass the required date '2024-10-15' in the time argument to the convert_time tool, causing the conversion to be evaluated for an incorrect default date."
         },
         {
-          "description": "Check the current time in 'Europe/Paris', and then convert that current time to 'America/New_York' timezone.",
-          "rubric": "Verify that the agent first calls `get_current_time` with `timezone='Europe/Paris'`. Then verify that the agent calls `convert_time` using the returned time as `time`, with `source_timezone='Europe/Paris'` and `target_timezone='America/New_York'`. Verify the final answer provides the converted current time for New York.",
+          "description": "Find the current time in UTC and convert that exact timestamp to the 'Australia/Sydney' timezone.",
+          "rubric": "Verify that the agent first calls `get_current_time` with `timezone` set to 'UTC', then uses the retrieved time output in a subsequent call to `convert_time` with `source_timezone` set to 'UTC' and `target_timezone` set to 'Australia/Sydney', accurately returning the converted Sydney time.",
           "expected_tools": [
             "get_current_time",
             "convert_time"

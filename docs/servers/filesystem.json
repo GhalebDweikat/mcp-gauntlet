@@ -149,29 +149,10 @@
       {
         "key": "task_success",
         "title": "Agent Task Success",
-        "score": 0.0,
+        "score": 100.0,
         "weight": 3.0,
         "summary": "Whether a live agent, given only this server's tools, completes generated tasks (LLM-judged, repeated for a success rate).",
-        "findings": [
-          {
-            "tool": null,
-            "severity": "medium",
-            "message": "agent failed a task (0/2 passed) \u2014 tool errors blocked it (server signal)",
-            "detail": "Locate all Python script files (*.py) in the directory '/workspace/project' and read the file '/workspace/project/main.p \u2014 The agent was unable to locate or read the specified Python files due to path access errors and failed to determine the server port number."
-          },
-          {
-            "tool": null,
-            "severity": "medium",
-            "message": "agent failed a task (0/2 passed) \u2014 tool errors blocked it (server signal)",
-            "detail": "Check the allowed root directories using list_allowed_directories, then list the files in '/workspace/data' sorted by si \u2014 The required tool call to list files in '/workspace/data' failed with an error, so the agent could not identify the largest file in that dir"
-          },
-          {
-            "tool": null,
-            "severity": "medium",
-            "message": "agent failed a task (0/2 passed) \u2014 tool errors blocked it (server signal)",
-            "detail": "Search for all PNG image files in '/workspace/assets' matching pattern '*.png', and then load '/workspace/assets/logo.pn \u2014 The tool calls to search and read files in '/workspace/assets' failed with errors due to directory access restrictions, so the requested ver"
-          }
-        ]
+        "findings": []
       },
       {
         "key": "tool_selection",
@@ -184,32 +165,18 @@
       {
         "key": "tool_reliability",
         "title": "Tool Reliability",
-        "score": 75.0,
+        "score": 100.0,
         "weight": 1.0,
         "summary": "Fraction of the agent's tool calls the server executed without error \u2014 a server-quality signal distinct from whether the agent finished the task.",
-        "findings": [
-          {
-            "tool": null,
-            "severity": "medium",
-            "message": "10/40 agent tool calls returned an error",
-            "detail": null
-          }
-        ]
+        "findings": []
       },
       {
         "key": "response_safety",
         "title": "Response Safety (runtime)",
-        "score": 98.0,
+        "score": 100.0,
         "weight": 1.0,
         "summary": "Dynamic scan of the server's live tool outputs for prompt-injection / poisoning markers and hidden characters. Markers here may be the server poisoning its responses, or untrusted content it passed through \u2014 either exposes the agent. Reported (and it lowers the score) but does not cap the grade on its own. Reflects the outputs the generated tasks happened to elicit, so it can vary run to run.",
-        "findings": [
-          {
-            "tool": "read_text_file",
-            "severity": "medium",
-            "message": "tool output references sensitive files or secrets",
-            "detail": "\u2026ever happens to be there \u2014 a `.env`, a credential file, private\u2026 (normalized for matching)"
-          }
-        ]
+        "findings": []
       },
       {
         "key": "robustness",
@@ -220,9 +187,9 @@
         "findings": []
       }
     ],
-    "overall_score": 71.0,
-    "grade": "C",
-    "generated_at": "2026-07-26T01:42:05+00:00",
+    "overall_score": 99.4,
+    "grade": "A",
+    "generated_at": "2026-07-26T02:07:08+00:00",
     "security_critical": false,
     "agentic": {
       "provider": "gemini",
@@ -240,55 +207,56 @@
       ],
       "results": [
         {
-          "description": "Locate all Python script files (*.py) in the directory '/workspace/project' and read the file '/workspace/project/main.py' to determine the port number the server listens on.",
-          "rubric": "The agent must call search_files with path '/workspace/project' and pattern '*.py', then call read_text_file for '/workspace/project/main.py'. The final response must accurately state the server port specified in main.py.",
+          "description": "Discover which directories the server is allowed to access, and then list all files and subdirectories contained in the first allowed directory.",
+          "rubric": "1. Agent first calls `list_allowed_directories` to identify accessible paths without assuming any file structure.\n2. Agent calls `list_directory` or `list_directory_with_sizes` using one of the allowed directory paths returned by the first call.\n3. Agent presents the file and directory listing accurately based on the tool's output.",
           "expected_tools": [
-            "search_files",
+            "list_allowed_directories",
+            "list_directory"
+          ],
+          "repeats": 2,
+          "successes": 2,
+          "success_rate": 1.0,
+          "mean_score": 100.0,
+          "selection_score": 100.0,
+          "tool_error": false,
+          "errored_repeats": 0,
+          "inconclusive": false,
+          "sample_reasoning": ""
+        },
+        {
+          "description": "Find out what directories are accessible to the server, search recursively within them for any Markdown files (using the pattern '*.md'), and list the paths of any matching files.",
+          "rubric": "1. Agent calls `list_allowed_directories` first to obtain the permitted root directory path(s).\n2. Agent calls `search_files` using an allowed directory path and the pattern '*.md'.\n3. Agent correctly reports any matching file paths found in the search output.",
+          "expected_tools": [
+            "list_allowed_directories",
+            "search_files"
+          ],
+          "repeats": 2,
+          "successes": 2,
+          "success_rate": 1.0,
+          "mean_score": 100.0,
+          "selection_score": 100.0,
+          "tool_error": false,
+          "errored_repeats": 0,
+          "inconclusive": false,
+          "sample_reasoning": ""
+        },
+        {
+          "description": "Determine the allowed root directory for the server, list the contents of that directory along with file sizes, and then read the contents of one readable text file found there.",
+          "rubric": "1. Agent calls `list_allowed_directories` to discover valid directory paths.\n2. Agent calls `list_directory_with_sizes` on an allowed directory path to inspect available files and their sizes.\n3. Agent uses `read_text_file` (and avoids deprecated `read_file`) to read and report the contents of a text file discovered in that directory.",
+          "expected_tools": [
+            "list_allowed_directories",
+            "list_directory_with_sizes",
             "read_text_file"
           ],
           "repeats": 2,
-          "successes": 0,
-          "success_rate": 0.0,
-          "mean_score": 0.0,
+          "successes": 2,
+          "success_rate": 1.0,
+          "mean_score": 100.0,
           "selection_score": 100.0,
-          "tool_error": true,
+          "tool_error": false,
           "errored_repeats": 0,
           "inconclusive": false,
-          "sample_reasoning": "The agent was unable to locate or read the specified Python files due to path access errors and failed to determine the server port number."
-        },
-        {
-          "description": "Check the allowed root directories using list_allowed_directories, then list the files in '/workspace/data' sorted by size using list_directory_with_sizes to identify the largest file in that folder.",
-          "rubric": "The agent must call list_allowed_directories and list_directory_with_sizes with path '/workspace/data' and sortBy parameter set to size (or equivalent sorting option). The final response must correctly state the name and size of the largest file.",
-          "expected_tools": [
-            "list_allowed_directories",
-            "list_directory_with_sizes"
-          ],
-          "repeats": 2,
-          "successes": 0,
-          "success_rate": 0.0,
-          "mean_score": 0.0,
-          "selection_score": 100.0,
-          "tool_error": true,
-          "errored_repeats": 0,
-          "inconclusive": false,
-          "sample_reasoning": "The required tool call to list files in '/workspace/data' failed with an error, so the agent could not identify the largest file in that directory."
-        },
-        {
-          "description": "Search for all PNG image files in '/workspace/assets' matching pattern '*.png', and then load '/workspace/assets/logo.png' using read_media_file to verify its MIME type.",
-          "rubric": "The agent must invoke search_files with path '/workspace/assets' and pattern '*.png', then invoke read_media_file with path '/workspace/assets/logo.png'. The agent must confirm the file was returned as an image/png media content block.",
-          "expected_tools": [
-            "search_files",
-            "read_media_file"
-          ],
-          "repeats": 2,
-          "successes": 0,
-          "success_rate": 0.0,
-          "mean_score": 0.0,
-          "selection_score": 100.0,
-          "tool_error": true,
-          "errored_repeats": 0,
-          "inconclusive": false,
-          "sample_reasoning": "The tool calls to search and read files in '/workspace/assets' failed with errors due to directory access restrictions, so the requested verification could not be performed."
+          "sample_reasoning": ""
         }
       ],
       "inconclusive": false,

@@ -1,9 +1,9 @@
 {
   "name": "git",
-  "spec": "uvx mcp-server-git --repository .",
+  "spec": "uvx mcp-server-git --repository ./.gauntlet-fixtures/git-repo",
   "error": null,
   "report": {
-    "spec": "uvx mcp-server-git --repository .",
+    "spec": "uvx mcp-server-git --repository ./.gauntlet-fixtures/git-repo",
     "server": {
       "name": "mcp-git",
       "version": "1.28.1",
@@ -222,29 +222,10 @@
       {
         "key": "task_success",
         "title": "Agent Task Success",
-        "score": 16.7,
+        "score": 100.0,
         "weight": 3.0,
         "summary": "Whether a live agent, given only this server's tools, completes generated tasks (LLM-judged, repeated for a success rate).",
-        "findings": [
-          {
-            "tool": null,
-            "severity": "medium",
-            "message": "agent failed a task (0/2 passed) \u2014 tool errors blocked it (server signal)",
-            "detail": "Check the working tree status for the Git repository located at '/home/user/projects/backend-api' and report whether the \u2014 The tool call for the requested repository path '/home/user/projects/backend-api' failed with an error, so the working tree status for that "
-          },
-          {
-            "tool": null,
-            "severity": "low",
-            "message": "agent failed a task (1/2 passed) \u2014 tool errors blocked it (server signal)",
-            "detail": "Examine the unstaged diff in the repository at '/home/user/projects/frontend-app' using 5 context lines to identify what \u2014 The required tool call for repository path '/home/user/projects/frontend-app' failed with an error, so the requested diff was not obtained."
-          },
-          {
-            "tool": null,
-            "severity": "medium",
-            "message": "agent failed a task (0/2 passed) \u2014 tool errors blocked it (server signal)",
-            "detail": "List all local branches in the Git repository at '/var/repos/data-pipeline' that contain commit 'e4f8a92'. \u2014 The tool call to query the specified repository path '/var/repos/data-pipeline' failed with an error, preventing the agent from successfully"
-          }
-        ]
+        "findings": []
       },
       {
         "key": "tool_selection",
@@ -257,38 +238,18 @@
       {
         "key": "tool_reliability",
         "title": "Tool Reliability",
-        "score": 50.0,
+        "score": 100.0,
         "weight": 1.0,
         "summary": "Fraction of the agent's tool calls the server executed without error \u2014 a server-quality signal distinct from whether the agent finished the task.",
-        "findings": [
-          {
-            "tool": null,
-            "severity": "medium",
-            "message": "11/22 agent tool calls returned an error",
-            "detail": null
-          }
-        ]
+        "findings": []
       },
       {
         "key": "response_safety",
         "title": "Response Safety (runtime)",
-        "score": 92.0,
+        "score": 100.0,
         "weight": 1.0,
         "summary": "Dynamic scan of the server's live tool outputs for prompt-injection / poisoning markers and hidden characters. Markers here may be the server poisoning its responses, or untrusted content it passed through \u2014 either exposes the agent. Reported (and it lowers the score) but does not cap the grade on its own. Reflects the outputs the generated tasks happened to elicit, so it can vary run to run.",
-        "findings": [
-          {
-            "tool": "git_diff_unstaged",
-            "severity": "medium",
-            "message": "tool output references sensitive files or secrets",
-            "detail": "\u2026ets<div class=\"detail\">[FILE] .env[FILE] .env.example[DIR] .gaun\u2026 (normalized for matching)"
-          },
-          {
-            "tool": "git_diff_unstaged",
-            "severity": "medium",
-            "message": "tool output too large to scan completely",
-            "detail": "Some of what this tool returned was not examined for injection markers."
-          }
-        ]
+        "findings": []
       },
       {
         "key": "robustness",
@@ -299,9 +260,9 @@
         "findings": []
       }
     ],
-    "overall_score": 72.1,
-    "grade": "C",
-    "generated_at": "2026-07-26T01:44:03+00:00",
+    "overall_score": 98.9,
+    "grade": "A",
+    "generated_at": "2026-07-26T02:08:26+00:00",
     "security_critical": false,
     "agentic": {
       "provider": "gemini",
@@ -321,52 +282,52 @@
       ],
       "results": [
         {
-          "description": "Check the working tree status for the Git repository located at '/home/user/projects/backend-api' and report whether there are any untracked files or staged changes.",
-          "rubric": "The agent calls git_status with repo_path='/home/user/projects/backend-api' and accurately reports the current working tree state based on the tool output.",
+          "description": "Check the git working tree status of the repository located at ./.gauntlet-fixtures/git-repo to identify if there are any modified, untracked, or staged files.",
+          "rubric": "Verify that the agent calls git_status with repo_path set to ./.gauntlet-fixtures/git-repo and accurately summarizes the file status reported by the tool.",
           "expected_tools": [
             "git_status"
           ],
           "repeats": 2,
-          "successes": 0,
-          "success_rate": 0.0,
-          "mean_score": 0.0,
+          "successes": 2,
+          "success_rate": 1.0,
+          "mean_score": 100.0,
           "selection_score": 100.0,
-          "tool_error": true,
+          "tool_error": false,
           "errored_repeats": 0,
           "inconclusive": false,
-          "sample_reasoning": "The tool call for the requested repository path '/home/user/projects/backend-api' failed with an error, so the working tree status for that repository was not retrieved."
+          "sample_reasoning": ""
         },
         {
-          "description": "Examine the unstaged diff in the repository at '/home/user/projects/frontend-app' using 5 context lines to identify what changes have been made to the working directory.",
-          "rubric": "The agent calls git_diff_unstaged with repo_path='/home/user/projects/frontend-app' and context_lines=5, and provides a summary of the unstaged modifications found in the diff output.",
+          "description": "Inspect the unstaged changes in the repository at ./.gauntlet-fixtures/git-repo to see what edits exist in the working directory.",
+          "rubric": "Verify that the agent calls git_diff_unstaged with repo_path set to ./.gauntlet-fixtures/git-repo and correctly reports the diff content or changes shown in the tool output.",
           "expected_tools": [
             "git_diff_unstaged"
           ],
           "repeats": 2,
-          "successes": 1,
-          "success_rate": 0.5,
-          "mean_score": 50.0,
+          "successes": 2,
+          "success_rate": 1.0,
+          "mean_score": 100.0,
           "selection_score": 100.0,
-          "tool_error": true,
+          "tool_error": false,
           "errored_repeats": 0,
           "inconclusive": false,
-          "sample_reasoning": "The required tool call for repository path '/home/user/projects/frontend-app' failed with an error, so the requested diff was not obtained."
+          "sample_reasoning": ""
         },
         {
-          "description": "List all local branches in the Git repository at '/var/repos/data-pipeline' that contain commit 'e4f8a92'.",
-          "rubric": "The agent calls git_branch with repo_path='/var/repos/data-pipeline', contains='e4f8a92', and branch_type specifying local branches, then reports the matching branch names to the user.",
+          "description": "List all existing Git branches for the repository located at ./.gauntlet-fixtures/git-repo.",
+          "rubric": "Verify that the agent calls git_branch with repo_path set to ./.gauntlet-fixtures/git-repo and accurately lists the branches returned by the server.",
           "expected_tools": [
             "git_branch"
           ],
           "repeats": 2,
-          "successes": 0,
-          "success_rate": 0.0,
-          "mean_score": 0.0,
+          "successes": 2,
+          "success_rate": 1.0,
+          "mean_score": 100.0,
           "selection_score": 100.0,
-          "tool_error": true,
+          "tool_error": false,
           "errored_repeats": 0,
           "inconclusive": false,
-          "sample_reasoning": "The tool call to query the specified repository path '/var/repos/data-pipeline' failed with an error, preventing the agent from successfully inspecting the target repository."
+          "sample_reasoning": ""
         }
       ],
       "inconclusive": false,

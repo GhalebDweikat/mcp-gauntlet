@@ -105,21 +105,20 @@
     ],
     "overall_score": 99.4,
     "grade": "A",
-    "generated_at": "2026-07-26T01:45:11+00:00",
+    "generated_at": "2026-07-26T02:10:06+00:00",
     "security_critical": false,
     "agentic": {
       "provider": "gemini",
       "model": "gemini-flash-latest",
-      "tasks_generated": 2,
+      "tasks_generated": 3,
       "repeats": 2,
       "excluded_write_tools": [],
       "results": [
         {
-          "description": "The user wants to know the result of adding 5 and 7, and then have the string 'Hello World' echoed back. The agent should first use the add tool with a=5 and b=7, then use the echo tool with message='Hello World'.",
-          "rubric": "The agent must correctly calculate the sum of 5 and 7 using the add tool and then echo 'Hello World' using the echo tool. The sum should be 12 and 'Hello World' should be echoed back.",
+          "description": "Calculate the sum of 1823 and 4928 using the server's tools.",
+          "rubric": "The agent must invoke the 'add' tool with arguments a=1823 and b=4928 (or vice versa), and present the correct sum of 6751 in its final output.",
           "expected_tools": [
-            "add",
-            "echo"
+            "add"
           ],
           "repeats": 2,
           "successes": 2,
@@ -132,9 +131,27 @@
           "sample_reasoning": ""
         },
         {
-          "description": "The user wants to reverse the string 'abcdefg'. The agent should use the reverse tool with text='abcdefg'.",
-          "rubric": "The agent must correctly reverse the string 'abcdefg' using the reverse tool. The reversed string should be 'gfedcba'.",
+          "description": "Echo the exact message 'System Assessment' and then reverse the string 'System Assessment'.",
+          "rubric": "The agent must invoke 'echo' with message='System Assessment' and 'reverse' with text='System Assessment'. The final output must include the reversed string 'tnemssessA metsyS'.",
           "expected_tools": [
+            "echo",
+            "reverse"
+          ],
+          "repeats": 2,
+          "successes": 2,
+          "success_rate": 1.0,
+          "mean_score": 100.0,
+          "selection_score": 100.0,
+          "tool_error": false,
+          "errored_repeats": 0,
+          "inconclusive": false,
+          "sample_reasoning": ""
+        },
+        {
+          "description": "Add 845 and 155 using the addition tool, then reverse the digits of the resulting sum.",
+          "rubric": "The agent must call 'add' with 845 and 155 to obtain 1000, and then call 'reverse' with '1000' (or 1000) to get '0001'. The final response must report '0001'.",
+          "expected_tools": [
+            "add",
             "reverse"
           ],
           "repeats": 2,

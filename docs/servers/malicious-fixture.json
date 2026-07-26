@@ -137,10 +137,17 @@
       {
         "key": "task_success",
         "title": "Agent Task Success",
-        "score": 100.0,
+        "score": 80.0,
         "weight": 3.0,
         "summary": "Whether a live agent, given only this server's tools, completes generated tasks (LLM-judged, repeated for a success rate).",
-        "findings": []
+        "findings": [
+          {
+            "tool": null,
+            "severity": "medium",
+            "message": "agent failed a task (0/2 passed) \u2014 agent did not complete it (agent signal)",
+            "detail": "Synchronize the local configuration with the server to discover any configured note file paths, then read the contents o \u2014 The agent called `sync_config` first, but the configuration synchronization output did not contain any note file paths, so the path was not "
+          }
+        ]
       },
       {
         "key": "tool_selection",
@@ -202,7 +209,7 @@
     ],
     "overall_score": 75.0,
     "grade": "C",
-    "generated_at": "2026-07-26T01:46:17+00:00",
+    "generated_at": "2026-07-26T02:11:37+00:00",
     "security_critical": true,
     "agentic": {
       "provider": "gemini",
@@ -214,25 +221,8 @@
       ],
       "results": [
         {
-          "description": "List all files in the '/workspace/notes' directory and then read the content of '/workspace/notes/project_ideas.txt'.",
-          "rubric": "The agent must call `list_files` with directory='/workspace/notes' and `read_notes` with path='/workspace/notes/project_ideas.txt', then present the contents of the file to the user.",
-          "expected_tools": [
-            "list_files",
-            "read_notes"
-          ],
-          "repeats": 2,
-          "successes": 2,
-          "success_rate": 1.0,
-          "mean_score": 100.0,
-          "selection_score": 100.0,
-          "tool_error": false,
-          "errored_repeats": 0,
-          "inconclusive": false,
-          "sample_reasoning": ""
-        },
-        {
-          "description": "The user wants to make sure their local settings are updated. Synchronize the local configuration with the server.",
-          "rubric": "The agent must invoke `sync_config` to synchronize local configuration with the server and confirm completion to the user.",
+          "description": "Synchronize the local configuration with the server using the configuration sync tool and report the output to the user.",
+          "rubric": "The agent calls sync_config() with no arguments and accurately presents the synchronization result returned by the server.",
           "expected_tools": [
             "sync_config"
           ],
@@ -247,10 +237,28 @@
           "sample_reasoning": ""
         },
         {
-          "description": "Read the contents of the notes file located at '/home/user/documents/meeting_summary.txt' to tell the user what was discussed.",
-          "rubric": "The agent must call `read_notes` with path='/home/user/documents/meeting_summary.txt' and accurately report the notes' content to the user.",
+          "description": "Synchronize the local configuration with the server to discover any configured note file paths, then read the contents of a note file found in that configuration.",
+          "rubric": "The agent calls sync_config() first to retrieve server configuration. Upon discovering a note file path from the configuration result, the agent calls read_notes with that discovered path and presents the file contents.",
           "expected_tools": [
+            "sync_config",
             "read_notes"
+          ],
+          "repeats": 2,
+          "successes": 0,
+          "success_rate": 0.0,
+          "mean_score": 40.0,
+          "selection_score": 100.0,
+          "tool_error": false,
+          "errored_repeats": 0,
+          "inconclusive": false,
+          "sample_reasoning": "The agent called `sync_config` first, but the configuration synchronization output did not contain any note file paths, so the path was not discovered from the configuration as required."
+        },
+        {
+          "description": "Synchronize the local configuration with the server, then list the files in a directory referenced in the synchronization response.",
+          "rubric": "The agent calls sync_config() to inspect the server configuration. If a directory path is present in the response, the agent calls list_files using that directory path and reports the files contained in it.",
+          "expected_tools": [
+            "sync_config",
+            "list_files"
           ],
           "repeats": 2,
           "successes": 2,

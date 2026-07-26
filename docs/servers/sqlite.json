@@ -60,15 +60,15 @@
       {
         "key": "task_success",
         "title": "Agent Task Success",
-        "score": 83.3,
+        "score": 78.3,
         "weight": 3.0,
         "summary": "Whether a live agent, given only this server's tools, completes generated tasks (LLM-judged, repeated for a success rate).",
         "findings": [
           {
             "tool": null,
-            "severity": "low",
-            "message": "agent failed a task (1/2 passed) \u2014 agent did not complete it (agent signal)",
-            "detail": "Retrieve and display the detailed schema information for the table named 'invoices'. \u2014 The agent called `describe_table` for 'invoices', but because the table does not exist in the database, it was unable to retrieve or display"
+            "severity": "medium",
+            "message": "agent failed a task (0/2 passed) \u2014 agent did not complete it (agent signal)",
+            "detail": "Discover all tables in the SQLite database, then retrieve and summarize the schema for the first table listed. \u2014 The agent called `list_tables()`, which returned an empty list, so there was no first table listed to summarize; calling `describe_table` on"
           }
         ]
       },
@@ -105,9 +105,9 @@
         "findings": []
       }
     ],
-    "overall_score": 95.5,
+    "overall_score": 94.2,
     "grade": "A",
-    "generated_at": "2026-07-26T01:44:56+00:00",
+    "generated_at": "2026-07-26T02:09:32+00:00",
     "security_critical": false,
     "agentic": {
       "provider": "gemini",
@@ -122,10 +122,28 @@
       ],
       "results": [
         {
-          "description": "List all tables currently stored in the SQLite database.",
-          "rubric": "The agent calls the `list_tables()` tool and accurately presents the list of table names returned by the database.",
+          "description": "Discover all tables in the SQLite database, then retrieve and summarize the schema for the first table listed.",
+          "rubric": "1. Verify the agent calls `list_tables()` to discover available tables.\n2. Verify the agent calls `describe_table(table_name)` using the exact table name returned from `list_tables()`.\n3. Verify the final response accurately describes the column names and data types returned by `describe_table`.",
           "expected_tools": [
-            "list_tables"
+            "list_tables",
+            "describe_table"
+          ],
+          "repeats": 2,
+          "successes": 0,
+          "success_rate": 0.0,
+          "mean_score": 35.0,
+          "selection_score": 100.0,
+          "tool_error": false,
+          "errored_repeats": 0,
+          "inconclusive": false,
+          "sample_reasoning": "The agent called `list_tables()`, which returned an empty list, so there was no first table listed to summarize; calling `describe_table` on unlisted system tables like `sqlite_master` violated the task requirement to use a table name returned from `list_tables()`."
+        },
+        {
+          "description": "Inspect the SQLite database by finding all available tables and then getting the schema details for every table discovered.",
+          "rubric": "1. Verify the agent calls `list_tables()` first.\n2. Verify the agent calls `describe_table(table_name)` for each table returned by `list_tables()`.\n3. Verify the response correctly details the structure/schema for each discovered table.",
+          "expected_tools": [
+            "list_tables",
+            "describe_table"
           ],
           "repeats": 2,
           "successes": 2,
@@ -138,27 +156,10 @@
           "sample_reasoning": ""
         },
         {
-          "description": "Retrieve and display the detailed schema information for the table named 'invoices'.",
-          "rubric": "The agent calls `describe_table` with `table_name='invoices'` and accurately summarizes its schema details, such as column names and column data types.",
+          "description": "Check what tables exist in the SQLite database and report the total count and names of all discovered tables.",
+          "rubric": "1. Verify the agent calls `list_tables()`.\n2. Verify the final response reports the exact table names and count as returned by `list_tables()`.",
           "expected_tools": [
-            "describe_table"
-          ],
-          "repeats": 2,
-          "successes": 1,
-          "success_rate": 0.5,
-          "mean_score": 50.0,
-          "selection_score": 100.0,
-          "tool_error": false,
-          "errored_repeats": 0,
-          "inconclusive": false,
-          "sample_reasoning": "The agent called `describe_table` for 'invoices', but because the table does not exist in the database, it was unable to retrieve or display any schema information."
-        },
-        {
-          "description": "Inspect the database to list all available tables, then retrieve and report the full schema for the 'users' table.",
-          "rubric": "The agent calls `list_tables()` to inspect database structure and then calls `describe_table` with `table_name='users'`. The final response correctly describes the columns and data types of the 'users' table as returned by the tool.",
-          "expected_tools": [
-            "list_tables",
-            "describe_table"
+            "list_tables"
           ],
           "repeats": 2,
           "successes": 2,

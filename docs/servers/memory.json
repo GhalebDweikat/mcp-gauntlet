@@ -72,25 +72,31 @@
       {
         "key": "task_success",
         "title": "Agent Task Success",
-        "score": 66.7,
+        "score": 100.0,
         "weight": 3.0,
         "summary": "Whether a live agent, given only this server's tools, completes generated tasks (LLM-judged, repeated for a success rate).",
-        "findings": [
-          {
-            "tool": null,
-            "severity": "medium",
-            "message": "agent failed a task (0/2 passed) \u2014 agent did not complete it (agent signal)",
-            "detail": "Search the knowledge graph for nodes related to 'Quantum Encryption' using search_nodes, and then inspect the node named \u2014 Although the agent called search_nodes and open_nodes as instructed, the knowledge graph returned no data, preventing the agent from reporti"
-          }
-        ]
+        "findings": []
       },
       {
         "key": "tool_selection",
         "title": "Tool-Selection Accuracy",
-        "score": 100.0,
+        "score": 75.0,
         "weight": 1.5,
         "summary": "Whether the agent called the tools each task was expected to use.",
-        "findings": []
+        "findings": [
+          {
+            "tool": null,
+            "severity": "low",
+            "message": "agent did not call all expected tools",
+            "detail": "Examine the knowledge graph to discover what nodes currently exist, and then retrieve the full details for at least one  (expected read_graph, open_nodes)"
+          },
+          {
+            "tool": null,
+            "severity": "low",
+            "message": "agent did not call all expected tools",
+            "detail": "Search the knowledge graph for nodes related to 'user' or 'person', and if any matching node names are returned, open th (expected search_nodes, open_nodes)"
+          }
+        ]
       },
       {
         "key": "tool_reliability",
@@ -117,9 +123,9 @@
         "findings": []
       }
     ],
-    "overall_score": 91.1,
+    "overall_score": 96.5,
     "grade": "A",
-    "generated_at": "2026-07-26T01:40:35+00:00",
+    "generated_at": "2026-07-26T02:06:11+00:00",
     "security_critical": false,
     "agentic": {
       "provider": "gemini",
@@ -136,27 +142,27 @@
       ],
       "results": [
         {
-          "description": "Search the knowledge graph for nodes related to 'Quantum Encryption' using search_nodes, and then inspect the node named 'Encryption_Key_Rotation_Policy' using open_nodes to report the key rotation frequency in days.",
-          "rubric": "The agent calls search_nodes with a query related to 'Quantum Encryption', invokes open_nodes with 'Encryption_Key_Rotation_Policy', and correctly extracts the rotation frequency value from the retrieved node content.",
+          "description": "Examine the knowledge graph to discover what nodes currently exist, and then retrieve the full details for at least one of the discovered nodes.",
+          "rubric": "Verify that the agent first calls `read_graph` to inspect the knowledge graph and identify existing node names, and subsequently calls `open_nodes` with one or more node names found in the graph response.",
           "expected_tools": [
-            "search_nodes",
+            "read_graph",
             "open_nodes"
           ],
           "repeats": 2,
-          "successes": 0,
-          "success_rate": 0.0,
-          "mean_score": 0.0,
-          "selection_score": 100.0,
+          "successes": 2,
+          "success_rate": 1.0,
+          "mean_score": 100.0,
+          "selection_score": 75.0,
           "tool_error": false,
           "errored_repeats": 0,
           "inconclusive": false,
-          "sample_reasoning": "Although the agent called search_nodes and open_nodes as instructed, the knowledge graph returned no data, preventing the agent from reporting the key rotation frequency."
+          "sample_reasoning": ""
         },
         {
-          "description": "Retrieve the complete knowledge graph using read_graph to identify all top-level category nodes and list their names.",
-          "rubric": "The agent calls read_graph to inspect the full graph structure and accurately identifies and lists all top-level category nodes based on the graph data.",
+          "description": "Search the knowledge graph for any nodes matching the query 'project' and report the search results found.",
+          "rubric": "Verify that the agent calls `search_nodes` with the query string 'project' (or a related general search term) and accurately presents the search results returned by the tool.",
           "expected_tools": [
-            "read_graph"
+            "search_nodes"
           ],
           "repeats": 2,
           "successes": 2,
@@ -169,16 +175,17 @@
           "sample_reasoning": ""
         },
         {
-          "description": "Directly fetch the node details for 'Service_Gateway' and 'Auth_Service' using open_nodes to verify their current operational status and declared dependencies.",
-          "rubric": "The agent calls open_nodes with 'Service_Gateway' and 'Auth_Service' (either in a single call or separate calls) and accurately reports the operational status and dependency list for both services.",
+          "description": "Search the knowledge graph for nodes related to 'user' or 'person', and if any matching node names are returned, open those specific nodes to retrieve their details.",
+          "rubric": "Verify that the agent invokes `search_nodes` with a search query like 'user' or 'person', and if nodes are found in the response, calls `open_nodes` using the node names returned from the search.",
           "expected_tools": [
+            "search_nodes",
             "open_nodes"
           ],
           "repeats": 2,
           "successes": 2,
           "success_rate": 1.0,
           "mean_score": 100.0,
-          "selection_score": 100.0,
+          "selection_score": 50.0,
           "tool_error": false,
           "errored_repeats": 0,
           "inconclusive": false,

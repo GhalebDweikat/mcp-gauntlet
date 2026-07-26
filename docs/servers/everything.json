@@ -85,17 +85,10 @@
       {
         "key": "task_success",
         "title": "Agent Task Success",
-        "score": 66.7,
+        "score": 100.0,
         "weight": 3.0,
         "summary": "Whether a live agent, given only this server's tools, completes generated tasks (LLM-judged, repeated for a success rate).",
-        "findings": [
-          {
-            "tool": null,
-            "severity": "medium",
-            "message": "agent failed a task (0/2 passed) \u2014 tool errors blocked it (server signal)",
-            "detail": "Retrieve structured content for the location 'building_a' using the structured content tool and summarize the returned c \u2014 The agent called the tool with location 'New York' instead of 'building_a' as required by the task."
-          }
-        ]
+        "findings": []
       },
       {
         "key": "tool_selection",
@@ -108,17 +101,10 @@
       {
         "key": "tool_reliability",
         "title": "Tool Reliability",
-        "score": 88.9,
+        "score": 100.0,
         "weight": 1.0,
         "summary": "Fraction of the agent's tool calls the server executed without error \u2014 a server-quality signal distinct from whether the agent finished the task.",
-        "findings": [
-          {
-            "tool": null,
-            "severity": "low",
-            "message": "1/9 agent tool calls returned an error",
-            "detail": null
-          }
-        ]
+        "findings": []
       },
       {
         "key": "response_safety",
@@ -137,9 +123,9 @@
         "findings": []
       }
     ],
-    "overall_score": 90.2,
+    "overall_score": 99.9,
     "grade": "A",
-    "generated_at": "2026-07-26T01:39:38+00:00",
+    "generated_at": "2026-07-26T02:05:27+00:00",
     "security_critical": false,
     "agentic": {
       "provider": "gemini",
@@ -155,10 +141,11 @@
       ],
       "results": [
         {
-          "description": "Calculate the sum of 4815 and 16234 using the appropriate tool and state the result.",
-          "rubric": "Verify that the agent called the `get-sum` tool with parameters `a=4815` and `b=16234` (or vice versa) and correctly reported the sum of 21049.",
+          "description": "Calculate the sum of 147 and 382 using the server's summation tool, and then echo the resulting sum back as a message.",
+          "rubric": "The agent calls `get-sum` with arguments `a: 147` and `b: 382` to obtain the result 529. It then calls `echo` with a message containing the number 529.",
           "expected_tools": [
-            "get-sum"
+            "get-sum",
+            "echo"
           ],
           "repeats": 2,
           "successes": 2,
@@ -171,10 +158,11 @@
           "sample_reasoning": ""
         },
         {
-          "description": "Retrieve the server's environment variables to check the configuration and list the returned environment variable keys and values.",
-          "rubric": "Verify that the agent invoked `get-env` and reported the environment variables provided by the tool output.",
+          "description": "Discover available resources by requesting 5 resource links, then generate a resource reference for the resource type and ID found in the first link returned.",
+          "rubric": "The agent calls `get-resource-links` with `count: 5`. From the response, the agent identifies the `resourceType` and `resourceId` from the first returned resource link and calls `get-resource-reference` with those exact arguments.",
           "expected_tools": [
-            "get-env"
+            "get-resource-links",
+            "get-resource-reference"
           ],
           "repeats": 2,
           "successes": 2,
@@ -187,20 +175,21 @@
           "sample_reasoning": ""
         },
         {
-          "description": "Retrieve structured content for the location 'building_a' using the structured content tool and summarize the returned content and schema.",
-          "rubric": "Verify that the agent called `get-structured-content` with `location=\"building_a\"` and accurately summarized the returned structured data and output schema.",
+          "description": "Fetch the server's environment variables to inspect its configuration, count the total number of environment variables returned, and echo a message containing this count.",
+          "rubric": "The agent calls `get-env` without arguments to retrieve the environment dictionary. It then accurately counts the key-value pairs returned and calls `echo` with a message stating that count.",
           "expected_tools": [
-            "get-structured-content"
+            "get-env",
+            "echo"
           ],
           "repeats": 2,
-          "successes": 0,
-          "success_rate": 0.0,
-          "mean_score": 0.0,
+          "successes": 2,
+          "success_rate": 1.0,
+          "mean_score": 100.0,
           "selection_score": 100.0,
-          "tool_error": true,
+          "tool_error": false,
           "errored_repeats": 0,
           "inconclusive": false,
-          "sample_reasoning": "The agent called the tool with location 'New York' instead of 'building_a' as required by the task."
+          "sample_reasoning": ""
         }
       ],
       "inconclusive": false,

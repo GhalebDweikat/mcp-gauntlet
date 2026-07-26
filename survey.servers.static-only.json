@@ -1,0 +1,175 @@
+{
+  "servers": [
+    {
+      "name": "toolprint-hypertool-mcp",
+      "spec": "npx -y @toolprint/hypertool-mcp",
+      "_registry_name": "ai.toolprint/hypertool-mcp",
+      "_publisher": "ai.toolprint",
+      "_repository": "https://github.com/toolprint/hypertool-mcp",
+      "_description": "Dynamically expose tools from proxied servers based on an Agent Persona",
+      "_real_world_actions": true
+    },
+    {
+      "name": "aetherwealth-mcp",
+      "spec": "npx -y @aetherwealth/mcp",
+      "_registry_name": "ai.aetherwealth/mcp",
+      "_publisher": "ai.aetherwealth",
+      "_repository": "",
+      "_description": "Aether Wealth MCP for AI assistants: trades, alerts, market data, macro calendar & indicators.",
+      "_real_world_actions": true
+    },
+    {
+      "name": "agentutility-mcp-agentops",
+      "spec": "npx -y @agentutility/mcp-agentops",
+      "_registry_name": "ai.agentutility/mcp-agentops",
+      "_publisher": "ai.agentutility",
+      "_repository": "https://github.com/rooz21/x402",
+      "_description": "MCP server for the @agentutility agentops cluster \u2014 pay-per-call x402 tools, no API keys, USDC on\u2026",
+      "_real_world_actions": true
+    },
+    {
+      "name": "agentutility-mcp-bestiary",
+      "spec": "npx -y @agentutility/mcp-bestiary",
+      "_registry_name": "ai.agentutility/mcp-bestiary",
+      "_publisher": "ai.agentutility",
+      "_repository": "https://github.com/rooz21/x402",
+      "_description": "MCP server for the @agentutility bestiary cluster \u2014 pay-per-call x402 tools, no API keys, USDC on\u2026",
+      "_real_world_actions": true
+    },
+    {
+      "name": "autonomad-travel",
+      "spec": "npx -y autonomad-travel",
+      "_registry_name": "ai.autonomad/travel",
+      "_publisher": "ai.autonomad",
+      "_repository": "https://github.com/Autonomad1/autonomad1",
+      "_description": "AI travel agent \u2014 book flights, hotels, activities, and events worldwide via autonomad.ai.",
+      "_real_world_actions": true
+    },
+    {
+      "name": "callmcp-server",
+      "spec": "npx -y @callmcp/server",
+      "_registry_name": "ai.callmcp/server",
+      "_publisher": "ai.callmcp",
+      "_repository": "https://github.com/CallMCP/callmcp",
+      "_description": "One MCP tool contract for telephony \u2014 any call provider, hosted, local, or BYOK.",
+      "_real_world_actions": true
+    },
+    {
+      "name": "clize-clize",
+      "spec": "npx -y @clize/clize",
+      "_registry_name": "ai.clize/clize",
+      "_publisher": "ai.clize",
+      "_repository": "https://github.com/cooldk/clize-cli",
+      "_description": "Real-world actions for AI coding agents: domains, email, deploys, payments, and media generation.",
+      "_real_world_actions": true
+    },
+    {
+      "name": "justdrop-mcp",
+      "spec": "npx -y justdrop-mcp",
+      "_registry_name": "ai.justdrop/mcp",
+      "_publisher": "ai.justdrop",
+      "_repository": "https://github.com/Managed-Digital-LLC/justdrop-mcp",
+      "_description": "Live, end-to-end encrypted, ephemeral file transfer between your AI agent and any device.",
+      "_real_world_actions": true
+    },
+    {
+      "name": "oobe-protocol-labs-sap-mcp-server",
+      "spec": "npx -y @oobe-protocol-labs/sap-mcp-server",
+      "_registry_name": "ai.oobeprotocol.sap.mcp/sap-mcp",
+      "_publisher": "ai.oobeprotocol.sap.mcp",
+      "_repository": "https://github.com/OOBE-PROTOCOL/sap-mcp",
+      "_description": "Solana-native MCP gateway for SAP, DeFi tools, SNS identity, and x402 payments.",
+      "_real_world_actions": true
+    },
+    {
+      "name": "radmail-mcp",
+      "spec": "npx -y radmail-mcp",
+      "_registry_name": "ai.radmail/radmail-mcp",
+      "_publisher": "ai.radmail",
+      "_repository": "https://github.com/dougsureel-tech/radmail-mcp",
+      "_description": "Email OS for agents - real-inbox search, triage, commitments, and a verifiable BEC hard-stop.",
+      "_real_world_actions": true
+    },
+    {
+      "name": "rapay-mcp-server",
+      "spec": "npx -y @rapay/mcp-server",
+      "_registry_name": "ai.rapay/mcp-server",
+      "_publisher": "ai.rapay",
+      "_repository": "https://github.com/Ra-Pay-AI/rapay",
+      "_description": "Send fiat payments via MCP with two-step confirmation and Stripe Connect.",
+      "_real_world_actions": true
+    },
+    {
+      "name": "spideriq-mcp-gate",
+      "spec": "npx -y @spideriq/mcp-gate",
+      "_registry_name": "ai.spideriq/gate",
+      "_publisher": "ai.spideriq",
+      "_repository": "https://github.com/SpiderIQ/SpiderIQ",
+      "_description": "SpiderIQ Gate: SpiderGate LLM gateway (completions, models, usage, traces)",
+      "_real_world_actions": true
+    },
+    {
+      "name": "synchronex-mcp-proxy",
+      "spec": "npx -y @synchronex/mcp-proxy",
+      "_registry_name": "ai.synchronex/mcp-proxy",
+      "_publisher": "ai.synchronex",
+      "_repository": "https://github.com/kmdesle/synchronex",
+      "_description": "Connect any AI agent to your Synchronex workspace \u2014 portable memory, decisions, and workers.",
+      "_real_world_actions": true
+    },
+    {
+      "name": "telbase",
+      "spec": "npx -y telbase",
+      "_registry_name": "ai.telbase/deploy",
+      "_publisher": "ai.telbase",
+      "_repository": "https://github.com/Victor-EU/telbase",
+      "_description": "Deploy any web project with one command. AI-native platform with self-healing feedback.",
+      "_real_world_actions": true
+    },
+    {
+      "name": "trusty-squire-mcp",
+      "spec": "npx -y @trusty-squire/mcp",
+      "_registry_name": "ai.trustysquire/trusty-squire",
+      "_publisher": "ai.trustysquire",
+      "_repository": "https://github.com/Trusty-Squire/trusty-squire",
+      "_description": "Trusty Squire signs up / in to websites for you so you don\u2019t have to.",
+      "_real_world_actions": true
+    },
+    {
+      "name": "vaaya-mcp",
+      "spec": "npx -y @vaaya/mcp",
+      "_registry_name": "ai.vaaya/mcp",
+      "_publisher": "ai.vaaya",
+      "_repository": "https://github.com/vaaya-ai/vaaya-mcp",
+      "_description": "Pay-per-call agent superpowers: media/video gen, product demos, research, GTM, scraping, compute.",
+      "_real_world_actions": true
+    },
+    {
+      "name": "3dstreet-mcp",
+      "spec": "npx -y 3dstreet-mcp",
+      "_registry_name": "app.3dstreet/3dstreet",
+      "_publisher": "app.3dstreet",
+      "_repository": "https://github.com/3DStreet/3dstreet-mcp",
+      "_description": "Drive an open 3DStreet scene tab from Claude Desktop or Claude Code via MCP tool calls.",
+      "_real_world_actions": true
+    },
+    {
+      "name": "percher-mcp",
+      "spec": "npx -y @percher/mcp",
+      "_registry_name": "app.percher/percher",
+      "_publisher": "app.percher",
+      "_repository": "",
+      "_description": "MCP-native hosting: publish and operate AI-built web apps live at name.percher.run.",
+      "_real_world_actions": true
+    },
+    {
+      "name": "nginx-proxy-manager-mcp-full",
+      "spec": "uvx nginx-proxy-manager-mcp-full",
+      "_registry_name": "at.baeck/nginx-proxy-manager",
+      "_publisher": "at.baeck",
+      "_repository": "",
+      "_description": "MCP server for Nginx Proxy Manager with full API coverage (43 tools)",
+      "_real_world_actions": true
+    }
+  ]
+}

@@ -58,6 +58,17 @@ _REAL_WORLD_ACTION = re.compile(
   | \b(?:call|calls|telephony|sms|dial)\b
   | \b(?:email|inbox|mail)\b
   | \b(?:deploy|deploys|deployment|publish|hosting|domain|domains)\b
+    # Creating accounts somewhere on the user's behalf is as irreversible as a purchase,
+    # and it happens on a third party's system. `trusty-squire` advertises exactly this and
+    # the first draft of this pattern missed it.
+  | \bsigns?[\s/-]*(?:up|in)\b | \bsign[\s-]?up\b | \bregisters?\s+(?:an?\s+)?account\b
+    # Proxies and gateways re-expose tools from OTHER servers. The blast radius is
+    # unbounded by construction: we cannot classify what we cannot see at selection time,
+    # and the tools that appear at runtime were never in this list at all.
+  | \b(?:proxy|proxies|proxied|proxying|gateway|passthrough|re-?exposes?)\b
+    # Infrastructure control. "Full API coverage" over a reverse proxy means certificates,
+    # routing and access rules — a wrong call is an outage, not a bad score.
+  | \b(?:nginx|dns|ssl|tls|certificate|firewall|kubernetes|terraform|infrastructure)\b
     """
 )
 

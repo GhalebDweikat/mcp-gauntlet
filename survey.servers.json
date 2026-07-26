@@ -1,0 +1,404 @@
+{
+  "servers": [
+    {
+      "name": "adeu",
+      "spec": "npx -y @adeu/mcp-server",
+      "_registry_name": "ai.adeu/adeu",
+      "_publisher": "ai.adeu",
+      "_repository": "https://github.com/dealfluence/adeu",
+      "_description": "Automated DOCX Redlining Engine"
+    },
+    {
+      "name": "mcp",
+      "spec": "npx -y @aetherwealth/mcp",
+      "_registry_name": "ai.aetherwealth/mcp",
+      "_publisher": "ai.aetherwealth",
+      "_repository": "",
+      "_description": "Aether Wealth MCP for AI assistants: trades, alerts, market data, macro calendar & indicators."
+    },
+    {
+      "name": "mcp-agentops",
+      "spec": "npx -y @agentutility/mcp-agentops",
+      "_registry_name": "ai.agentutility/mcp-agentops",
+      "_publisher": "ai.agentutility",
+      "_repository": "https://github.com/rooz21/x402",
+      "_description": "MCP server for the @agentutility agentops cluster \u2014 pay-per-call x402 tools, no API keys, USDC on\u2026"
+    },
+    {
+      "name": "mcp-bestiary",
+      "spec": "npx -y @agentutility/mcp-bestiary",
+      "_registry_name": "ai.agentutility/mcp-bestiary",
+      "_publisher": "ai.agentutility",
+      "_repository": "https://github.com/rooz21/x402",
+      "_description": "MCP server for the @agentutility bestiary cluster \u2014 pay-per-call x402 tools, no API keys, USDC on\u2026"
+    },
+    {
+      "name": "anki-mcp-server",
+      "spec": "npx -y @ankimcp/anki-mcp-server",
+      "_registry_name": "ai.ankimcp/anki-mcp-server",
+      "_publisher": "ai.ankimcp",
+      "_repository": "https://github.com/ankimcp/anki-mcp-server",
+      "_description": "MCP server for Anki flashcards: adaptive review, notes, media, and deck management via AnkiConnect."
+    },
+    {
+      "name": "contextlayer-mcp",
+      "spec": "npx -y @contextlayer/mcp",
+      "_registry_name": "ai.autoblocks/contextlayer-mcp",
+      "_publisher": "ai.autoblocks",
+      "_repository": "https://github.com/autoblocksai/ctxl",
+      "_description": "Personal context management for AI assistants"
+    },
+    {
+      "name": "ctxl",
+      "spec": "npx -y ctxl",
+      "_registry_name": "ai.autoblocks/ctxl",
+      "_publisher": "ai.autoblocks",
+      "_repository": "https://github.com/autoblocksai/ctxl",
+      "_description": "Personal context management for AI assistants"
+    },
+    {
+      "name": "travel",
+      "spec": "npx -y autonomad-travel",
+      "_registry_name": "ai.autonomad/travel",
+      "_publisher": "ai.autonomad",
+      "_repository": "https://github.com/Autonomad1/autonomad1",
+      "_description": "AI travel agent \u2014 book flights, hotels, activities, and events worldwide via autonomad.ai."
+    },
+    {
+      "name": "bourdon",
+      "spec": "uvx bourdon",
+      "_registry_name": "ai.bourdon/bourdon",
+      "_publisher": "ai.bourdon",
+      "_repository": "https://gitlab.com/getbourdon/bourdon",
+      "_description": "Recognition-first cross-agent memory federation. One shared memory across all your agents."
+    },
+    {
+      "name": "server",
+      "spec": "npx -y @callmcp/server",
+      "_registry_name": "ai.callmcp/server",
+      "_publisher": "ai.callmcp",
+      "_repository": "https://github.com/CallMCP/callmcp",
+      "_description": "One MCP tool contract for telephony \u2014 any call provider, hosted, local, or BYOK."
+    },
+    {
+      "name": "clize",
+      "spec": "npx -y @clize/clize",
+      "_registry_name": "ai.clize/clize",
+      "_publisher": "ai.clize",
+      "_repository": "https://github.com/cooldk/clize-cli",
+      "_description": "Real-world actions for AI coding agents: domains, email, deploys, payments, and media generation."
+    },
+    {
+      "name": "mcp-2",
+      "spec": "npx -y contextstudios-mcp",
+      "_registry_name": "ai.contextstudios/mcp",
+      "_publisher": "ai.contextstudios",
+      "_repository": "",
+      "_description": "AI agency API: 25 free tools for glossary, comparisons, blog, guides, and estimates"
+    },
+    {
+      "name": "interactive-video-guide",
+      "spec": "npx -y @demomagic/mcp",
+      "_registry_name": "ai.demomagic/interactive-video-guide",
+      "_publisher": "ai.demomagic",
+      "_repository": "",
+      "_description": "Guides for making interactive videos & AI product demos that answer viewers' questions."
+    },
+    {
+      "name": "dossier",
+      "spec": "npx -y @ai-dossier/mcp-server",
+      "_registry_name": "ai.imboard/dossier",
+      "_publisher": "ai.imboard",
+      "_repository": "https://github.com/imboard-ai/ai-dossier",
+      "_description": "MCP server for dossier automation standard - enables LLMs to discover, verify, and execute dossiers"
+    },
+    {
+      "name": "mcp-3",
+      "spec": "npx -y justdrop-mcp",
+      "_registry_name": "ai.justdrop/mcp",
+      "_publisher": "ai.justdrop",
+      "_repository": "https://github.com/Managed-Digital-LLC/justdrop-mcp",
+      "_description": "Live, end-to-end encrypted, ephemeral file transfer between your AI agent and any device."
+    },
+    {
+      "name": "kavel-mcp",
+      "spec": "npx -y kavel-mcp",
+      "_registry_name": "ai.kavel/kavel-mcp",
+      "_publisher": "ai.kavel",
+      "_repository": "https://github.com/hanshs474/kavel-mcp",
+      "_description": "Discover Kavel's AI photo/video generators, get tuned prompts, and open the right tool on kavel.ai."
+    },
+    {
+      "name": "mcp-4",
+      "spec": "npx -y @kawacode/mcp",
+      "_registry_name": "ai.kawacode/mcp",
+      "_publisher": "ai.kawacode",
+      "_repository": "https://github.com/kawacode-ai/kawa.mcp",
+      "_description": "Team-aware memory: intent, decisions, real-time conflicts for AI coding assistants."
+    },
+    {
+      "name": "mcpcap",
+      "spec": "uvx mcpcap",
+      "_registry_name": "ai.mcpcap/mcpcap",
+      "_publisher": "ai.mcpcap",
+      "_repository": "https://github.com/mcpcap/mcpcap",
+      "_description": "An MCP server for analyzing PCAP files."
+    },
+    {
+      "name": "mcp-server",
+      "spec": "npx -y @meetlark/mcp-server",
+      "_registry_name": "ai.meetlark/mcp-server",
+      "_publisher": "ai.meetlark",
+      "_repository": "",
+      "_description": "Agent-first meeting schedule polls for humans and agents. Create polls, vote, find times."
+    },
+    {
+      "name": "nauro",
+      "spec": "uvx nauro",
+      "_registry_name": "ai.nauro/nauro",
+      "_publisher": "ai.nauro",
+      "_repository": "https://github.com/Nauro-AI/nauro",
+      "_description": "Human-approved project judgment and current state for connected AI agents, surfaced before work."
+    },
+    {
+      "name": "brand-intelligence",
+      "spec": "uvx nudg3-mcp",
+      "_registry_name": "ai.nudg3/brand-intelligence",
+      "_publisher": "ai.nudg3",
+      "_repository": "https://github.com/NUDG3-AI/nudg3-mcp",
+      "_description": "Query your Nudg3 brand visibility across ChatGPT, Claude, Gemini, AI Overviews, and Perplexity."
+    },
+    {
+      "name": "sap-mcp",
+      "spec": "npx -y @oobe-protocol-labs/sap-mcp-server",
+      "_registry_name": "ai.oobeprotocol.sap.mcp/sap-mcp",
+      "_publisher": "ai.oobeprotocol.sap.mcp",
+      "_repository": "https://github.com/OOBE-PROTOCOL/sap-mcp",
+      "_description": "Solana-native MCP gateway for SAP, DeFi tools, SNS identity, and x402 payments."
+    },
+    {
+      "name": "mcp-server-2",
+      "spec": "npx -y @perplexity-ai/mcp-server",
+      "_registry_name": "ai.perplexity/mcp-server",
+      "_publisher": "ai.perplexity",
+      "_repository": "",
+      "_description": "Real-time web search, reasoning, and research through Perplexity's API"
+    },
+    {
+      "name": "positif",
+      "spec": "uvx positif-ai",
+      "_registry_name": "ai.positif/positif",
+      "_publisher": "ai.positif",
+      "_repository": "https://gitlab.com/getpositif/positif",
+      "_description": "The agent switchboard: identity, policy, loop-guard, and an append-only audit ledger."
+    },
+    {
+      "name": "radmail-mcp",
+      "spec": "npx -y radmail-mcp",
+      "_registry_name": "ai.radmail/radmail-mcp",
+      "_publisher": "ai.radmail",
+      "_repository": "https://github.com/dougsureel-tech/radmail-mcp",
+      "_description": "Email OS for agents - real-inbox search, triage, commitments, and a verifiable BEC hard-stop."
+    },
+    {
+      "name": "mcp-server-3",
+      "spec": "npx -y @rapay/mcp-server",
+      "_registry_name": "ai.rapay/mcp-server",
+      "_publisher": "ai.rapay",
+      "_repository": "https://github.com/Ra-Pay-AI/rapay",
+      "_description": "Send fiat payments via MCP with two-step confirmation and Stripe Connect."
+    },
+    {
+      "name": "raven-mcp",
+      "spec": "npx -y raven-mcp",
+      "_registry_name": "ai.ravenmcp/raven-mcp",
+      "_publisher": "ai.ravenmcp",
+      "_repository": "https://github.com/rhinocap/raven-mcp",
+      "_description": "Design intelligence for coding agents: audits, design systems, and a taste profile agents consult."
+    },
+    {
+      "name": "mcp-5",
+      "spec": "uvx reka-mcp",
+      "_registry_name": "ai.reka/mcp",
+      "_publisher": "ai.reka",
+      "_repository": "",
+      "_description": "Understand your videos with Reka AI \u2014 search, ask questions, and extract insights."
+    },
+    {
+      "name": "mcp-6",
+      "spec": "npx -y @shipeasy/mcp",
+      "_registry_name": "ai.shipeasy/mcp",
+      "_publisher": "ai.shipeasy",
+      "_repository": "https://github.com/shipeasy-ai/shipeasy",
+      "_description": "Feature flags, A/B experiments, kill switches, dynamic config & i18n \u2014 Shipeasy MCP server."
+    },
+    {
+      "name": "snow",
+      "spec": "npx -y snowsure-mcp-server",
+      "_registry_name": "ai.snowsure/snow",
+      "_publisher": "ai.snowsure",
+      "_repository": "https://github.com/mikeslone/snowsure-web",
+      "_description": "Live ski snow, multi-model forecasts, powder rankings & a grounded Answer Engine for 500+ resorts."
+    },
+    {
+      "name": "engrava",
+      "spec": "uvx engrava-mcp",
+      "_registry_name": "ai.sovantica/engrava",
+      "_publisher": "ai.sovantica",
+      "_repository": "https://github.com/sovantica/engrava-mcp",
+      "_description": "Tamper-evident audit, MindQL, and Action Records \u2014 embedded memory database for AI agents."
+    },
+    {
+      "name": "gate",
+      "spec": "npx -y @spideriq/mcp-gate",
+      "_registry_name": "ai.spideriq/gate",
+      "_publisher": "ai.spideriq",
+      "_repository": "https://github.com/SpiderIQ/SpiderIQ",
+      "_description": "SpiderIQ Gate: SpiderGate LLM gateway (completions, models, usage, traces)"
+    },
+    {
+      "name": "leads",
+      "spec": "npx -y @spideriq/mcp-leads",
+      "_registry_name": "ai.spideriq/leads",
+      "_publisher": "ai.spideriq",
+      "_repository": "https://github.com/SpiderIQ/SpiderIQ",
+      "_description": "SpiderIQ Leads: lead-gen MCP (jobs, campaigns, IDAP, Maps, People, Verify, company intel, spiderPR)"
+    },
+    {
+      "name": "ssid-mcp",
+      "spec": "npx -y ssid-mcp",
+      "_registry_name": "ai.ssid/ssid-mcp",
+      "_publisher": "ai.ssid",
+      "_repository": "https://github.com/Drumworks/ssid",
+      "_description": "Identify the manufacturer behind any MAC address; flags randomized/private addresses."
+    },
+    {
+      "name": "mcp-proxy",
+      "spec": "npx -y @synchronex/mcp-proxy",
+      "_registry_name": "ai.synchronex/mcp-proxy",
+      "_publisher": "ai.synchronex",
+      "_repository": "https://github.com/kmdesle/synchronex",
+      "_description": "Connect any AI agent to your Synchronex workspace \u2014 portable memory, decisions, and workers."
+    },
+    {
+      "name": "deploy",
+      "spec": "npx -y telbase",
+      "_registry_name": "ai.telbase/deploy",
+      "_publisher": "ai.telbase",
+      "_repository": "https://github.com/Victor-EU/telbase",
+      "_description": "Deploy any web project with one command. AI-native platform with self-healing feedback."
+    },
+    {
+      "name": "hypertool-mcp",
+      "spec": "npx -y @toolprint/hypertool-mcp",
+      "_registry_name": "ai.toolprint/hypertool-mcp",
+      "_publisher": "ai.toolprint",
+      "_repository": "https://github.com/toolprint/hypertool-mcp",
+      "_description": "Dynamically expose tools from proxied servers based on an Agent Persona"
+    },
+    {
+      "name": "trusty-squire",
+      "spec": "npx -y @trusty-squire/mcp",
+      "_registry_name": "ai.trustysquire/trusty-squire",
+      "_publisher": "ai.trustysquire",
+      "_repository": "https://github.com/Trusty-Squire/trusty-squire",
+      "_description": "Trusty Squire signs up / in to websites for you so you don\u2019t have to."
+    },
+    {
+      "name": "cli",
+      "spec": "npx -y @unpaper/cli",
+      "_registry_name": "ai.unpaper/cli",
+      "_publisher": "ai.unpaper",
+      "_repository": "",
+      "_description": "Slide decks locally: templates, checks, HTML to editable PowerPoint, .pptx rescue. No AI inside."
+    },
+    {
+      "name": "mcp-7",
+      "spec": "npx -y @vaaya/mcp",
+      "_registry_name": "ai.vaaya/mcp",
+      "_publisher": "ai.vaaya",
+      "_repository": "https://github.com/vaaya-ai/vaaya-mcp",
+      "_description": "Pay-per-call agent superpowers: media/video gen, product demos, research, GTM, scraping, compute."
+    },
+    {
+      "name": "3dstreet",
+      "spec": "npx -y 3dstreet-mcp",
+      "_registry_name": "app.3dstreet/3dstreet",
+      "_publisher": "app.3dstreet",
+      "_repository": "https://github.com/3DStreet/3dstreet-mcp",
+      "_description": "Drive an open 3DStreet scene tab from Claude Desktop or Claude Code via MCP tool calls."
+    },
+    {
+      "name": "mcp-server-4",
+      "spec": "npx -y @businys/mcp-server",
+      "_registry_name": "app.businys/mcp-server",
+      "_publisher": "app.businys",
+      "_repository": "https://github.com/hiatys/businys-mcp",
+      "_description": "221 MCP tools across 26 practices for independent professionals. Clients, invoices, contracts."
+    },
+    {
+      "name": "cleanor",
+      "spec": "npx -y @cleanor/mcp",
+      "_registry_name": "app.cleanor/cleanor",
+      "_publisher": "app.cleanor",
+      "_repository": "https://github.com/cleanor-app/cleanor-mcp",
+      "_description": "Zero-auth MCP: image optimize, cited storage/format data, and dev utilities LLMs get wrong."
+    },
+    {
+      "name": "percher",
+      "spec": "npx -y @percher/mcp",
+      "_registry_name": "app.percher/percher",
+      "_publisher": "app.percher",
+      "_repository": "",
+      "_description": "MCP-native hosting: publish and operate AI-built web apps live at name.percher.run."
+    },
+    {
+      "name": "scanbim-mcp",
+      "spec": "npx -y @scanbim-labs/scanbim-mcp",
+      "_registry_name": "app.scanbim/scanbim-mcp",
+      "_publisher": "app.scanbim",
+      "_repository": "https://github.com/ScanBIM-Labs/scanbim-mcp",
+      "_description": "AI Hub for AEC \u2014 46 tools for Revit, Navisworks, ACC, XR via Autodesk Platform Services"
+    },
+    {
+      "name": "pmo",
+      "spec": "npx -y @calx/selis-mcp",
+      "_registry_name": "app.selis.mcp/pmo",
+      "_publisher": "app.selis.mcp",
+      "_repository": "https://github.com/calx-sa/selis-mcp",
+      "_description": "MCP server for Selis TMiS \u2014 manage PMO entities from any MCP client"
+    },
+    {
+      "name": "mcp-8",
+      "spec": "npx -y @takehub/mcp",
+      "_registry_name": "app.takehub/mcp",
+      "_publisher": "app.takehub",
+      "_repository": "https://github.com/mauurda/takehub",
+      "_description": "Manage discussion topics, gather votes and video rationale, and read AI insights."
+    },
+    {
+      "name": "server-2",
+      "spec": "npx -y @trustrails/mcp-server",
+      "_registry_name": "app.trustrails/server",
+      "_publisher": "app.trustrails",
+      "_repository": "https://github.com/james-webdev/trustrails-mcp-server",
+      "_description": "Search UK electronics products across retailers. Real-time prices, stock, and specs."
+    },
+    {
+      "name": "mcp-server-5",
+      "spec": "npx -y @muovi/mcp-server",
+      "_registry_name": "ar.com.muovi/mcp-server",
+      "_publisher": "ar.com.muovi",
+      "_repository": "https://github.com/muovi-latam/mcp-server",
+      "_description": "Read-only MCP server for Muovi, Argentina's trust-first local services marketplace (6 tools)."
+    },
+    {
+      "name": "nginx-proxy-manager",
+      "spec": "uvx nginx-proxy-manager-mcp-full",
+      "_registry_name": "at.baeck/nginx-proxy-manager",
+      "_publisher": "at.baeck",
+      "_repository": "",
+      "_description": "MCP server for Nginx Proxy Manager with full API coverage (43 tools)"
+    }
+  ]
+}

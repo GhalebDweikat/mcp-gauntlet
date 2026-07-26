@@ -272,6 +272,7 @@ async def run_leaderboard(
     max_turns: int = 8,
     timeout_s: float = 240.0,
     tool_timeout_s: float = 60.0,
+    probe: bool = True,
     board_url: str | None = None,
     log: Callable[[str], None] = print,
 ) -> list[LeaderboardResult]:
@@ -293,6 +294,7 @@ async def run_leaderboard(
                     repeats=repeats,
                     max_turns=max_turns,
                     tool_timeout_s=tool_timeout_s,
+                    probe=probe,
                 )
         except TimeoutError:
             error = f"timed out after {timeout_s:.0f}s"

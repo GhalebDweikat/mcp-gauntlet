@@ -452,6 +452,17 @@ def leaderboard(
         help="Per-tool-call limit for the agent, in seconds; a tool that exceeds it "
         "is recorded as a failed call.",
     ),
+    agentic: bool = typer.Option(
+        True,
+        "--agentic/--no-agentic",
+        help="Run the live-agent evaluation. --no-agentic scans without driving an agent.",
+    ),
+    probe: bool = typer.Option(
+        True,
+        "--probe/--no-probe",
+        help="Send malformed input to each tool (Robustness). Pass --no-probe together "
+        "with --no-agentic to scan a server without executing any of its tools.",
+    ),
     render_only: bool = typer.Option(
         False,
         "--render-only",
@@ -510,10 +521,13 @@ def leaderboard(
             "Raise --timeout.[/yellow]"
         )
     llm_config: LLMConfig | None = None
-    try:
-        llm_config = LLMConfig.from_env(provider, model=model, base_url=base_url, api_key=api_key)
-    except LLMConfigError:
-        llm_config = None  # static-only leaderboard (no LLM key configured)
+    if agentic:
+        try:
+            llm_config = LLMConfig.from_env(
+                provider, model=model, base_url=base_url, api_key=api_key
+            )
+        except LLMConfigError:
+            llm_config = None  # static-only leaderboard (no LLM key configured)
 
     if llm_config is not None:
         console.print(
@@ -533,6 +547,7 @@ def leaderboard(
             llm_config=llm_config,
             n_tasks=tasks,
             repeats=repeats,
+            probe=probe,
             max_turns=max_turns,
             timeout_s=timeout,
             tool_timeout_s=tool_timeout,

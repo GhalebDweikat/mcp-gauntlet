@@ -1,7 +1,10 @@
 """Leaderboard rendering: only mutually comparable scores share a ranked table."""
 
+import functools
 import sys
+import tempfile
 from pathlib import Path
+from typing import Any
 
 import anyio
 import pytest
@@ -715,3 +718,37 @@ def test_a_credential_blocked_server_is_not_promoted_onto_a_static_board() -> No
     assert "Partially evaluated" in html
     assert html.index("plain") < html.index("Partially evaluated")
     assert html.index("Partially evaluated") < html.rindex("hosted")
+
+
+def test_no_agentic_no_probe_executes_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The survey scans servers that send payments and book flights. It must not call them.
+
+    Both flags are load-bearing and neither is sufficient alone: --no-agentic stops the
+    agent, --no-probe stops the robustness prober, and the prober executes tools too. A
+    server whose advertised purpose is an irreversible real-world action gets read, never
+    run — the read-only filter is explicitly best-effort and trusts hints it cannot verify,
+    which is fine for a wrong number and not fine for a real transfer.
+    """
+    seen: dict[str, Any] = {}
+
+    async def fake_evaluate(spec: Any, **kwargs: Any) -> GauntletReport:
+        seen.update(kwargs)
+        return GauntletReport.build(
+            spec="s",
+            server=ServerInfo(name="payments", version="1"),
+            tool_count=1,
+            dimensions=[DimensionResult(key="security", title="Security", weight=2.0, score=100.0)],
+        )
+
+    monkeypatch.setattr("mcp_gauntlet.leaderboard.evaluate_server", fake_evaluate)
+    anyio.run(
+        functools.partial(
+            run_leaderboard,
+            [ServerEntry(name="payments", spec="npx -y some-payments-server")],
+            out_dir=Path(tempfile.mkdtemp()),
+            llm_config=None,
+            probe=False,
+        )
+    )
+    assert seen["llm_config"] is None  # no agent drives it
+    assert seen["probe"] is False  # and no probe calls its tools

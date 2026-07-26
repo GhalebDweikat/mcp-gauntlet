@@ -16,6 +16,24 @@ shift || true
 
 VERSION="${MCP_GAUNTLET_VERSION:-0.6.0}"
 OUT="${SURVEY_OUT:-survey-out}"
+
+# How to invoke the harness. Default is the published wheel, pinned.
+#
+# MCP_GAUNTLET_FROM=local runs this checkout instead, for when the version you want to
+# survey with is tagged but not yet on PyPI. That stays reproducible ONLY from a clean
+# checkout at a tag — `git checkout v0.6.0 && git status` must be empty. Running a dirty
+# tree stamps every row with a version number nobody else can reproduce, which is the one
+# thing the stamp exists to prevent.
+if [ "${MCP_GAUNTLET_FROM:-}" = "local" ]; then
+  REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  GAUNTLET=(uv run --directory "$REPO" mcp-gauntlet)
+  if [ -n "$(git -C "$REPO" status --porcelain 2>/dev/null)" ]; then
+    echo "WARNING: running a DIRTY checkout. Scores will be stamped with a version" >&2
+    echo "         nobody can reproduce. Commit, or check out a tag, before surveying." >&2
+  fi
+else
+  GAUNTLET=(uvx "mcp-gauntlet@${VERSION}")
+fi
 TASKS="${SURVEY_TASKS:-3}"
 REPEATS="${SURVEY_REPEATS:-2}"
 
@@ -63,7 +81,7 @@ COUNT=$(python3 -c "import json,sys; print(len(json.load(open(sys.argv[1],encodi
 cat <<EOF
 --------------------------------------------------------------------------------
 mcp-gauntlet survey
-  version   : $VERSION (pinned — the board records what produced each score)
+  harness   : ${GAUNTLET[*]}
   servers   : $COUNT
   model     : $PROVIDER:$MODEL  ($TASKS tasks x $REPEATS repeats)
   output    : $OUT
@@ -79,7 +97,7 @@ read -r -p "Continue? [y/N] " reply
 # Both matter far more here than on a curated list: these packages are unvetted, and one
 # that never returns would otherwise stall the whole survey.
 set +e
-uvx "mcp-gauntlet@${VERSION}" leaderboard \
+"${GAUNTLET[@]}" leaderboard \
   --servers "$LIST_TO_RUN" \
   --out "$OUT" \
   --provider "$PROVIDER" \
@@ -105,7 +123,7 @@ if [ "$PILOT" -eq 0 ] && [ -f "$STATIC_LIST" ]; then
     echo
     echo "==> static-only pass: $n server(s) that take real-world actions (never executed)"
     set +e
-    uvx "mcp-gauntlet@${VERSION}" leaderboard \
+    "${GAUNTLET[@]}" leaderboard \
       --servers "$STATIC_LIST" \
       --out "$OUT" \
       --no-agentic \
@@ -115,7 +133,7 @@ if [ "$PILOT" -eq 0 ] && [ -f "$STATIC_LIST" ]; then
     set -e
     # Both passes wrote into $OUT/servers/. Each run rewrote index.html from only its own
     # results, so rebuild the page from every saved result — free, no LLM calls.
-    uvx "mcp-gauntlet@${VERSION}" leaderboard --out "$OUT" --render-only >/dev/null
+    "${GAUNTLET[@]}" leaderboard --out "$OUT" --render-only >/dev/null
     echo "merged both passes into $OUT/index.html"
   fi
 fi

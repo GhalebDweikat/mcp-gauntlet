@@ -865,6 +865,14 @@ def scan_runtime_outputs(
     """
     if not outputs:
         return None
+    # Bucketed by tool, because the subject of this dimension is a tool whose output was
+    # actually examined — the same per-subject normalization every other dimension uses.
+    # Scoring the whole dimension off one 100 base (as this did) made the penalty
+    # superlinear in how many tools the agent happened to exercise: five tools each
+    # relaying one MEDIUM scored 40, where the documented model gives 88. That punished a
+    # large server for being large, which is exactly what the per-subject mean exists to
+    # prevent. A tool called and found clean is a real 100 here, not an absence of evidence.
+    by_tool: dict[str, list[Finding]] = {tool: [] for tool, _ in outputs}
     findings: list[Finding] = []
     seen: set[tuple[str | None, Severity, str]] = set()
     for tool, text in outputs:
@@ -873,23 +881,24 @@ def scan_runtime_outputs(
             if key not in seen:
                 seen.add(key)
                 findings.append(finding)
+                by_tool[tool].append(finding)
     # Partial coverage must not read as a clean result: an output too large to examine
     # completely is itself a way to push a payload past a bounded scanner, exactly as an
     # oversized schema is on the static side.
     for tool in sorted(truncated_tools or ()):
-        findings.append(
-            _f(
-                tool,
-                Severity.MEDIUM,
-                "tool output too large to scan completely",
-                detail="Some of what this tool returned was not examined for injection markers.",
-            )
+        truncation = _f(
+            tool,
+            Severity.MEDIUM,
+            "tool output too large to scan completely",
+            detail="Some of what this tool returned was not examined for injection markers.",
         )
+        findings.append(truncation)
+        by_tool.setdefault(tool, []).append(truncation)
     return DimensionResult(
         key=Dim.RESPONSE_SAFETY,
         title="Response Safety (runtime)",
         weight=1.0,
-        score=score_from_findings(findings),
+        score=_mean_or_full([score_from_findings(fs) for fs in by_tool.values()]),
         summary="Dynamic scan of the server's live tool outputs for prompt-injection / "
         "poisoning markers and hidden characters. Markers here may be the server poisoning "
         "its responses, or untrusted content it passed through — either exposes the agent. "

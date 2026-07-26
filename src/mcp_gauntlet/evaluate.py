@@ -99,6 +99,32 @@ async def run_agentic_eval(
             if trace.stop_reason == "tool_timeout":
                 hung = True
 
+            # Collected BEFORE the inconclusive-repeat `continue` below. What a server
+            # returned is evidence whether or not the agent's own LLM survived long enough
+            # to be graded on it — and a rate-limited agent (the free tiers this runs on)
+            # is exactly when a turn dies mid-task, so gating the security scan on the
+            # judge succeeding would quietly drop real payloads. Reliability stays below
+            # the `continue` on purpose: it measures how well the SERVER answered a
+            # completed attempt, and half an attempt is not a fair denominator.
+            #
+            # Keyed on a DIFFERENT filter than reliability, also on purpose: a poisoned
+            # output must be scanned even when the same call triggered a declined
+            # interaction (and is excused from the reliability score). Only the agent's own
+            # never-dispatched calls — hallucinated names, malformed args — are skipped;
+            # their "output" is a harness-authored error string, not server content.
+            # `scan_text` carries the full result, not the clipped copy the model was shown,
+            # so a payload can't be pushed past the scan by padding the output. It falls back
+            # to result_text for the records that never reached a server (timeouts, transport
+            # errors), where the two are the same short string.
+            runtime_outputs.extend(
+                (call.tool, call.scan_text or call.result_text)
+                for call in trace.tool_calls
+                if (call.scan_text or call.result_text) and not call.agent_fault
+            )
+            scan_truncated_tools.update(
+                call.tool for call in trace.tool_calls if call.scan_truncated
+            )
+
             if trace.stop_reason == "error":  # agent's own LLM call failed — inconclusive
                 # No `if hung: break` needed here: run_agent_task returns the moment a tool
                 # times out, so a single trace is never both "error" and "tool_timeout", and
@@ -116,24 +142,6 @@ async def run_agentic_eval(
             ok_calls += sum(1 for call in reliability_calls if call.ok)
             any_tool_error = any_tool_error or trace.had_tool_error
             any_interaction_block = any_interaction_block or trace.blocked_on_interaction
-            # Response Safety scans everything the SERVER actually returned, keyed on a
-            # DIFFERENT filter than reliability on purpose: a poisoned output must be
-            # scanned even when the same call also triggered a declined interaction (and
-            # is excused from the reliability score). Only the agent's own never-dispatched
-            # calls — hallucinated names, malformed args — are skipped; their "output" is a
-            # harness-authored error string, not server content.
-            # `scan_text` carries the full result, not the clipped copy the model was shown,
-            # so a payload can't be pushed past the scan by padding the output. It falls back
-            # to result_text for the records that never reached a server (timeouts, transport
-            # errors), where the two are the same short string.
-            runtime_outputs.extend(
-                (call.tool, call.scan_text or call.result_text)
-                for call in trace.tool_calls
-                if (call.scan_text or call.result_text) and not call.agent_fault
-            )
-            scan_truncated_tools.update(
-                call.tool for call in trace.tool_calls if call.scan_truncated
-            )
 
             verdict = await judge_task(client, model, task, trace)
             if verdict.errored:  # judge call failed — can't grade this run

@@ -4,7 +4,6 @@ These spawn a real MCP subprocess but make no LLM calls, so they run in CI.
 """
 
 import sys
-from typing import cast
 
 import anyio
 
@@ -61,8 +60,6 @@ def test_a_credential_gated_server_looks_perfect_until_you_call_it() -> None:
 
 def test_the_preflight_declines_to_score_the_gated_fixture() -> None:
     # And calling it does reveal the problem — without an LLM, before any spend.
-    from mcp import ClientSession
-
     from mcp_gauntlet.client import open_session
     from mcp_gauntlet.preflight import probe_credentials
 
@@ -70,7 +67,7 @@ def test_the_preflight_declines_to_score_the_gated_fixture() -> None:
 
     async def _probe() -> str | None:
         async with open_session(spec) as (session, init, _interactions):
-            discovery = await discover_in_session(cast(ClientSession, session), init)
+            discovery = await discover_in_session(session, init)
             return await probe_credentials(session, discovery.tools)
 
     reason = anyio.run(_probe)

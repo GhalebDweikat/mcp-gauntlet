@@ -36,6 +36,12 @@ else
 fi
 TASKS="${SURVEY_TASKS:-3}"
 REPEATS="${SURVEY_REPEATS:-2}"
+# Per-server wall-clock budget, and the per-tool-call bound inside it. Unvetted packages fail
+# slowly far more often than they answer slowly: a registry-listed server that cannot finish
+# being installed, started and asked for its tool list inside two minutes is not one you
+# would put behind an agent, and waiting five proves nothing extra.
+TIMEOUT="${SURVEY_TIMEOUT:-120}"
+TOOL_TIMEOUT="${SURVEY_TOOL_TIMEOUT:-45}"
 
 # Which LLM drives the agent. Defaults to Gemini Flash only because it is cheap enough to
 # scan fifty servers for a few dollars — nothing here depends on the provider. Override for
@@ -84,6 +90,7 @@ mcp-gauntlet survey
   harness   : ${GAUNTLET[*]}
   servers   : $COUNT
   model     : $PROVIDER:$MODEL  ($TASKS tasks x $REPEATS repeats)
+  timeouts  : ${TIMEOUT}s per server, ${TOOL_TIMEOUT}s per tool call
   output    : $OUT
   estimate  : ~\$$(python3 -c "print(f'{$COUNT*0.09:.2f}')") at ~\$0.09/server
 --------------------------------------------------------------------------------
@@ -104,8 +111,8 @@ set +e
   --model "$MODEL" \
   --tasks "$TASKS" \
   --repeats "$REPEATS" \
-  --timeout 300 \
-  --tool-timeout 45 \
+  --timeout "$TIMEOUT" \
+  --tool-timeout "$TOOL_TIMEOUT" \
   2>&1 | tee "survey-run.log"
 status=${PIPESTATUS[0]}
 set -e
@@ -128,7 +135,7 @@ if [ "$PILOT" -eq 0 ] && [ -f "$STATIC_LIST" ]; then
       --out "$OUT" \
       --no-agentic \
       --no-probe \
-      --timeout 300 \
+      --timeout "$TIMEOUT" \
       2>&1 | tee -a "survey-run.log"
     set -e
     # Both passes wrote into $OUT/servers/. Each run rewrote index.html from only its own

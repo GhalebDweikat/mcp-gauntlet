@@ -20,6 +20,28 @@ from mcp_gauntlet.models import ServerInfo
 REDACTION_PLACEHOLDER = "***REDACTED***"
 
 
+def encodable(text: str) -> str:
+    """Make one server-authored string safe to serialize, losslessly where possible.
+
+    A lone surrogate survives JSON parsing but cannot be encoded as UTF-8, so a single one
+    anywhere in a server's output made ``model_dump_json`` raise and discarded the entire
+    report — a completed, possibly paid-for evaluation lost to one character. Escaping
+    rather than dropping keeps the evidence visible: the reviewer sees ``\\ud800`` where the
+    character was, instead of a hole.
+    """
+    return text.encode("utf-8", "backslashreplace").decode("utf-8")
+
+
+def _scrub(obj: object) -> object:
+    if isinstance(obj, str):
+        return encodable(obj)
+    if isinstance(obj, list):
+        return [_scrub(v) for v in obj]
+    if isinstance(obj, dict):
+        return {str(_scrub(k)): _scrub(v) for k, v in obj.items()}
+    return obj
+
+
 def redact(text: str, secrets: Iterable[str]) -> str:
     """Replace each known credential value in one string with a placeholder.
 
@@ -70,7 +92,32 @@ class Finding(BaseModel):
     detail: str | None = None
 
 
+class Dim(StrEnum):
+    """The dimension keys, in one place because several of them are load-bearing.
+
+    Three are read by name from other modules — ``SECURITY`` caps the grade, ``TASK_SUCCESS``
+    decides whether a server is rankable, ``RESPONSE_SAFETY`` earns the board's ⚡ — and each
+    of those lookups used to be a bare string literal in a different file. Renaming a key
+    would have left them silently matching nothing: no error, no test failure, just a grade
+    cap that quietly stopped applying. A `StrEnum` keeps the serialized value identical
+    (``"security"`` on the wire, so old reports still load) while making the coupling
+    greppable and a typo an AttributeError.
+    """
+
+    SECURITY = "security"
+    RESPONSE_SAFETY = "response_safety"
+    TASK_SUCCESS = "task_success"
+    TOOL_SELECTION = "tool_selection"
+    TOOL_RELIABILITY = "tool_reliability"
+    SCHEMA_HEALTH = "schema_health"
+    DESCRIPTION_QUALITY = "description_quality"
+    ROBUSTNESS = "robustness"
+    DISCOVERY = "discovery"
+
+
 class DimensionResult(BaseModel):
+    # Deliberately `str`, not `Dim`: a report written by a newer version can name a
+    # dimension this one has never heard of, and it still has to load.
     key: str
     title: str
     score: float
@@ -138,7 +185,7 @@ def _has_critical_security(dimensions: list[DimensionResult]) -> bool:
     a server merely relayed, which is not evidence the server itself is malicious, so it
     deliberately never sets this flag.
     """
-    security = next((d for d in dimensions if d.key == "security"), None)
+    security = next((d for d in dimensions if d.key == Dim.SECURITY), None)
     return bool(security and any(f.severity is Severity.HIGH for f in security.findings))
 
 
@@ -173,7 +220,7 @@ class GauntletReport(BaseModel):
         # with an explicit finding instead of a misleading top grade.
         if tool_count == 0:
             note = DimensionResult(
-                key="discovery",
+                key=Dim.DISCOVERY,
                 title="Discovery",
                 weight=1.0,
                 score=0.0,
@@ -185,17 +232,19 @@ class GauntletReport(BaseModel):
             # tool-less server can still ship poisoned `instructions`, and dropping the
             # security dimension here would silently discard that finding along with its
             # critical flag. The grade stays N/A — unscored, but not unexamined.
-            return cls(
-                spec=spec,
-                server=server,
-                tool_count=0,
-                dimensions=[*dimensions, note],
-                overall_score=0.0,
-                grade="N/A",
-                generated_at=datetime.now(UTC).isoformat(timespec="seconds"),
-                security_critical=_has_critical_security(dimensions),
-                agentic=agentic,
-                gauntlet_version=_version(),
+            return _encodable(
+                cls(
+                    spec=spec,
+                    server=server,
+                    tool_count=0,
+                    dimensions=[*dimensions, note],
+                    overall_score=0.0,
+                    grade="N/A",
+                    generated_at=datetime.now(UTC).isoformat(timespec="seconds"),
+                    security_critical=_has_critical_security(dimensions),
+                    agentic=agentic,
+                    gauntlet_version=_version(),
+                )
             )
 
         total_weight = sum(d.weight for d in dimensions) or 1.0
@@ -207,17 +256,19 @@ class GauntletReport(BaseModel):
         if security_critical:
             overall = min(overall, GRADE_CAP_ON_CRITICAL)
 
-        return cls(
-            spec=spec,
-            server=server,
-            tool_count=tool_count,
-            dimensions=dimensions,
-            overall_score=overall,
-            grade=grade_for(overall),
-            generated_at=datetime.now(UTC).isoformat(timespec="seconds"),
-            security_critical=security_critical,
-            agentic=agentic,
-            gauntlet_version=_version(),
+        return _encodable(
+            cls(
+                spec=spec,
+                server=server,
+                tool_count=tool_count,
+                dimensions=dimensions,
+                overall_score=overall,
+                grade=grade_for(overall),
+                generated_at=datetime.now(UTC).isoformat(timespec="seconds"),
+                security_critical=security_critical,
+                agentic=agentic,
+                gauntlet_version=_version(),
+            )
         )
 
     @property
@@ -229,7 +280,7 @@ class GauntletReport(BaseModel):
         and scores systematically higher than one that earned its number the hard way.
         The two are therefore NOT comparable, and the leaderboard must not co-rank them.
         """
-        return any(d.key == "task_success" for d in self.dimensions)
+        return any(d.key == Dim.TASK_SUCCESS for d in self.dimensions)
 
     @property
     def agent_eval_truncated(self) -> bool:
@@ -286,6 +337,32 @@ def redact_report(report: GauntletReport, secrets: frozenset[str]) -> GauntletRe
         return report
     scrubbed = _redact_tree(report.model_dump(), secrets)
     return GauntletReport.model_validate(scrubbed)
+
+
+def _has_surrogate(obj: object) -> bool:
+    if isinstance(obj, str):
+        return any("\ud800" <= c <= "\udfff" for c in obj)
+    if isinstance(obj, list):
+        return any(_has_surrogate(v) for v in obj)
+    if isinstance(obj, dict):
+        return any(_has_surrogate(k) or _has_surrogate(v) for k, v in obj.items())
+    return False
+
+
+def _encodable(report: GauntletReport) -> GauntletReport:
+    """Guarantee the report can be serialized, whatever the server put in its strings.
+
+    A lone surrogate is valid JSON input and valid `str`, but not encodable as UTF-8, so one
+    reaching any field made `model_dump_json` raise and threw away a finished evaluation —
+    the same failure R2 fixed on the rendering path. Doing this once at build time covers
+    every writer (report JSON, Markdown, HTML, the leaderboard) instead of each guarding
+    itself. The scan is a fast no-op for the overwhelmingly common clean case; the rebuild
+    only happens for a server that actually smuggled one.
+    """
+    dumped = report.model_dump()
+    if not _has_surrogate(dumped):
+        return report
+    return GauntletReport.model_validate(_scrub(dumped))
 
 
 def score_from_findings(findings: list[Finding]) -> float:

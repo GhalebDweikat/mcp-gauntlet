@@ -10,6 +10,7 @@ from mcp_gauntlet.models import ServerInfo
 from mcp_gauntlet.report import (
     GRADE_CAP_ON_CRITICAL,
     AgenticDetail,
+    Dim,
     DimensionResult,
     Finding,
     GauntletReport,
@@ -295,3 +296,85 @@ def test_markdown_report_neutralizes_hostile_server_text() -> None:
     task_row = next(line for line in md.splitlines() if "do the thing" in line)
     assert task_row.count("|") == 6  # 5 structural delimiters + the one escaped \| in the label
     assert "\\|" in task_row
+
+
+def test_lone_surrogate_from_a_server_cannot_discard_the_report() -> None:
+    """A finished evaluation must survive any string the server chose to send.
+
+    A lone surrogate parses fine as JSON and is a legal `str`, but is not encodable as
+    UTF-8: one anywhere in the report made `model_dump_json` raise, so a completed — and
+    on a paid provider, already-billed — run was thrown away by a single character. Same
+    class as the Markdown-injection fix, on the serialization path instead of rendering.
+    """
+    hostile = "before " + chr(0xD800) + " after"
+    report = GauntletReport.build(
+        spec="stdio: x",
+        server=ServerInfo(name=hostile, version="1"),
+        tool_count=1,
+        dimensions=[
+            _dim(
+                "security",
+                50.0,
+                findings=[Finding(tool=hostile, severity=Severity.HIGH, message=hostile)],
+            )
+        ],
+    )
+
+    # Escaped, not silently dropped: a reviewer still sees what the server sent.
+    assert report.server.name == r"before \ud800 after"
+
+    # All three writers, since each has its own encoder.
+    report.model_dump_json().encode("utf-8")
+    to_markdown(report).encode("utf-8")
+    to_html(report).encode("utf-8")
+
+    # Scoring is untouched by the escaping: still a HIGH security finding, still capped.
+    assert report.security_critical
+    assert report.overall_score <= GRADE_CAP_ON_CRITICAL
+
+
+def test_clean_reports_are_returned_unchanged_by_the_encodability_pass() -> None:
+    # The surrogate scan runs on every build; it must not rewrite ordinary text (including
+    # legitimate non-BMP characters like emoji, which are perfectly encodable).
+    name = "server \U0001f600 café —"
+    report = GauntletReport.build(
+        spec="stdio: x",
+        server=ServerInfo(name=name, version="1"),
+        tool_count=1,
+        dimensions=[_dim("security", 100.0)],
+    )
+    assert report.server.name == name
+
+
+def test_dimension_keys_used_across_modules_are_the_enum_values() -> None:
+    """The cross-module lookups are keyed on `Dim`, so the values must not drift.
+
+    `security` caps the grade, `task_success` decides rankability, `response_safety` earns
+    the board's bolt. Each is produced in one module and read in another; pinning the wire
+    values here means renaming one is a visible, deliberate change rather than a lookup
+    that silently stops matching.
+    """
+    assert Dim.SECURITY == "security"
+    assert Dim.TASK_SUCCESS == "task_success"
+    assert Dim.RESPONSE_SAFETY == "response_safety"
+
+    capped = GauntletReport.build(
+        spec="s",
+        server=ServerInfo(name="n", version="1"),
+        tool_count=1,
+        dimensions=[
+            _dim(Dim.SECURITY, 50.0, findings=[Finding(severity=Severity.HIGH, message="x")])
+        ],
+    )
+    assert capped.security_critical
+
+    # response_safety carries the same HIGH but is passthrough content, so it never caps.
+    relayed = GauntletReport.build(
+        spec="s",
+        server=ServerInfo(name="n", version="1"),
+        tool_count=1,
+        dimensions=[
+            _dim(Dim.RESPONSE_SAFETY, 50.0, findings=[Finding(severity=Severity.HIGH, message="x")])
+        ],
+    )
+    assert not relayed.security_critical

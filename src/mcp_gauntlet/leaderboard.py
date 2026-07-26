@@ -22,7 +22,8 @@ from mcp_gauntlet.engine import evaluate_server
 from mcp_gauntlet.htmlreport import _GRADE_COLORS, _STYLE, _esc, to_html
 from mcp_gauntlet.jsonio import read_json_text
 from mcp_gauntlet.llm import LLMConfig
-from mcp_gauntlet.report import GauntletReport, Severity
+from mcp_gauntlet.naming import slugify
+from mcp_gauntlet.report import Dim, GauntletReport, Severity
 
 
 @dataclass
@@ -206,10 +207,6 @@ def _scanned_on(report: GauntletReport) -> str:
     return match.group(0) if match else "—"
 
 
-def _slug(name: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "server"
-
-
 def assign_slugs(names: list[str]) -> list[str]:
     """One distinct filename stem per server name, stable against reordering the list.
 
@@ -231,7 +228,7 @@ def assign_slugs(names: list[str]) -> list[str]:
     """
     groups: dict[str, list[int]] = {}
     for index, name in enumerate(names):
-        groups.setdefault(_slug(name), []).append(index)
+        groups.setdefault(slugify(name), []).append(index)
 
     slugs = [""] * len(names)
     used: set[str] = set()
@@ -402,7 +399,7 @@ pre.snippet { background:var(--card); border:1px solid var(--border); border-rad
 
 def _security_glyph(report: GauntletReport) -> str:
     """⚠ static tool-poisoning (caps the grade); ⚡ runtime output poisoning (does not cap)."""
-    rs_dim = next((d for d in report.dimensions if d.key == "response_safety"), None)
+    rs_dim = next((d for d in report.dimensions if d.key == Dim.RESPONSE_SAFETY), None)
     runtime_poison = bool(rs_dim and any(f.severity is Severity.HIGH for f in rs_dim.findings))
     return "⚠" if report.security_critical else ("⚡" if runtime_poison else "✓")
 
@@ -438,7 +435,7 @@ def _board_row(result: LeaderboardResult, rank: str) -> str:
     if rep.agentic and rep.agentic.inconclusive:
         ts = "incon."
     else:
-        task_success = _dim_score(rep, "task_success")
+        task_success = _dim_score(rep, Dim.TASK_SUCCESS)
         ts = f"{task_success:.0f}" if task_success is not None else "—"
     name_cell = (
         f'<a href="{_esc(result.page)}">{_esc(result.name)}</a>'

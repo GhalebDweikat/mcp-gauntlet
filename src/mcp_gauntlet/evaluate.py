@@ -19,7 +19,14 @@ from mcp_gauntlet.checks import scan_runtime_outputs
 from mcp_gauntlet.client import InteractionLog
 from mcp_gauntlet.judge import judge_task, selection_score
 from mcp_gauntlet.models import ToolInfo
-from mcp_gauntlet.report import AgenticDetail, DimensionResult, Finding, Severity, TaskResult
+from mcp_gauntlet.report import (
+    AgenticDetail,
+    Dim,
+    DimensionResult,
+    Finding,
+    Severity,
+    TaskResult,
+)
 from mcp_gauntlet.tasks import EvalTask
 from mcp_gauntlet.toolconv import build_tool_bridge
 
@@ -241,7 +248,7 @@ async def run_agentic_eval(
         sel_values = [r.selection_score for r in conclusive if r.selection_score is not None]
         dimensions.append(
             DimensionResult(
-                key="task_success",
+                key=Dim.TASK_SUCCESS,
                 title="Agent Task Success",
                 weight=3.0,
                 score=round(mean(task_scores), 1),
@@ -252,7 +259,7 @@ async def run_agentic_eval(
         )
         dimensions.append(
             DimensionResult(
-                key="tool_selection",
+                key=Dim.TOOL_SELECTION,
                 title="Tool-Selection Accuracy",
                 weight=1.5,
                 score=round(mean(sel_values), 1) if sel_values else 100.0,
@@ -287,7 +294,7 @@ def _reliability_dimension(total_calls: int, ok_calls: int) -> DimensionResult:
                 )
             )
     return DimensionResult(
-        key="tool_reliability",
+        key=Dim.TOOL_RELIABILITY,
         title="Tool Reliability",
         weight=1.0,
         score=score,

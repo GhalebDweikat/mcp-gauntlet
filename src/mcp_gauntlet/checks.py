@@ -1,14 +1,22 @@
-"""Offline (no-API) static checks over a discovered MCP server.
+"""Static checks over a discovered MCP server.
 
-Three dimensions run here with zero external calls, so the tool is useful without
-an API key:
+Three dimensions are produced here with zero external calls, so the tool is useful
+without an API key:
 
   * Schema Health       — structural validity of each tool's JSON input schema
-  * Description Quality  — offline heuristics on the tool description text
-  * Security Signals     — tool-poisoning / prompt-injection markers in text
+  * Description Quality — offline heuristics on the tool description text
+  * Security Signals    — tool-poisoning / prompt-injection markers and hidden
+    characters across *every* server-authored string a client can put in front of a
+    model: the server's own name, title and `instructions`; each tool's description,
+    display titles, `_meta`, and every string in its input **and output** schema;
+    prompt metadata, arguments and the messages `prompts/get` returns; resource and
+    template metadata. Definition drift (a tool redefined between runs or mid-session)
+    is folded in here too, scored against the tool it concerns.
 
-The API-backed dimensions (LLM-judged description quality, exact token footprint,
-and the agentic task-success evaluation) are added in a later stage.
+A fourth dimension, Response Safety, lives here because it reuses the same scanner —
+but it runs over what tools actually *returned*, so it needs the agentic stage to have
+executed first. The remaining API-backed dimensions (agentic task success, tool
+selection, tool reliability) are produced in `evaluate.py`.
 """
 
 from __future__ import annotations
@@ -32,6 +40,7 @@ from mcp_gauntlet.models import (
 )
 from mcp_gauntlet.report import (
     SEVERITY_PENALTY,
+    Dim,
     DimensionResult,
     Finding,
     Severity,
@@ -140,7 +149,7 @@ def _check_tool_schema(tool: ToolInfo) -> list[Finding]:
 
 def check_schema_health(tools: list[ToolInfo]) -> DimensionResult:
     return _dimension(
-        "schema_health",
+        Dim.SCHEMA_HEALTH,
         "Schema Health",
         "Structural validity of each tool's JSON input schema: valid schema, typed and "
         "described properties, and a consistent required list.",
@@ -166,7 +175,7 @@ def _check_tool_description(tool: ToolInfo) -> list[Finding]:
 
 def check_description_quality(tools: list[ToolInfo]) -> DimensionResult:
     return _dimension(
-        "description_quality",
+        Dim.DESCRIPTION_QUALITY,
         "Description Quality (heuristic)",
         "Offline heuristics on tool descriptions (presence and length). An LLM-judged "
         "'can an agent tell when to use this?' score is added in the agentic stage.",
@@ -830,7 +839,7 @@ def check_security(
     if instructions or any(SEVERITY_PENALTY[f.severity] for f in server_findings):
         scores.append(score_from_findings(server_findings))
     return DimensionResult(
-        key="security",
+        key=Dim.SECURITY,
         title="Security Signals",
         weight=2.0,
         score=_mean_or_full(scores),
@@ -877,7 +886,7 @@ def scan_runtime_outputs(
             )
         )
     return DimensionResult(
-        key="response_safety",
+        key=Dim.RESPONSE_SAFETY,
         title="Response Safety (runtime)",
         weight=1.0,
         score=score_from_findings(findings),

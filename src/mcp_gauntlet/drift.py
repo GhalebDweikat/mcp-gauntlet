@@ -45,6 +45,7 @@ from pathlib import Path
 
 from mcp_gauntlet.jsonio import read_json_text
 from mcp_gauntlet.models import ServerInfo, ToolInfo
+from mcp_gauntlet.naming import slugify
 from mcp_gauntlet.report import Finding, Severity
 
 
@@ -60,7 +61,7 @@ def spec_key(spec_label: str) -> str:
     digest = hashlib.sha256(spec_label.encode("utf-8")).hexdigest()[:12]
     readable = re.split(r"[?#]", spec_label, maxsplit=1)[0]
     readable = re.sub(r"//[^/@\s]*@", "//", readable)  # strip userinfo from a URL
-    slug = re.sub(r"[^a-z0-9]+", "-", readable.lower()).strip("-")[:40] or "server"
+    slug = slugify(readable)[:40]
     return f"{slug}-{digest}"
 
 

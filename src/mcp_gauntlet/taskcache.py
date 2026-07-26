@@ -10,10 +10,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from pathlib import Path
 
 from mcp_gauntlet.models import ServerInfo, ToolInfo
+from mcp_gauntlet.naming import slugify
 from mcp_gauntlet.tasks import EvalTask
 
 DEFAULT_CACHE_DIR = Path(".gauntlet") / "tasks"
@@ -25,7 +25,7 @@ def server_key(server: ServerInfo, tools: list[ToolInfo]) -> str:
     version = server.version or "0"
     tool_names = ",".join(sorted(tool.name for tool in tools))
     digest = hashlib.sha256(f"{name}|{version}|{tool_names}".encode()).hexdigest()[:12]
-    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "server"
+    slug = slugify(name)
     return f"{slug}-{digest}"
 
 

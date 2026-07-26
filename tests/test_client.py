@@ -19,12 +19,15 @@ _INIT = cast(InitializeResult, SimpleNamespace(serverInfo=SimpleNamespace(name="
 
 
 class _PaginatedSession:
+    # Deliberately accepts ONLY `params`, not the SDK's deprecated `cursor=` overload:
+    # that overload disappears in `mcp` 2.0, and a fake that tolerated both would let the
+    # old call shape survive here until a user's install broke.
     def __init__(self, pages: list[tuple[list[Any], str | None]]) -> None:
         self._pages = pages
         self.cursors: list[str | None] = []
 
-    async def list_tools(self, cursor: str | None = None) -> Any:
-        self.cursors.append(cursor)
+    async def list_tools(self, *, params: Any = None) -> Any:
+        self.cursors.append(params.cursor if params is not None else None)
         tools, next_cursor = self._pages[len(self.cursors) - 1]
         return SimpleNamespace(tools=tools, nextCursor=next_cursor)
 
@@ -48,7 +51,7 @@ class _LoopingSession:
     def __init__(self) -> None:
         self.calls = 0
 
-    async def list_tools(self, cursor: str | None = None) -> Any:
+    async def list_tools(self, *, params: Any = None) -> Any:
         self.calls += 1
         return SimpleNamespace(tools=[_tool(f"t{self.calls}")], nextCursor="same")
 

@@ -183,7 +183,7 @@ async def discover_in_session(
     cursor: str | None = None
     seen_cursors: set[str] = set()
     for _ in range(100):
-        listed = await session.list_tools(cursor=cursor)
+        listed = await session.list_tools(**_page_params(cursor))
         for tool in listed.tools:
             # Dedup by name so a server with overlapping pages can't inflate the tool
             # count or manufacture a phantom "name_2" tool downstream.
@@ -230,6 +230,17 @@ async def discover_in_session(
 def _meta_of(obj: object) -> dict[str, Any]:
     meta = getattr(obj, "meta", None)
     return dict(meta) if isinstance(meta, dict) else {}
+
+
+def _page_params(cursor: str | None) -> dict[str, Any]:
+    """Keyword arguments requesting one page of a paginated list.
+
+    The SDK still accepts a bare ``cursor=``, but its own docstring marks it deprecated in
+    favour of ``params``, and the overload disappears in `mcp` 2.0. Sending no ``params`` at
+    all for the first page — rather than an empty object — keeps that request byte-identical
+    to what servers already answer today.
+    """
+    return {} if cursor is None else {"params": types.PaginatedRequestParams(cursor=cursor)}
 
 
 async def _paginate(
@@ -281,7 +292,9 @@ async def _discover_prompts(session: ClientSession, fetch: bool) -> list[PromptI
     """
     try:
         listed = _dedup_by_name(
-            await _paginate(lambda c: session.list_prompts(cursor=c), lambda p: list(p.prompts))
+            await _paginate(
+                lambda c: session.list_prompts(**_page_params(c)), lambda p: list(p.prompts)
+            )
         )
     except Exception as exc:  # noqa: BLE001 - "method not found" is the normal no-prompts case
         _log.debug("prompts/list unavailable: %s", exc)
@@ -339,7 +352,9 @@ async def _discover_resources(session: ClientSession) -> list[ResourceInfo]:
     found: list[ResourceInfo] = []
     try:
         listed_resources = _dedup_by_name(
-            await _paginate(lambda c: session.list_resources(cursor=c), lambda p: list(p.resources))
+            await _paginate(
+                lambda c: session.list_resources(**_page_params(c)), lambda p: list(p.resources)
+            )
         )
         found.extend(
             ResourceInfo(
@@ -357,7 +372,7 @@ async def _discover_resources(session: ClientSession) -> list[ResourceInfo]:
     try:
         templates = _dedup_by_name(
             await _paginate(
-                lambda c: session.list_resource_templates(cursor=c),
+                lambda c: session.list_resource_templates(**_page_params(c)),
                 lambda p: list(p.resourceTemplates),
             )
         )

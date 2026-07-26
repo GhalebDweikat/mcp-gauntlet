@@ -17,7 +17,7 @@ from mcp import ClientSession
 from mcp.shared.exceptions import McpError
 
 from mcp_gauntlet.models import ToolInfo
-from mcp_gauntlet.report import DimensionResult, Finding, Severity
+from mcp_gauntlet.report import Dim, DimensionResult, Finding, Severity
 from mcp_gauntlet.schemas import (
     arg_surface,
     declares_arg_contract,
@@ -345,7 +345,7 @@ async def run_robustness_probes(
             )
         )
         return DimensionResult(
-            key="robustness",
+            key=Dim.ROBUSTNESS,
             title="Robustness",
             weight=1.0,
             score=100.0,
@@ -355,7 +355,7 @@ async def run_robustness_probes(
         )
 
     return DimensionResult(
-        key="robustness",
+        key=Dim.ROBUSTNESS,
         title="Robustness",
         weight=1.0,
         score=round(sum(scores) / len(scores), 1),

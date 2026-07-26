@@ -38,6 +38,14 @@ All notable changes to mcp-gauntlet are documented here. This project adheres to
   exactly those when correctly refusing a path outside its root.
 - **A `gated_server` fixture** reproducing that shape: valid schemas, good descriptions,
   grades A on a static read, and every call fails for want of an account.
+- **`leaderboard --no-agentic --no-probe`** — scan a server without executing any of its
+  tools. Some publicly listed servers advertise irreversible real-world actions: sending
+  payments, booking travel, placing calls, deploying sites, creating accounts. Their tool
+  definitions are still worth scanning; calling them is not. The read-only filter is not
+  adequate cover here and never claimed to be — it is a best-effort heuristic that trusts
+  server-declared hints it cannot verify, which is fine when a mislabeled tool costs you a
+  wrong number and not fine when it costs someone money. Both flags are needed: `--no-agentic`
+  stops the agent, `--no-probe` stops the robustness prober, which also calls tools.
 
 ### Changed
 

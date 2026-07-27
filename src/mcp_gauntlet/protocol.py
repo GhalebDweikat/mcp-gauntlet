@@ -22,12 +22,15 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import tempfile
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from typing import TextIO, cast
 
 # The SDK module whose reader parses each stdout line (`logger = logging.getLogger(__name__)`).
 _STDIO_LOGGER = "mcp.client.stdio"
 _MAX_SAMPLES = 3
+_STDERR_TAIL = 240
 
 
 @dataclass
@@ -69,6 +72,45 @@ class _ParseFailureHandler(logging.Handler):
                 detail = value
                 break
         self._log.note(detail or str(exc))
+
+
+class ChildStderr:
+    """The child's stderr stream, plus a reader for the last thing it said."""
+
+    def __init__(self, handle: TextIO) -> None:
+        self.handle = handle
+
+    def tail(self, limit: int = _STDERR_TAIL) -> str:
+        try:
+            self.handle.flush()
+            position = self.handle.tell()
+            self.handle.seek(0)
+            text = self.handle.read()
+            self.handle.seek(position)  # leave the stream where the child left it
+        except (OSError, ValueError):  # closed or unreadable — never worth raising over
+            return ""
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        return " / ".join(lines[-3:])[-limit:]
+
+
+@contextlib.contextmanager
+def capture_stderr() -> Iterator[ChildStderr]:
+    """Capture a stdio child's stderr, and yield a reader for its tail.
+
+    When a server dies before it finishes initializing, the SDK reports "Connection closed"
+    — true, and useless. The reason is on the child's stderr: `could not determine executable
+    to run`, `Cannot find module`, a stack trace, a usage message. Without it, a survey of
+    unvetted packages publishes the same four words against every server that failed to
+    start, which tells a reader nothing and tells a maintainer less.
+
+    A temp file rather than an in-memory buffer because this is handed to the subprocess and
+    has to be a real file descriptor. Only the tail is read back: a server can emit megabytes
+    before dying, and a report needs the last thing it said, not all of it.
+    """
+    with tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace") as handle:
+        # NamedTemporaryFile's wrapper is duck-compatible with TextIO and has a real
+        # fileno(), which is what the subprocess actually needs.
+        yield ChildStderr(cast(TextIO, handle))
 
 
 @contextlib.contextmanager

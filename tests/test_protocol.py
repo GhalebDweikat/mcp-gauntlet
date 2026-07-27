@@ -10,11 +10,12 @@ REAL session and asserts we noticed. It fails loudly rather than silently passin
 import sys
 
 import anyio
+import pytest
 
 from mcp_gauntlet.client import open_session
 from mcp_gauntlet.config import ServerSpec
 from mcp_gauntlet.engine import _protocol_findings
-from mcp_gauntlet.protocol import TransportLog, watch_transport
+from mcp_gauntlet.protocol import TransportLog, capture_stderr, watch_transport
 from mcp_gauntlet.report import Severity
 
 NOISY = f"{sys.executable} -m mcp_gauntlet.fixtures.noisy_server"
@@ -88,3 +89,48 @@ def test_samples_are_bounded() -> None:
         log.note(f"line {i}")
     assert log.unparseable_lines == 500
     assert len(log.samples) <= 3
+
+
+def test_a_server_that_dies_on_startup_reports_what_it_said() -> None:
+    """ "Connection closed" is true and useless. The reason is on the child's stderr.
+
+    In the first survey pilot four of five servers failed, and every one of them reported
+    exactly "McpError: Connection closed". The log held the real reasons — `npm error could
+    not determine executable to run`, `EADDRINUSE` — but the report did not, so a published
+    row could not distinguish a broken package from a busy port from a missing runtime.
+    """
+    from mcp_gauntlet.client import MCPConnectionError
+
+    # A command that exists, starts, complains, and exits — the shape of a broken package.
+    spec = ServerSpec.parse(
+        f'{sys.executable} -c import-sys;sys.stderr.write("could not determine executable")'
+    )
+
+    async def _run() -> None:
+        async with open_session(spec) as (_session, _init, _interactions):
+            pass  # pragma: no cover - the session never opens
+
+    with pytest.raises(MCPConnectionError) as caught:
+        anyio.run(_run)
+    assert "the server said" in str(caught.value)
+
+
+def test_the_stderr_tail_is_bounded_and_keeps_the_last_lines() -> None:
+    # A server can emit megabytes before dying; the report needs its last words, not all.
+    with capture_stderr() as child:
+        for i in range(2000):
+            child.handle.write(f"noisy line {i}\n")
+        tail = child.tail()
+    assert len(tail) <= 240
+    assert "1999" in tail  # the end, which is where the reason lives
+    assert "noisy line 0\n" not in tail
+
+
+def test_reading_the_tail_does_not_disturb_the_child_s_stream() -> None:
+    # tail() is called mid-failure while the subprocess may still hold the descriptor.
+    with capture_stderr() as child:
+        child.handle.write("first\n")
+        child.tail()
+        child.handle.write("second\n")
+        assert "second" in child.tail()
+        assert "first" in child.tail()

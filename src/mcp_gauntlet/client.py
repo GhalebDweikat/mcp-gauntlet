@@ -20,6 +20,7 @@ from mcp.types import InitializeResult
 
 from mcp_gauntlet.config import ServerSpec, TransportKind
 from mcp_gauntlet.content import block_text
+from mcp_gauntlet.errors import describe
 from mcp_gauntlet.models import (
     DiscoveryResult,
     PromptArgumentInfo,
@@ -28,7 +29,7 @@ from mcp_gauntlet.models import (
     ServerInfo,
     ToolInfo,
 )
-from mcp_gauntlet.protocol import TransportLog, watch_transport
+from mcp_gauntlet.protocol import TransportLog, capture_stderr, watch_transport
 
 _log = logging.getLogger(__name__)
 
@@ -159,14 +160,27 @@ async def open_session(
         # Only stdio can suffer this: there stdout IS the protocol channel, so a stray
         # `print` becomes a malformed message. Over HTTP a server's logs go nowhere near
         # the wire, and the check would always read zero.
-        with watch_transport() as transport:
+        started = False
+        with watch_transport() as transport, capture_stderr() as child_stderr:
             interactions.transport = transport
-            async with (
-                stdio_client(params) as (read, write),
-                _RecordingSession(read, write, interactions=interactions) as session,
-            ):
-                init = await _initialize(session)
-                yield session, init, interactions
+            try:
+                async with (
+                    stdio_client(params, errlog=child_stderr.handle) as (read, write),
+                    _RecordingSession(read, write, interactions=interactions) as session,
+                ):
+                    init = await _initialize(session)
+                    started = True
+                    yield session, init, interactions
+            except Exception as exc:
+                # Only enrich failures that happened while STARTING the server. Once the
+                # session is live the caller owns what goes wrong, and attaching a server's
+                # startup banner to an unrelated error downstream would mislead.
+                if started:
+                    raise
+                reason = child_stderr.tail()
+                if not reason:
+                    raise
+                raise MCPConnectionError(f"{describe(exc)} — the server said: {reason}") from exc
     else:
         # Imported lazily so the stdio path doesn't pay for the HTTP stack.
         from mcp.client.streamable_http import streamablehttp_client

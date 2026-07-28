@@ -163,6 +163,16 @@ async def open_session(
         started = False
         with watch_transport() as transport, capture_stderr() as child_stderr:
             interactions.transport = transport
+            # KNOWN LIMITATION: a server killed by the caller's timeout can outlive us.
+            # The SDK terminates the child's process group on exit, but with an `await`, and
+            # the cancellation that ends the evaluation cancels that await before the kill
+            # lands. Shielding the teardown is the obvious fix and does NOT work here:
+            # anyio requires a cancel scope to be exited in the task that entered it, and an
+            # @asynccontextmanager finalized under cancellation violates that. Fixing it
+            # properly means restructuring this into a class-based context manager, where
+            # __aexit__ runs in the caller's task. Until then `tests/test_protocol.py` marks
+            # it xfail so it is recorded rather than forgotten, and the survey script reaps
+            # leftovers between runs.
             try:
                 async with (
                     stdio_client(params, errlog=child_stderr.handle) as (read, write),

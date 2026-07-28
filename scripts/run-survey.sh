@@ -66,6 +66,18 @@ if [ -z "${!KEY_VAR:-}" ]; then
 fi
 if [ ! -f "$LIST" ]; then echo "no such server list: $LIST" >&2; exit 1; fi
 
+# A server killed by the per-server timeout can outlive the harness (see the KNOWN
+# LIMITATION note in client.py). One that did poisons the next attempt at it — an abandoned
+# ankimcp held port 3000, so every later evaluation failed with EADDRINUSE and the harness
+# scored its own debris. Surface leftovers before starting rather than after.
+leftovers=$(pgrep -a -f 'npx|uvx|mcp' 2>/dev/null | grep -v 'run-survey\|pgrep' || true)
+if [ -n "$leftovers" ]; then
+  echo "WARNING: processes from an earlier run may still be alive:" >&2
+  echo "$leftovers" | sed 's/^/    /' >&2
+  echo "  Kill them before scanning, or their ports and locks will fail this run." >&2
+  echo >&2
+fi
+
 command -v uvx >/dev/null || { echo "uvx not found — run survey-vm-setup.sh first" >&2; exit 1; }
 command -v npx >/dev/null || { echo "npx not found — run survey-vm-setup.sh first" >&2; exit 1; }
 

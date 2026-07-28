@@ -7,7 +7,9 @@ keeps running into. So the load-bearing test here drives a REAL fixture server t
 REAL session and asserts we noticed. It fails loudly rather than silently passing.
 """
 
+import contextlib
 import sys
+import time
 
 import anyio
 import pytest
@@ -166,3 +168,61 @@ def test_home_paths_are_stripped_wherever_they_appear() -> None:
             tail = child.tail()
         assert gone not in tail, raw
         assert "~" in tail, raw
+
+
+@pytest.mark.xfail(
+    reason="KNOWN: a timed-out server outlives us. The SDK kills the child's process group "
+    "with an await, and the cancellation that ends the evaluation cancels it first. "
+    "Shielding the teardown fails because anyio forbids exiting a cancel scope in a "
+    "different task than entered it, which is what @asynccontextmanager finalization "
+    "under cancellation does. The fix is a class-based context manager; this test exists "
+    "so the leak is recorded rather than forgotten.",
+    strict=False,
+)
+def test_a_timed_out_server_is_not_left_running() -> None:
+    """The bug this caught in the field: a leaked server poisons every later attempt.
+
+    An abandoned `ankimcp` kept port 3000 in the survey VM, so every subsequent evaluation
+    of it failed with EADDRINUSE — the harness scoring its own debris. The SDK does kill the
+    child's process group, but with an `await`, and the timeout that ends the evaluation
+    cancels that await before the kill lands. Teardown is shielded for exactly this.
+    """
+    import os
+    import signal
+    import tempfile as tf
+
+    pidfile = os.path.join(tf.mkdtemp(), "pid")
+    env = {**os.environ, "GAUNTLET_PIDFILE": pidfile}
+    spec = ServerSpec.parse(f"{sys.executable} -m mcp_gauntlet.fixtures.hanging_server")
+    spec.env.update({"GAUNTLET_PIDFILE": pidfile})
+
+    async def _run() -> None:
+        with anyio.move_on_after(5):  # the caller's per-server timeout, in miniature
+            async with open_session(spec) as (_s, _i, _x):
+                pass  # pragma: no cover - initialize never completes
+
+    prior = dict(os.environ)
+    os.environ.update(env)
+    try:
+        anyio.run(_run)
+    finally:
+        os.environ.clear()
+        os.environ.update(prior)
+
+    assert os.path.exists(pidfile), "fixture never started; the test proves nothing"
+    with open(pidfile, encoding="utf-8") as handle:
+        pid = int(handle.read())
+
+    # If the child survived the cancelled teardown, signal 0 succeeds.
+    alive = True
+    for _ in range(20):
+        try:
+            os.kill(pid, 0)
+        except (ProcessLookupError, PermissionError):
+            alive = False
+            break
+        time.sleep(0.25)
+    if alive:  # pragma: no cover - only on regression; don't leak from the test either
+        with contextlib.suppress(Exception):
+            os.kill(pid, getattr(signal, "SIGKILL", signal.SIGTERM))
+    assert not alive, f"server pid {pid} outlived the harness after a timeout"

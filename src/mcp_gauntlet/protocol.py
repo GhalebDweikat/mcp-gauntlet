@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import re
 import tempfile
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -74,6 +75,20 @@ class _ParseFailureHandler(logging.Handler):
         self._log.note(detail or str(exc))
 
 
+# Lines that carry no information about the failure. `npm` and `pip` both end a failure with
+# a pointer to a debug log, which is worthless to anyone reading a report on another machine
+# — and on a published board it prints the operator's home directory.
+_NOISE = re.compile(
+    r"(?i)^(?:npm\s+(?:error|ERR!)\s+)?A complete log of this run can be found in"
+    r"|^(?:npm\s+)?(?:error|ERR!)?\s*$"
+    r"|^See .* for details\.?$"
+)
+
+# Absolute paths through a user's home directory, in the three shapes that show up. The
+# report is published; nobody reading it needs the scanning machine's username.
+_HOME_PATH = re.compile(r"(?:/home/[^/\s]+|/Users/[^/\s]+|[A-Za-z]:\\Users\\[^\\\s]+)(?=[/\\]|\b)")
+
+
 class ChildStderr:
     """The child's stderr stream, plus a reader for the last thing it said."""
 
@@ -81,6 +96,13 @@ class ChildStderr:
         self.handle = handle
 
     def tail(self, limit: int = _STDERR_TAIL) -> str:
+        """The last few meaningful lines, with boilerplate and local paths removed.
+
+        Filtered rather than raw because this text is published. `npm error could not
+        determine executable to run` is the finding; the debug-log path that follows it is
+        noise on any machine but the one that produced it, and it carries the operator's
+        username onto a public page.
+        """
         try:
             self.handle.flush()
             position = self.handle.tell()
@@ -89,7 +111,11 @@ class ChildStderr:
             self.handle.seek(position)  # leave the stream where the child left it
         except (OSError, ValueError):  # closed or unreadable — never worth raising over
             return ""
-        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        lines = [
+            _HOME_PATH.sub("~", line.strip())
+            for line in text.splitlines()
+            if line.strip() and not _NOISE.match(line.strip())
+        ]
         return " / ".join(lines[-3:])[-limit:]
 
 

@@ -134,3 +134,35 @@ def test_reading_the_tail_does_not_disturb_the_child_s_stream() -> None:
         child.handle.write("second\n")
         assert "second" in child.tail()
         assert "first" in child.tail()
+
+
+def test_the_stderr_tail_does_not_publish_the_operators_home_directory() -> None:
+    """This text lands on a public board naming third-party servers.
+
+    npm ends a failure with a pointer to its debug log, which is useless on any machine but
+    the one that produced it — and prints the scanning operator's username. The finding is
+    "could not determine executable to run"; the path is noise with a privacy cost.
+    """
+    with capture_stderr() as child:
+        child.handle.write("npm error could not determine executable to run\n")
+        child.handle.write(
+            "npm error A complete log of this run can be found in: "
+            "/home/vboxuser/.npm/_logs/2026-07-27T23_25_14_171Z-debug-0.log\n"
+        )
+        tail = child.tail()
+    assert "could not determine executable to run" in tail  # the finding survives
+    assert "vboxuser" not in tail  # the username does not
+    assert "A complete log" not in tail
+
+
+def test_home_paths_are_stripped_wherever_they_appear() -> None:
+    for raw, gone in (
+        ("Cannot find module /home/alice/thing/index.js", "alice"),
+        ("ENOENT: /Users/bob/Library/x", "bob"),
+        (r"failed at C:\Users\carol\AppData\thing", "carol"),
+    ):
+        with capture_stderr() as child:
+            child.handle.write(raw + "\n")
+            tail = child.tail()
+        assert gone not in tail, raw
+        assert "~" in tail, raw

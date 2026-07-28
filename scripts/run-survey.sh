@@ -147,7 +147,7 @@ fi
 
 echo
 echo "exit status: $status"
-echo "results    : $OUT/servers/*.json  ($(ls -1 "$OUT/servers" 2>/dev/null | wc -l) file(s))"
+echo "results    : $OUT/servers/*.json  ($(ls -1 "$OUT"/servers/*.json 2>/dev/null | wc -l) server(s))"
 echo "log        : survey-run.log"
 cat <<'EOF'
 

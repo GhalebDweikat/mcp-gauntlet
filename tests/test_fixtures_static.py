@@ -4,6 +4,7 @@ These spawn a real MCP subprocess but make no LLM calls, so they run in CI.
 """
 
 import sys
+from pathlib import Path
 
 import anyio
 
@@ -74,3 +75,32 @@ def test_the_preflight_declines_to_score_the_gated_fixture() -> None:
     assert reason is not None
     assert "needs credentials" in reason
     assert "GATED_API_KEY" in reason or "401" in reason
+
+
+def test_fixture_scores_match_the_recorded_snapshot() -> None:
+    """An exact guard, because the assertions above are not one.
+
+    The other tests here check `grade in ("A", "B")` and `overall_score <= 75` — a regression
+    from 99.4 to 92 passes both. That was fine while nothing was being refactored underneath
+    them; it is not fine during the SDK-adapter port, whose entire promise is that scores do
+    not move.
+
+    The snapshot also pins each tool's drift fingerprint, which is the likeliest silent mover:
+    `fingerprint()` digests output_schema, the annotation hints and `_meta`, so any change in
+    how those are READ — `{}` versus None is enough — changes every digest, and every tool on
+    the published board would report "definition changed since the last run" at MEDIUM on the
+    grade-capping dimension.
+
+    Regenerate deliberately, never reflexively:  python scripts/snapshot_fixtures.py --write
+    """
+    import subprocess
+
+    result = subprocess.run(
+        [sys.executable, "scripts/snapshot_fixtures.py"],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parent.parent,
+    )
+    assert result.returncode == 0, (
+        "fixture scores or tool fingerprints moved:\n" + result.stdout + result.stderr
+    )

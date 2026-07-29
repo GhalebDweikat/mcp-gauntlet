@@ -20,7 +20,7 @@
 #
 set -euo pipefail
 
-VERSION="${MCP_GAUNTLET_VERSION:-0.6.0}"
+VERSION="${MCP_GAUNTLET_VERSION:-0.7.0}"
 
 have() { command -v "$1" >/dev/null 2>&1; }
 

@@ -3,6 +3,30 @@
 All notable changes to mcp-gauntlet are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] — 2026-07-28
+
+### Changed
+
+- **Secret and exfiltration references no longer affect the score.** Auditing a 50-server
+  survey before publishing it produced 25 of these findings and every one was a false
+  positive: credential managers doing their job ("Remove stored authentication
+  credentials"), servers *documenting* good practice ("env VALUES are NOT exfiltrated",
+  "encrypted into the credentials cipher; never returned"), servers linking to their own
+  API-key page, and a PCAP forensics server marked down for the phrase "data exfiltration" —
+  its subject. It was deciding published grades: one server carried six at a D. The
+  vocabulary is shared between an attacker and an honest credential helper and the
+  difference is intent, which a pattern cannot see, so both signals are now INFO — still
+  reported for a human, no longer scoring.
+- **Ambiguous write verbs are judged on the tool name.** `add` was in neither verb list, so
+  `add_observations` ran under a read-only promise. It cannot simply join the list —
+  `add(a, b)` is arithmetic, and excluding compute tools is what the fail-open trade-off
+  exists to prevent. A compound *name* (`add_note`, `git_add`, `addNote`) now counts as
+  mutating while a bare `add` does not, and the description is ignored, because `add`'s own
+  description is "Add two integers and return their sum". Same for
+  init/attach/assign/import/restore/sync.
+- **Scores are not comparable with 0.6.0** for a server whose descriptions mention
+  credentials, or that exposes an `add_*`-style tool.
+
 ## [0.6.0] — 2026-07-26
 
 ### Added

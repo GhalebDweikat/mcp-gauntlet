@@ -15,11 +15,18 @@ spec, and records the revision each server negotiated on its report. A server th
 a revision this harness does not support is reported as unevaluable *by the harness* — that
 is a limitation here, not a defect in the server, and it is never scored as a failure.
 
-A further revision (**2026-07-28**) is in release candidate as of this writing. It replaces
-the `initialize` handshake with a `server/discover` probe and moves server-initiated
-sampling and elicitation to a client-driven pattern. Everything this tool actually scores —
-tool fields and annotations, prompts, resources, content blocks, pagination — is unchanged
-or only additively changed by it, but support is deliberately not claimed until it lands.
+Revision **2026-07-28 finalized on schedule**, and `mcp` SDK 2.0.0 shipped the same day. This
+harness does **not** speak it yet: it pins `mcp>=1.9,<2`, so nothing breaks for anyone using
+it, but the spec's own compatibility matrix rates a legacy client against a modern-only server
+as failing. Such a server is reported as unevaluable *by the harness*, never as a defect in
+the server.
+
+Two corrections to what was written here before it landed, since both were repeated widely:
+`server/discover` does **not** replace the `initialize` handshake — it is optional for clients,
+and the protocol version rides in `_meta` on every request. And output schemas did not become
+"unrestricted"; they are still objects. What did change, and does affect a client, is that
+server-initiated sampling and elicitation are forbidden in favour of an `input_required`
+result, and every SDK field was renamed to snake_case.
 
 ## The scoring model
 
@@ -165,7 +172,16 @@ finished, a sample size the server itself controls.
 
 ## Publishing results about other people's servers
 
-The leaderboard names third-party servers, so it follows these rules:
+**Nothing is published right now.** Two leaderboards naming third-party servers were taken
+down in July 2026, because the harness had been caught grading servers on its own defects
+three separate times in three days — invented filesystem paths that made A-grade servers look
+like D, twenty-five credential-vocabulary findings that were all false positives, and package
+versions pinned from registry metadata that lagged the real releases badly. Each was fixed and
+written up. But rule 2 below promises advance notice to anyone appearing with a low score, and
+that notice was never sent, so the boards were withheld rather than left up in breach of it.
+
+The rules stand as the conditions for publishing again — not as a description of something
+currently happening. They apply from the next published board onward:
 
 1. **Coordinated disclosure.** A HIGH-severity *security* finding on a named third-party
    server is reported privately to its maintainers first, with a **14-day** window before

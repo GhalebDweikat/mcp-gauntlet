@@ -71,77 +71,29 @@ Each run produces a graded report card (JSON + Markdown) across:
   servers register tools lazily, gate them on auth (MCP has a `tools.listChanged` capability
   for exactly that), and edit descriptions without bumping a static version.
 
-## Leaderboard
+## Leaderboard — withheld for now
 
-A live leaderboard ranks popular public MCP servers by their gauntlet score:
-**[ghalebdweikat.github.io/mcp-gauntlet](https://ghalebdweikat.github.io/mcp-gauntlet/)**
+There is no live leaderboard. Two boards were published and have been taken down until the
+scoring model stops moving; the reasoning is at
+**[ghalebdweikat.github.io/mcp-gauntlet](https://ghalebdweikat.github.io/mcp-gauntlet/)** and
+the data is kept in `boards-withheld/` rather than deleted, so the corrections stay auditable.
 
-### Registry survey — 50 servers
+The short version: inside three days the harness was found to have graded servers on its own
+defects three separate times — invented filesystem paths, credential-vocabulary false
+positives, and pinning to a registry version that lagged the published package by 23 minor
+releases. Each was fixed. But publishing scores about named third parties is the highest-stakes
+thing this tool does, and `METHODOLOGY.md` promises those servers advance notice, which they
+never got.
 
-**[ghalebdweikat.github.io/mcp-gauntlet/survey](https://ghalebdweikat.github.io/mcp-gauntlet/survey/)**
-
-A separate board, from a survey of 50 servers taken mechanically from the official MCP
-registry as of 2026-07-28 — every entry that is installable over stdio and declares no
-required credential, capped at two per publisher so one vendor's cluster could not stand in
-for the ecosystem. `scripts/build_survey_list.py` does the selection, so the sample can be
-argued with rather than taken on trust.
-
-The headline is not a ranking. **23 of the 50 could not be started at all**: packages
-published with no executable, servers that need an account the registry did not declare,
-servers that never answered. Each row says which. Kept separate from the board above
-because the two were scored by different versions, and scores only mean something within
-one.
-
-Generate one yourself across any set of servers listed in a JSON file:
+Generate your own across any set of servers listed in a JSON file — locally, published nowhere:
 
 ```bash
-uv run mcp-gauntlet leaderboard --servers leaderboard.servers.json --out docs --board-url https://you.github.io/mcp-gauntlet
+uv run mcp-gauntlet leaderboard --servers leaderboard.servers.json --out board
 ```
 
-Each server's raw result is saved to `servers/<name>.json` alongside its page, so the
-site can be rebuilt for free after a presentation change — no re-running (or re-paying
-for) the evaluation:
-
-```bash
-uv run mcp-gauntlet leaderboard --render-only --out docs
-```
-
-Only servers the agent actually scored share the ranked table. The overall is a weighted
-mean over the dimensions *present*, so a server the agent never ran against — no LLM
-configured, the backend rate-limited it, or every tool was excluded as possibly-mutating —
-skips Agent Task Success (the heaviest dimension) and would score systematically higher on
-a smaller denominator. Those are listed separately under **Partially evaluated**, each with
-the reason it wasn't ranked, rather than mixed in where an untested server could outrank a
-tested one.
-
-Every row shows the date its score was **measured**, not when the page was last rebuilt,
-and the board names the gauntlet versions behind its numbers — scoring changes between
-releases, so scores are only comparable within a version.
-
-[**METHODOLOGY.md**](https://github.com/GhalebDweikat/mcp-gauntlet/blob/main/METHODOLOGY.md)
-documents how a score is computed, what it is *not*
-(it is not a security audit, and it is not deterministic), and the policies the leaderboard
-follows when publishing results about other people's servers — coordinated disclosure,
-advance notice, free disputes, no pay-to-play. Think a score is wrong?
-[Open an issue](https://github.com/GhalebDweikat/mcp-gauntlet/issues) — re-runs are free.
-
-### Badges
-
-Each listed server gets a [shields.io endpoint](https://shields.io/badges/endpoint-badge)
-document at `badges/<slug>.json`, so its author can show a live grade in their README:
-
-```markdown
-[![mcp-gauntlet](https://img.shields.io/endpoint?url=https://ghalebdweikat.github.io/mcp-gauntlet/badges/sqlite.json)](https://ghalebdweikat.github.io/mcp-gauntlet/)
-```
-
-The badge tracks the published board, so it updates when the board is regenerated. A server
-that fails to evaluate reads *not evaluated* rather than keeping its last grade, and
-`--render-only` retires the badge of any server no longer in `servers/`.
-
-Renaming a server changes its slug, which leaves the old saved result — and so the old
-badge — in place. Delete the stale `servers/<old-slug>.json` and re-render to retire it.
-Saved results are never removed automatically: they are the paid-for measurements that make
-`--render-only` free.
+Each server's raw result is saved to `board/servers/<name>.json` alongside its page, so the
+site can be rebuilt for free after a presentation change — no re-running, and no re-paying an
+LLM provider. `--render-only` does exactly that.
 
 ## Quickstart
 

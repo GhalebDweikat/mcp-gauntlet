@@ -18,16 +18,13 @@ from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
 from mcp.types import InitializeResult
 
+from mcp_gauntlet.adapters import adapter
 from mcp_gauntlet.config import ServerSpec, TransportKind
-from mcp_gauntlet.content import block_text
 from mcp_gauntlet.errors import describe
 from mcp_gauntlet.models import (
     DiscoveryResult,
-    PromptArgumentInfo,
     PromptInfo,
     ResourceInfo,
-    ServerInfo,
-    ToolInfo,
 )
 from mcp_gauntlet.protocol import TransportLog, capture_stderr, watch_transport
 
@@ -226,38 +223,16 @@ async def discover_in_session(
             if tool.name not in seen_names:
                 seen_names.add(tool.name)
                 raw_tools.append(tool)
-        cursor = listed.nextCursor
+        cursor = adapter().next_cursor(listed)
         if not cursor or cursor in seen_cursors:
             break
         seen_cursors.add(cursor)
     else:
         _log.warning("tools/list did not terminate within 100 pages; discovery may be truncated")
 
-    tools = [
-        ToolInfo(
-            name=tool.name,
-            description=tool.description,
-            input_schema=dict(tool.inputSchema or {}),
-            # Display titles and the output schema are server-authored text that reaches the
-            # model in some clients, so they are captured here to be scanned. Dropping them
-            # at discovery made them unreachable by the injection scan — a payload placed in
-            # one was invisible to the check that exists to find it.
-            title=getattr(tool, "title", None),
-            annotation_title=getattr(tool.annotations, "title", None),
-            output_schema=dict(getattr(tool, "outputSchema", None) or {}),
-            read_only_hint=getattr(tool.annotations, "readOnlyHint", None),
-            destructive_hint=getattr(tool.annotations, "destructiveHint", None),
-            meta=_meta_of(tool),
-        )
-        for tool in raw_tools
-    ]
-    server = ServerInfo(
-        name=getattr(init.serverInfo, "name", None),
-        version=getattr(init.serverInfo, "version", None),
-        title=getattr(init.serverInfo, "title", None),
-        instructions=getattr(init, "instructions", None),
-        protocol_version=str(pv) if (pv := getattr(init, "protocolVersion", None)) else None,
-    )
+    sdk = adapter()
+    tools = [sdk.tool_info(tool) for tool in raw_tools]
+    server = sdk.server_info(init)
     prompts = await _discover_prompts(session, fetch_prompts)
     resources = await _discover_resources(session)
     return DiscoveryResult(server=server, tools=tools, prompts=prompts, resources=resources)
@@ -269,14 +244,8 @@ def _meta_of(obj: object) -> dict[str, Any]:
 
 
 def _page_params(cursor: str | None) -> dict[str, Any]:
-    """Keyword arguments requesting one page of a paginated list.
-
-    The SDK still accepts a bare ``cursor=``, but its own docstring marks it deprecated in
-    favour of ``params``, and the overload disappears in `mcp` 2.0. Sending no ``params`` at
-    all for the first page — rather than an empty object — keeps that request byte-identical
-    to what servers already answer today.
-    """
-    return {} if cursor is None else {"params": types.PaginatedRequestParams(cursor=cursor)}
+    """Keyword arguments requesting one page — shape decided by the installed SDK's era."""
+    return adapter().page_params(cursor)
 
 
 async def _paginate(
@@ -293,7 +262,7 @@ async def _paginate(
     for _ in range(100):
         page = await fetch_page(cursor)
         items.extend(items_of(page))
-        cursor = getattr(page, "nextCursor", None)
+        cursor = adapter().next_cursor(page)
         if not cursor or cursor in seen_cursors:
             break
         seen_cursors.add(cursor)
@@ -336,43 +305,21 @@ async def _discover_prompts(session: ClientSession, fetch: bool) -> list[PromptI
         _log.debug("prompts/list unavailable: %s", exc)
         return []
 
+    sdk = adapter()
     prompts: list[PromptInfo] = []
     for prompt in listed:
-        arguments = [
-            PromptArgumentInfo(
-                name=arg.name,
-                description=getattr(arg, "description", None),
-                required=bool(getattr(arg, "required", False)),
-            )
-            for arg in (prompt.arguments or [])
-        ]
-        info = PromptInfo(
-            name=prompt.name,
-            title=getattr(prompt, "title", None),
-            description=prompt.description,
-            arguments=arguments,
-            meta=_meta_of(prompt),
-        )
+        info = sdk.prompt_info(prompt)
         if not fetch:
             info.unrendered_reason = "probing is disabled"
-        elif any(arg.required for arg in arguments):
+        elif any(arg.required for arg in info.arguments):
             info.unrendered_reason = "it requires arguments"
         else:
             try:
-                result = await session.get_prompt(prompt.name, {})
-                # block_text, not `.text`: a prompt message's content can be an embedded
-                # resource or a resource link, which is exactly how a prompt puts a
-                # document in front of the model — and reading only `.text` dropped both.
-                info.messages = [
-                    text
-                    for message in result.messages
-                    if (text := block_text(getattr(message, "content", None)))
-                ]
-                info.result_description = result.description
-                info.result_meta = _meta_of(result)
+                result = await session.get_prompt(info.name, {})
+                info.messages, info.result_description, info.result_meta = sdk.prompt_result(result)
                 info.rendered = True
             except Exception as exc:  # noqa: BLE001 - a prompt that won't render isn't fatal
-                _log.debug("prompts/get %s failed: %s", prompt.name, exc)
+                _log.debug("prompts/get %s failed: %s", info.name, exc)
                 info.unrendered_reason = f"rendering it failed ({str(exc)[:120]})"
         prompts.append(info)
     return prompts
@@ -393,15 +340,7 @@ async def _discover_resources(session: ClientSession) -> list[ResourceInfo]:
             )
         )
         found.extend(
-            ResourceInfo(
-                name=resource.name,
-                title=getattr(resource, "title", None),
-                uri=str(resource.uri),
-                description=resource.description,
-                mime_type=resource.mimeType,
-                meta=_meta_of(resource),
-            )
-            for resource in listed_resources
+            adapter().resource_info(resource, is_template=False) for resource in listed_resources
         )
     except Exception as exc:  # noqa: BLE001 - "method not found" is the no-resources case
         _log.debug("resources/list unavailable: %s", exc)
@@ -412,18 +351,7 @@ async def _discover_resources(session: ClientSession) -> list[ResourceInfo]:
                 lambda p: list(p.resourceTemplates),
             )
         )
-        found.extend(
-            ResourceInfo(
-                name=template.name,
-                title=getattr(template, "title", None),
-                uri=template.uriTemplate,
-                description=template.description,
-                mime_type=template.mimeType,
-                is_template=True,
-                meta=_meta_of(template),
-            )
-            for template in templates
-        )
+        found.extend(adapter().resource_info(template, is_template=True) for template in templates)
     except Exception as exc:  # noqa: BLE001 - same: absent is the common case
         _log.debug("resources/templates/list unavailable: %s", exc)
     return found

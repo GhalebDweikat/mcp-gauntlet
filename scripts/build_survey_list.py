@@ -162,13 +162,18 @@ def select(entries: list[dict[str, Any]], limit: int, per_publisher: int) -> lis
             while name in seen_name:
                 name, suffix = f"{short}-{suffix}", suffix + 1
 
-            # Pinned. The registry gives a version for every package, and an unpinned
-            # `npx -y pkg` resolves to whatever npm calls latest on the day — so re-running
-            # this script next month would scan different code and produce different scores
-            # with no way to tell. The harness version is pinned to three decimals; the thing
-            # being measured should not float.
-            version = str(pkg.get("version") or "").strip()
-            spec_id = f"{identifier}@{version}" if version else str(identifier)
+            # NOT pinned to the registry's version, though it records one — TRIED IT, and
+            # reverted. The registry's version field lags the published package badly:
+            # `@adeu/mcp-server` records 1.7.1 while npm ships 1.30.0, `@oobe-protocol-labs/
+            # sap-mcp-server` records 0.7 against 0.9.52. Pinning therefore scanned code the
+            # maintainer shipped long ago and has since fixed, and published a grade for a
+            # version nobody runs. Two servers that scored A on latest failed outright on the
+            # recorded version.
+            #
+            # Scanning what a user actually gets is both fairer and more useful, and
+            # provenance is not lost: every server self-reports its version over the
+            # protocol, and the report records it (all 27 scored servers did).
+            spec_id = str(identifier)
 
             seen_pkg.add(str(identifier))
             seen_name.add(name)

@@ -13,8 +13,10 @@ All notable changes to mcp-gauntlet are documented here. This project adheres to
   credentials"), servers *documenting* good practice ("env VALUES are NOT exfiltrated",
   "encrypted into the credentials cipher; never returned"), servers linking to their own
   API-key page, and a PCAP forensics server marked down for the phrase "data exfiltration" —
-  its subject. It was deciding published grades: one server carried six at a D. The
-  vocabulary is shared between an attacker and an honest credential helper and the
+  its subject. Re-running the survey put the effect at roughly two points, not the letter
+  grades I first assumed — the D-grade server's security dimension went to 100 while its
+  grade barely moved, because the agent was failing its tasks for unrelated reasons. Scoring
+  on noise is wrong regardless of how much it moves. The vocabulary is shared between an attacker and an honest credential helper and the
   difference is intent, which a pattern cannot see, so both signals are now INFO — still
   reported for a human, no longer scoring.
 - **Ambiguous write verbs are judged on the tool name.** `add` was in neither verb list, so

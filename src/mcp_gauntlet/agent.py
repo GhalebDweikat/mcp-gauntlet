@@ -89,17 +89,26 @@ def _asks_for_input(result: Any) -> bool:
     """
     if result is None:
         return False
-    kind = getattr(result, "resultType", None)
-    if kind is None and isinstance(result, dict):
-        kind = result.get("resultType")
-    if kind == "input_required":
+
+    def read(*names: str) -> Any:
+        # BOTH spellings, deliberately. `mcp` 2.0 renamed these to snake_case
+        # (`CallToolResult.result_type`, verified against 2.0.0), and reading only the
+        # camelCase name would return None on exactly the servers this exists for — the
+        # attribution would invert silently, which is the bug this function was written to
+        # prevent. The dict fallback covers a result that was never parsed into a model.
+        for name in names:
+            value = getattr(result, name, None)
+            if value is None and isinstance(result, dict):
+                value = result.get(name)
+            if value is not None:
+                return value
+        return None
+
+    if read("result_type", "resultType") == "input_required":
         return True
-    # Belt and braces: a server can carry inputRequests without setting resultType, and the
+    # Belt and braces: a server can carry the requests without setting the type, and the
     # requests are the thing that actually needs a human.
-    requests = getattr(result, "inputRequests", None)
-    if requests is None and isinstance(result, dict):
-        requests = result.get("inputRequests")
-    return bool(requests)
+    return bool(read("input_requests", "inputRequests"))
 
 
 class AgentTrace(BaseModel):

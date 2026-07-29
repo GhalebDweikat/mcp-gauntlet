@@ -1200,3 +1200,30 @@ async def test_an_ordinary_failure_is_still_the_servers_problem() -> None:
     assert not call.needed_interaction
     assert call.counts_for_reliability
     assert interactions.total == 0
+
+
+def test_mrtr_detection_reads_both_field_spellings() -> None:
+    """`mcp` 2.0 renamed this to `result_type`, and reading one spelling defeats the check.
+
+    Verified against the released SDK: CallToolResult carries `result_type` and
+    `structured_content`. A camelCase-only read returns None on precisely the servers this
+    was written for, and the attribution inverts silently — the failure mode the whole
+    interaction path exists to avoid.
+    """
+    from mcp_gauntlet.agent import _asks_for_input
+
+    positives: list[Any] = [
+        SimpleNamespace(resultType="input_required", inputRequests={"a": {}}),
+        SimpleNamespace(result_type="input_required", input_requests={"a": {}}),
+        {"result_type": "input_required"},
+    ]
+    for shape in positives:
+        assert _asks_for_input(shape), shape
+
+    negatives: list[Any] = [
+        SimpleNamespace(result_type="complete"),
+        SimpleNamespace(isError=True, content=[]),
+        None,
+    ]
+    for shape in negatives:
+        assert not _asks_for_input(shape), shape

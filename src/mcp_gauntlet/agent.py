@@ -74,6 +74,34 @@ class ToolCallRecord(BaseModel):
         return self.ok or not self.needed_interaction
 
 
+def _asks_for_input(result: Any) -> bool:
+    """Whether a tool result is the MRTR "I need something from the user" shape.
+
+    MCP revision 2026-07-28 removed server-initiated elicitation and sampling: instead of
+    pushing a request at the client, a server returns `resultType: "input_required"` with an
+    `inputRequests` map and waits to be called again carrying the answers.
+
+    mcp-gauntlet drives no user and no second LLM, so this is declined exactly as the old
+    push-style request was — but it has to be *seen* first, and it arrives as an ordinary
+    result rather than on the receive loop. Read defensively through getattr and a dict
+    fallback: on an older SDK the field does not exist, and on a newer one it may be a model
+    or a plain mapping depending on how strictly the result was parsed.
+    """
+    if result is None:
+        return False
+    kind = getattr(result, "resultType", None)
+    if kind is None and isinstance(result, dict):
+        kind = result.get("resultType")
+    if kind == "input_required":
+        return True
+    # Belt and braces: a server can carry inputRequests without setting resultType, and the
+    # requests are the thing that actually needs a human.
+    requests = getattr(result, "inputRequests", None)
+    if requests is None and isinstance(result, dict):
+        requests = result.get("inputRequests")
+    return bool(requests)
+
+
 class AgentTrace(BaseModel):
     task: str
     final_text: str = ""
@@ -254,6 +282,7 @@ async def run_agent_task(
             # a failure is the harness's limit, not the server's, and won't count against
             # Tool Reliability.
             interactions_before = interactions.total if interactions is not None else 0
+            result: Any = None
             try:
                 # Bound every dispatch: an unbounded call_tool lets one hung tool hang the
                 # whole CLI forever (the MCP session has no read timeout of its own).
@@ -288,6 +317,20 @@ async def run_agent_task(
                 record.scan_text = f"ERROR: {exc}"[:scan_char_limit]
             if interactions is not None and interactions.total > interactions_before:
                 record.needed_interaction = True
+            elif _asks_for_input(result):
+                # The same fact, arriving the other way round. Under MCP revision
+                # 2026-07-28 a server MUST NOT push an elicitation or sampling request at
+                # the client; it returns `resultType: "input_required"` inside an ordinary
+                # tool result and waits to be re-called with the answers.
+                #
+                # Detected here because the counter above never moves for such a server:
+                # nothing arrives on the receive loop. Without this the attribution silently
+                # inverts — a call the harness declined to complete looks like a plain
+                # failure and is charged to the server's Tool Reliability, which is the
+                # opposite of what this whole path exists to do.
+                record.needed_interaction = True
+                if interactions is not None:
+                    interactions.elicitation += 1
             trace.tool_calls.append(record)
             messages.append(
                 {

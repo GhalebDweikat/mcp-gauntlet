@@ -1125,3 +1125,78 @@ async def test_interaction_blocked_task_failure_blames_the_harness_not_the_agent
     assert "harness limit" in messages
     assert "agent signal" not in messages
     assert "server signal" not in messages
+
+
+async def test_mrtr_input_required_is_declined_like_a_pushed_elicitation() -> None:
+    """MCP 2026-07-28 inverted how a server asks for input, and that silently flips blame.
+
+    Servers MUST NOT push elicitation/sampling requests any more; they return
+    `resultType: "input_required"` inside an ordinary result and wait to be re-called with
+    the answers. Our decline counter watches the receive loop, so for such a server it never
+    moves — and a call the harness declined to complete would be charged to the server's Tool
+    Reliability as a plain failure, which is the exact opposite of what that attribution is
+    for.
+    """
+
+    class _NeedsInput:
+        async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
+            return SimpleNamespace(
+                isError=True,
+                resultType="input_required",
+                inputRequests={"confirm": {"message": "Are you sure?"}},
+                content=[SimpleNamespace(type="text", text="awaiting confirmation")],
+                structuredContent=None,
+            )
+
+    bridge = build_tool_bridge([_ADD])
+    fn = bridge.tools[0]["function"]["name"]
+    responses = [
+        _completion(_msg(tool_calls=[_tool_call("c1", fn, '{"a": 1, "b": 2}')])),
+        _completion(_msg(content="could not finish")),
+    ]
+    interactions = InteractionLog()
+    trace = await run_agent_task(
+        session=cast(ClientSession, _NeedsInput()),
+        bridge=bridge,
+        client=_client(responses),
+        model="m",
+        task="t",
+        interactions=interactions,
+    )
+    call = trace.tool_calls[0]
+    assert call.needed_interaction
+    assert not call.counts_for_reliability  # the failure is ours, not the server's
+    assert trace.blocked_on_interaction
+    assert interactions.total == 1  # and the report's interaction note says so
+
+
+async def test_an_ordinary_failure_is_still_the_servers_problem() -> None:
+    # The inverse: without the MRTR shape, a failed call must still count against the
+    # server. Otherwise the new detection would excuse every failure.
+    class _JustFails:
+        async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
+            return SimpleNamespace(
+                isError=True,
+                content=[SimpleNamespace(type="text", text="boom")],
+                structuredContent=None,
+            )
+
+    bridge = build_tool_bridge([_ADD])
+    fn = bridge.tools[0]["function"]["name"]
+    responses = [
+        _completion(_msg(tool_calls=[_tool_call("c1", fn, '{"a": 1, "b": 2}')])),
+        _completion(_msg(content="failed")),
+    ]
+    interactions = InteractionLog()
+    trace = await run_agent_task(
+        session=cast(ClientSession, _JustFails()),
+        bridge=bridge,
+        client=_client(responses),
+        model="m",
+        task="t",
+        interactions=interactions,
+    )
+    call = trace.tool_calls[0]
+    assert not call.needed_interaction
+    assert call.counts_for_reliability
+    assert interactions.total == 0

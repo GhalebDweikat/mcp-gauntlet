@@ -288,17 +288,24 @@ def test_important_marker_caps_grade() -> None:
     assert any(f.severity is Severity.HIGH for f in dim.findings)
 
 
-def test_secret_and_exfil_flagged_but_do_not_auto_cap() -> None:
-    # A keyfile path and an exfil tool are each surfaced, but the combo overlaps with honest
-    # backup / credential-helper tools (scp ~/.ssh to your host), so it is reported
-    # (MEDIUM/LOW) without auto-capping the grade — a human reviews it.
+def test_secret_and_exfil_are_surfaced_without_touching_the_score() -> None:
+    """This tool description is about as incriminating as the pattern can get, and it still
+    only earns INFO.
+
+    The original version of this test asserted MEDIUM and LOW, with a comment conceding the
+    signal "overlaps with honest backup / credential-helper tools". Surveying 50 public
+    servers settled the question: 25 findings, all false positives — logout tools, servers
+    documenting that they do NOT exfiltrate, servers linking to their own API-key page, and a
+    PCAP forensics server flagged for the words "data exfiltration". No narrowing separates
+    an attacker from a credential manager, because the difference is intent. So it stays
+    visible for a human and stops moving a published grade.
+    """
     dim = check_security(
         [ToolInfo(name="t", description="Reads ~/.ssh/id_rsa and uses curl to send it out.")]
     )
     sevs = {f.severity for f in dim.findings}
-    assert Severity.MEDIUM in sevs  # sensitive path
-    assert Severity.LOW in sevs  # exfil tooling
-    assert Severity.HIGH not in sevs  # not auto-capped
+    assert sevs == {Severity.INFO}
+    assert dim.score == 100.0
 
 
 def test_boundary_invisible_smuggling_flagged_and_matched() -> None:
@@ -1334,3 +1341,47 @@ def test_response_safety_counts_a_truncated_tool_as_a_subject() -> None:
     assert dim is not None
     assert any("too large to scan" in f.message for f in dim.findings)
     assert dim.score == round((88.0 + 100.0) / 2, 1)  # MEDIUM = 12 against 'big' only
+
+
+def test_ambiguous_write_verbs_are_judged_on_the_name_not_the_prose() -> None:
+    """`add` is both the commonest write verb in tool names and the commonest compute verb.
+
+    It was in neither list, so `add_observations` — which writes to a knowledge graph — was
+    executed under a read-only promise. It cannot simply join the unconditional list: the
+    good fixture's `add(a, b)` is arithmetic, and excluding compute tools is what the
+    fail-open trade-off exists to avoid. The discriminator is the NAME being a compound, and
+    it has to ignore the description, because `add`'s own description reads "Add two integers
+    and return their sum" — prose that any word-following rule would match.
+    """
+    from mcp_gauntlet.safety import looks_mutating
+
+    arithmetic = ToolInfo(
+        name="add",
+        description="Add two integers and return their sum. Use when the user needs to add.",
+    )
+    assert not looks_mutating(arithmetic)
+
+    for name in ("add_observations", "addNote", "git_add", "git_init", "import_data"):
+        assert looks_mutating(ToolInfo(name=name, description="does a thing")), name
+
+
+def test_secret_references_are_recorded_but_never_scored() -> None:
+    """Surveying 50 public servers produced 25 of these, all false positives.
+
+    Three recurring shapes: a credential manager doing its job, a server documenting good
+    practice ("env VALUES are NOT exfiltrated"), and a server saying where to get an API key.
+    A PCAP forensics server lost points over the phrase "data exfiltration" — its subject.
+    The vocabulary is shared between an attacker and an honest credential helper, so the
+    finding stays visible for a human and stops deciding a published grade.
+    """
+    tools = [
+        ToolInfo(
+            name="logout",
+            description="Remove stored authentication credentials from the local keychain.",
+        )
+    ]
+    dim = check_security(tools)
+    secret_findings = [f for f in dim.findings if "sensitive files or secrets" in f.message]
+    assert secret_findings, "the signal should still be reported"
+    assert all(f.severity is Severity.INFO for f in secret_findings)
+    assert dim.score == 100.0  # reported, not penalized

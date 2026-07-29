@@ -54,8 +54,22 @@ MODEL="${SURVEY_MODEL:-gemini-flash-latest}"
 # The env var mcp-gauntlet reads for this provider (GEMINI_API_KEY, GROQ_API_KEY, ...).
 KEY_VAR="${SURVEY_KEY_VAR:-$(printf '%s' "$PROVIDER" | tr '[:lower:]-' '[:upper:]_')_API_KEY}"
 
+# Argument parsing is strict on purpose. `--pilot=5` and `--pilot abc` both used to fall
+# through to PILOT=0 and run the FULL survey — executing ~50 unvetted packages, and spending
+# ten times the money, when the user asked for five. `set -e` does not save you: it is
+# disabled inside an `if` condition, so the failing integer test just printed a cryptic line
+# and carried on. A pilot flag that silently means "no pilot" is worse than no flag.
 PILOT=0
-if [ "${1:-}" = "--pilot" ]; then PILOT="${2:?--pilot needs a count}"; fi
+case "${1:-}" in
+  "") ;;
+  --pilot) PILOT="${2:?--pilot needs a count}"; shift 2 ;;
+  --pilot=*) PILOT="${1#--pilot=}"; shift ;;
+  *) echo "unknown argument: $1" >&2; echo "usage: $0 <servers.json> [--pilot N]" >&2; exit 1 ;;
+esac
+case "$PILOT" in
+  ''|*[!0-9]*) echo "--pilot needs a whole number, got: $PILOT" >&2; exit 1 ;;
+esac
+[ "$#" -eq 0 ] || { echo "unexpected extra argument: $1" >&2; exit 1; }
 
 # ---------------------------------------------------------------- preconditions
 if [ -z "${!KEY_VAR:-}" ]; then
@@ -83,6 +97,7 @@ command -v npx >/dev/null || { echo "npx not found — run survey-vm-setup.sh fi
 
 if [ "$PILOT" -gt 0 ]; then
   LIST_TO_RUN="$(mktemp)"
+  trap 'rm -f "$LIST_TO_RUN"' EXIT
   python3 - "$LIST" "$PILOT" "$LIST_TO_RUN" <<'PY'
 import json, sys
 src, n, dst = sys.argv[1], int(sys.argv[2]), sys.argv[3]
@@ -104,7 +119,6 @@ mcp-gauntlet survey
   model     : $PROVIDER:$MODEL  ($TASKS tasks x $REPEATS repeats)
   timeouts  : ${TIMEOUT}s per server, ${TOOL_TIMEOUT}s per tool call
   output    : $OUT
-  estimate  : ~\$$(python3 -c "print(f'{$COUNT*0.09:.2f}')") at ~\$0.09/server
 --------------------------------------------------------------------------------
 Each server is downloaded and EXECUTED. Confirm this VM is snapshotted.
 EOF
@@ -161,13 +175,13 @@ echo
 echo "exit status: $status"
 echo "results    : $OUT/servers/*.json  ($(ls -1 "$OUT"/servers/*.json 2>/dev/null | wc -l) server(s))"
 echo "log        : survey-run.log"
-cat <<'EOF'
+cat <<EOF
 
 Next:
   1. Copy the results to the host — the JSON is what matters; the HTML is regenerated
      there for free with `mcp-gauntlet leaderboard --render-only`:
 
-         tar czf survey-results.tgz survey-out survey-run.log
+         tar czf survey-results.tgz $OUT survey-run.log
 
   2. Roll this VM back to its snapshot, and revoke the API key you used here.
 EOF

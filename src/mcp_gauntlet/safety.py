@@ -89,6 +89,36 @@ def _hint_says_mutating(tool: ToolInfo) -> bool:
     return tool.destructive_hint is True or tool.read_only_hint is False
 
 
+# Verbs that mutate only when they take an object. `add` is the reason this exists: it is one
+# of the commonest write verbs in tool names (`add_observations`, `add_note`, `add_record`) and
+# also the commonest *compute* verb (`add(a, b)` adds two numbers), so it cannot go in the
+# unconditional list without excluding arithmetic tools from execution entirely — the
+# fail-open trade-off this filter deliberately makes. Requiring a following word separates
+# them: `add_note` mutates, bare `add` does not. `_normalize` has already split snake_case and
+# camelCase by the time this runs, so `addNote` reads as `add Note`.
+_QUALIFIED_WRITE_VERBS = frozenset(
+    f
+    for v in ("add", "init", "attach", "assign", "import", "restore", "sync")
+    for f in _inflections(v)
+)
+
+
+def _compound_write_name(tool: ToolInfo) -> bool:
+    """Whether the tool's NAME is a compound built on an ambiguous write verb.
+
+    Applied to the name and display titles only, never the description. `add`'s own
+    description is "Add two integers and return their sum" — prose that any word-following
+    rule would match, which would exclude arithmetic tools from execution and gut the
+    fail-open trade-off. A *name* is terser and more reliable: `add_note` and `git_add` are
+    compounds and mutate; a tool named exactly `add` is arithmetic.
+    """
+    for text in (tool.name, tool.title, tool.annotation_title):
+        tokens = _normalize(text or "").lower().split()
+        if len(tokens) > 1 and any(token in _QUALIFIED_WRITE_VERBS for token in tokens):
+            return True
+    return False
+
+
 def looks_mutating(tool: ToolInfo) -> bool:
     if _hint_says_mutating(tool):
         return True
@@ -98,7 +128,7 @@ def looks_mutating(tool: ToolInfo) -> bool:
     surface = " ".join(
         part for part in (tool.name, tool.title, tool.annotation_title, tool.description) if part
     )
-    return bool(_WRITE_HINTS.search(_normalize(surface)))
+    return bool(_WRITE_HINTS.search(_normalize(surface)) or _compound_write_name(tool))
 
 
 def filter_read_only(tools: list[ToolInfo]) -> tuple[list[ToolInfo], list[str]]:

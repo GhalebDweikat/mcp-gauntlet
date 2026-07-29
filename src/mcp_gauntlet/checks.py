@@ -300,12 +300,27 @@ _REFERENCE_PATTERNS: list[tuple[re.Pattern[str], Severity, str]] = [
             r"secret[_-]?keys?|api[_-]?keys?|access[_-]?tokens?|passwords?)(?!\w)",
             re.I,
         ),
-        Severity.MEDIUM,
+        # INFO, not MEDIUM. Surveying 50 public servers produced 25 of these and every one was
+        # a false positive, in three recurring shapes: a credential manager doing its job
+        # ("Remove stored authentication credentials"); a server DOCUMENTING good practice
+        # ("env VALUES are NOT exfiltrated", "encrypted into the credentials cipher; never
+        # returned", "dotfiles and credentials are always excluded"); and a server telling the
+        # user where to get an API key ("get one at https://.../api-keys"). A PCAP forensics
+        # server was marked down over the phrase "data exfiltration" — its actual subject.
+        #
+        # The vocabulary is shared between an attacker and an honest credential helper, so no
+        # amount of narrowing separates them: the discriminator is intent, which a regex
+        # cannot see. Still reported, for a human to judge — but scored at zero. This signal
+        # was deciding a published D grade for a named third party, which is not a call a
+        # pattern-matcher gets to make.
+        Severity.INFO,
         "references sensitive files or secrets",
     ),
     (
         re.compile(r"\b(curls?|wgets?|scp|exfiltrat\w*|base64\s+-d)\b", re.I),
-        Severity.LOW,
+        # Same reasoning: a network-forensics server discusses exfiltration because that is
+        # precisely what it analyses. `mcpcap` lost points for its own subject matter.
+        Severity.INFO,
         "references data-transfer / exfiltration tooling",
     ),
 ]

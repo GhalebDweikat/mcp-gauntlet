@@ -52,10 +52,17 @@ STDIO_REGISTRIES = {"npm": "npx -y", "pypi": "uvx"}
 _REAL_WORLD_ACTION = re.compile(
     r"""(?ix)
     \b(?:pay|pays|paid|payment|payments|invoice|billing|charge|fiat|money|funds)\b
-  | \b(?:transfer|remit|payout|wallet|crypto|defi|solana|stripe|x402)\b
+    # `transfer` needs a financial object: "file transfer" moves bytes, not money.
+  | \b(?:remit|payout|wallet|crypto|defi|solana|stripe|x402)\b
+  | \btransfers?\s+(?:of\s+)?(?:funds|money|balance|assets)\b
+  | \b(?:funds|money|wire)\s+transfers?\b
   | \b(?:trade|trades|trading|order|orders|checkout|purchase|buy)\b
   | \b(?:book|books|booking|flight|flights|hotel|hotels|reservation)\b
-  | \b(?:call|calls|telephony|sms|dial)\b
+    # NOT bare `call`: "via MCP tool calls" is close to the commonest phrase in an MCP
+    # server description, and matching it put a 3D scene viewer in the never-execute
+    # bucket. Telephony has to be named, or the verb has to take a call as its object.
+  | \b(?:telephony|sms|dial|dials|dialing)\b
+  | \b(?:place|places|placing|make|makes|making)\s+(?:a\s+|an\s+|the\s+)?(?:phone\s+)?calls?\b
   | \b(?:email|inbox|mail)\b
   | \b(?:deploy|deploys|deployment|publish|hosting|domain|domains)\b
     # Creating accounts somewhere on the user's behalf is as irreversible as a purchase,
@@ -155,13 +162,21 @@ def select(entries: list[dict[str, Any]], limit: int, per_publisher: int) -> lis
             while name in seen_name:
                 name, suffix = f"{short}-{suffix}", suffix + 1
 
+            # Pinned. The registry gives a version for every package, and an unpinned
+            # `npx -y pkg` resolves to whatever npm calls latest on the day — so re-running
+            # this script next month would scan different code and produce different scores
+            # with no way to tell. The harness version is pinned to three decimals; the thing
+            # being measured should not float.
+            version = str(pkg.get("version") or "").strip()
+            spec_id = f"{identifier}@{version}" if version else str(identifier)
+
             seen_pkg.add(str(identifier))
             seen_name.add(name)
             by_publisher[publisher] += 1
             chosen.append(
                 {
                     "name": name,
-                    "spec": f"{runner} {identifier}",
+                    "spec": f"{runner} {spec_id}",
                     "_registry_name": registry_name,
                     "_publisher": publisher,
                     "_repository": (server.get("repository") or {}).get("url") or "",

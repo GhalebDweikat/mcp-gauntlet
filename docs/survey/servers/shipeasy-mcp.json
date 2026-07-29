@@ -1,0 +1,519 @@
+{
+  "name": "shipeasy-mcp",
+  "spec": "npx -y @shipeasy/mcp@2.8.0",
+  "error": null,
+  "report": {
+    "spec": "npx -y @shipeasy/mcp@2.8.0",
+    "server": {
+      "name": "shipeasy",
+      "version": "0.1.0",
+      "title": null,
+      "protocol_version": "2025-11-25",
+      "instructions": null
+    },
+    "tool_count": 115,
+    "dimensions": [
+      {
+        "key": "schema_health",
+        "title": "Schema Health",
+        "score": 98.9,
+        "weight": 1.0,
+        "summary": "Structural validity of each tool's JSON input schema: valid schema, typed and described properties, and a consistent required list.",
+        "findings": [
+          {
+            "tool": "ops_alerts_update",
+            "severity": "low",
+            "message": "property 'name' has no description",
+            "detail": null
+          },
+          {
+            "tool": "ops_alerts_update",
+            "severity": "low",
+            "message": "property 'comparator' has no description",
+            "detail": null
+          },
+          {
+            "tool": "ops_alerts_update",
+            "severity": "low",
+            "message": "property 'threshold' has no description",
+            "detail": null
+          },
+          {
+            "tool": "ops_alerts_update",
+            "severity": "low",
+            "message": "property 'windowHours' has no description",
+            "detail": null
+          },
+          {
+            "tool": "ops_alerts_update",
+            "severity": "low",
+            "message": "property 'severity' has no description",
+            "detail": null
+          },
+          {
+            "tool": "ops_alerts_update",
+            "severity": "low",
+            "message": "property 'enabled' has no description",
+            "detail": null
+          },
+          {
+            "tool": "release_experiments_create",
+            "severity": "low",
+            "message": "property 'bucket_by' has no description",
+            "detail": null
+          },
+          {
+            "tool": "release_experiments_update",
+            "severity": "low",
+            "message": "property 'description' has no description",
+            "detail": null
+          },
+          {
+            "tool": "release_experiments_update",
+            "severity": "low",
+            "message": "property 'hypothesis' has no description",
+            "detail": null
+          },
+          {
+            "tool": "release_experiments_update",
+            "severity": "low",
+            "message": "property 'tag' has no description",
+            "detail": null
+          },
+          {
+            "tool": "release_experiments_update",
+            "severity": "low",
+            "message": "property 'owner_email' has no description",
+            "detail": null
+          },
+          {
+            "tool": "release_experiments_update",
+            "severity": "low",
+            "message": "property 'audience' has no description",
+            "detail": null
+          },
+          {
+            "tool": "release_experiments_update",
+            "severity": "low",
+            "message": "property 'bucket_by' has no description",
+            "detail": null
+          },
+          {
+            "tool": "release_experiments_update",
+            "severity": "low",
+            "message": "property 'targeting_gate' has no description",
+            "detail": null
+          },
+          {
+            "tool": "release_experiments_update",
+            "severity": "low",
+            "message": "property 'significance_threshold' has no description",
+            "detail": null
+          },
+          {
+            "tool": "release_experiments_update",
+            "severity": "low",
+            "message": "property 'min_runtime_days' has no description",
+            "detail": null
+          },
+          {
+            "tool": "release_experiments_update",
+            "severity": "low",
+            "message": "property 'min_sample_size' has no description",
+            "detail": null
+          },
+          {
+            "tool": "release_experiments_update",
+            "severity": "low",
+            "message": "property 'sequential_testing' has no description",
+            "detail": null
+          },
+          {
+            "tool": "release_flags_templates_create",
+            "severity": "low",
+            "message": "property 'category' has no description",
+            "detail": null
+          },
+          {
+            "tool": "release_flags_templates_update",
+            "severity": "low",
+            "message": "property 'name' has no description",
+            "detail": null
+          },
+          {
+            "tool": "release_flags_templates_update",
+            "severity": "low",
+            "message": "property 'description' has no description",
+            "detail": null
+          },
+          {
+            "tool": "release_flags_templates_update",
+            "severity": "low",
+            "message": "property 'category' has no description",
+            "detail": null
+          },
+          {
+            "tool": "release_flags_templates_update",
+            "severity": "low",
+            "message": "property 'icon_key' has no description",
+            "detail": null
+          },
+          {
+            "tool": "release_flags_templates_update",
+            "severity": "low",
+            "message": "property 'auto' has no description",
+            "detail": null
+          },
+          {
+            "tool": "release_flags_templates_update",
+            "severity": "low",
+            "message": "property 'rules' has no description",
+            "detail": null
+          }
+        ]
+      },
+      {
+        "key": "description_quality",
+        "title": "Description Quality (heuristic)",
+        "score": 100.0,
+        "weight": 1.0,
+        "summary": "Offline heuristics on tool descriptions (presence and length). An LLM-judged 'can an agent tell when to use this?' score is added in the agentic stage.",
+        "findings": []
+      },
+      {
+        "key": "security",
+        "title": "Security Signals",
+        "score": 100.0,
+        "weight": 2.0,
+        "summary": "Static scan of the server's init instructions plus tool and parameter descriptions for tool-poisoning / prompt-injection markers and hidden characters (Invariant Labs / OWASP MCP threat model).",
+        "findings": [
+          {
+            "tool": "auth_logout",
+            "severity": "info",
+            "message": "description references sensitive files or secrets",
+            "detail": "\u2026gning in, not by deleting the credential first. Only call it when the\u2026"
+          },
+          {
+            "tool": "ops_trigger_create_claude",
+            "severity": "info",
+            "message": "property 'token' description references sensitive files or secrets",
+            "detail": "\u2026ded later. Encrypted into the credentials cipher; never persisted in `c\u2026"
+          },
+          {
+            "tool": "ops_trigger_create_cursor",
+            "severity": "info",
+            "message": "property 'apiKey' description references sensitive files or secrets",
+            "detail": "\u2026(secret). Encrypted into the credentials cipher; never returned."
+          },
+          {
+            "tool": "ops_trigger_create_jules",
+            "severity": "info",
+            "message": "property 'apiKey' description references sensitive files or secrets",
+            "detail": "\u2026(secret). Encrypted into the credentials cipher; never returned."
+          },
+          {
+            "tool": "projects_current",
+            "severity": "info",
+            "message": "description references sensitive files or secrets",
+            "detail": "\u2026er reads the project from the credential, so there is no id parameter.\u2026"
+          },
+          {
+            "tool": "whoami",
+            "severity": "info",
+            "message": "description references sensitive files or secrets",
+            "detail": "\u2026er reads the project from the credential, so there is no id parameter.\u2026"
+          }
+        ]
+      },
+      {
+        "key": "task_success",
+        "title": "Agent Task Success",
+        "score": 5.0,
+        "weight": 3.0,
+        "summary": "Whether a live agent, given only this server's tools, completes generated tasks (LLM-judged, repeated for a success rate).",
+        "findings": [
+          {
+            "tool": null,
+            "severity": "medium",
+            "message": "agent failed a task (0/2 passed) \u2014 tool errors blocked it (server signal)",
+            "detail": "Check the project's authentication status using `auth_check`. Next, list all available i18n profiles using `i18n_profile \u2014 The agent called `auth_check` successfully, but `i18n_profiles_list` failed with an error and `i18n_keys_list` was never called, failing to "
+          },
+          {
+            "tool": null,
+            "severity": "medium",
+            "message": "agent failed a task (0/2 passed) \u2014 tool errors blocked it (server signal)",
+            "detail": "Discover all existing metrics in the project by calling `metrics_list`. Pick one metric from the returned results and ca \u2014 The initial call to `metrics_list` errored due to authentication failure, preventing the agent from obtaining metric IDs and calling `metric"
+          },
+          {
+            "tool": null,
+            "severity": "medium",
+            "message": "agent failed a task (0/2 passed) \u2014 tool errors blocked it (server signal)",
+            "detail": "List tracked production errors using `errors_list`. If any errors are returned, select the fingerprint/ID of one error a \u2014 The tool `errors_list` failed due to an authentication error, preventing the agent from listing tracked production errors or obtaining an er"
+          }
+        ]
+      },
+      {
+        "key": "tool_selection",
+        "title": "Tool-Selection Accuracy",
+        "score": 61.1,
+        "weight": 1.5,
+        "summary": "Whether the agent called the tools each task was expected to use.",
+        "findings": [
+          {
+            "tool": null,
+            "severity": "low",
+            "message": "agent did not call all expected tools",
+            "detail": "Check the project's authentication status using `auth_check`. Next, list all available i18n profiles using `i18n_profile (expected auth_check, i18n_profiles_list, i18n_keys_list)"
+          },
+          {
+            "tool": null,
+            "severity": "low",
+            "message": "agent did not call all expected tools",
+            "detail": "Discover all existing metrics in the project by calling `metrics_list`. Pick one metric from the returned results and ca (expected metrics_list, metrics_show)"
+          },
+          {
+            "tool": null,
+            "severity": "low",
+            "message": "agent did not call all expected tools",
+            "detail": "List tracked production errors using `errors_list`. If any errors are returned, select the fingerprint/ID of one error a (expected errors_list, errors_series)"
+          }
+        ]
+      },
+      {
+        "key": "tool_reliability",
+        "title": "Tool Reliability",
+        "score": 41.2,
+        "weight": 1.0,
+        "summary": "Fraction of the agent's tool calls the server executed without error \u2014 a server-quality signal distinct from whether the agent finished the task.",
+        "findings": [
+          {
+            "tool": null,
+            "severity": "medium",
+            "message": "10/17 agent tool calls returned an error",
+            "detail": null
+          }
+        ]
+      },
+      {
+        "key": "response_safety",
+        "title": "Response Safety (runtime)",
+        "score": 100.0,
+        "weight": 1.0,
+        "summary": "Dynamic scan of the server's live tool outputs for prompt-injection / poisoning markers and hidden characters. Markers here may be the server poisoning its responses, or untrusted content it passed through \u2014 either exposes the agent. Reported (and it lowers the score) but does not cap the grade on its own. Reflects the outputs the generated tasks happened to elicit, so it can vary run to run.",
+        "findings": [
+          {
+            "tool": "i18n_profiles_list",
+            "severity": "info",
+            "message": "tool output references sensitive files or secrets",
+            "detail": "\u2026H_REQUIRED: no valid Shipeasy credentials found for this MCP server.Cau\u2026 (normalized for matching)"
+          },
+          {
+            "tool": "i18n_keys_list",
+            "severity": "info",
+            "message": "tool output references sensitive files or secrets",
+            "detail": "\u2026H_REQUIRED: no valid Shipeasy credentials found for this MCP server.Cau\u2026 (normalized for matching)"
+          },
+          {
+            "tool": "metrics_list",
+            "severity": "info",
+            "message": "tool output references sensitive files or secrets",
+            "detail": "\u2026H_REQUIRED: no valid Shipeasy credentials found for this MCP server.Cau\u2026 (normalized for matching)"
+          },
+          {
+            "tool": "metrics_events_list",
+            "severity": "info",
+            "message": "tool output references sensitive files or secrets",
+            "detail": "\u2026H_REQUIRED: no valid Shipeasy credentials found for this MCP server.Cau\u2026 (normalized for matching)"
+          },
+          {
+            "tool": "errors_list",
+            "severity": "info",
+            "message": "tool output references sensitive files or secrets",
+            "detail": "\u2026H_REQUIRED: no valid Shipeasy credentials found for this MCP server.Cau\u2026 (normalized for matching)"
+          }
+        ]
+      },
+      {
+        "key": "robustness",
+        "title": "Robustness",
+        "score": 100.0,
+        "weight": 1.0,
+        "summary": "Fraction of probed tools that reject malformed / schema-violating arguments \u2014 a well-behaved server rejects them rather than silently accepting, hanging, or crashing (LLM-free).",
+        "findings": []
+      }
+    ],
+    "overall_score": 64.9,
+    "grade": "D",
+    "generated_at": "2026-07-29T03:08:52+00:00",
+    "security_critical": false,
+    "agentic": {
+      "provider": "gemini",
+      "model": "gemini-flash-latest",
+      "tasks_generated": 3,
+      "repeats": 2,
+      "excluded_write_tools": [
+        "projects_upsert",
+        "auth_login",
+        "auth_logout",
+        "errors_get",
+        "errors_resolve",
+        "i18n_drafts_create",
+        "i18n_drafts_list",
+        "i18n_drafts_update",
+        "i18n_keys_push",
+        "i18n_keys_set",
+        "i18n_keys_update",
+        "i18n_profiles_create",
+        "i18n_profiles_publish",
+        "metrics_archive",
+        "metrics_create",
+        "metrics_events_approve",
+        "metrics_events_archive",
+        "metrics_events_create",
+        "metrics_events_update",
+        "metrics_experiments",
+        "metrics_unarchive",
+        "metrics_update",
+        "ops_ack",
+        "ops_agents_list",
+        "ops_alerts_archive",
+        "ops_alerts_create",
+        "ops_alerts_list",
+        "ops_alerts_update",
+        "ops_bug",
+        "ops_comments_create",
+        "ops_comments_list",
+        "ops_create",
+        "ops_feature",
+        "ops_fired_alerts_list",
+        "ops_fired_alerts_update",
+        "ops_investigations_create",
+        "ops_investigations_list",
+        "ops_investigations_update",
+        "ops_link_pr",
+        "ops_notify",
+        "ops_trigger_create_claude",
+        "ops_trigger_create_copilot",
+        "ops_trigger_create_cursor",
+        "ops_trigger_create_jules",
+        "ops_update",
+        "projects_current",
+        "projects_update",
+        "release_configs_archive",
+        "release_configs_create",
+        "release_configs_get",
+        "release_configs_list",
+        "release_configs_update",
+        "release_configs_update_schema",
+        "release_experiments_archive",
+        "release_experiments_create",
+        "release_experiments_get",
+        "release_experiments_list",
+        "release_experiments_readout_create",
+        "release_experiments_readout_get",
+        "release_experiments_reanalyze",
+        "release_experiments_restore",
+        "release_experiments_results",
+        "release_experiments_set_metrics",
+        "release_experiments_start",
+        "release_experiments_stop",
+        "release_experiments_timeseries",
+        "release_experiments_universes_archive",
+        "release_experiments_universes_create",
+        "release_experiments_universes_list",
+        "release_experiments_universes_update",
+        "release_experiments_update",
+        "release_flags_activity",
+        "release_flags_archive",
+        "release_flags_attributes_archive",
+        "release_flags_attributes_create",
+        "release_flags_attributes_get",
+        "release_flags_attributes_list",
+        "release_flags_attributes_update",
+        "release_flags_create",
+        "release_flags_disable",
+        "release_flags_enable",
+        "release_flags_get",
+        "release_flags_list",
+        "release_flags_templates_archive",
+        "release_flags_templates_create",
+        "release_flags_templates_get",
+        "release_flags_templates_list",
+        "release_flags_templates_update",
+        "release_flags_update",
+        "release_killswitch_archive",
+        "release_killswitch_create",
+        "release_killswitch_get",
+        "release_killswitch_list",
+        "release_killswitch_set",
+        "release_killswitch_set_value",
+        "release_killswitch_unset",
+        "release_killswitch_update",
+        "whoami",
+        "metrics_grammar",
+        "docs_get",
+        "docs_skill"
+      ],
+      "results": [
+        {
+          "description": "Check the project's authentication status using `auth_check`. Next, list all available i18n profiles using `i18n_profiles_list`. Using a profile ID returned from that list, call `i18n_keys_list` to retrieve its keys.",
+          "rubric": "Verify that the agent first calls `auth_check` and `i18n_profiles_list`. Check that the agent then uses a valid `profile_id` obtained from the `i18n_profiles_list` output when calling `i18n_keys_list` without hardcoding any profile identifiers.",
+          "expected_tools": [
+            "auth_check",
+            "i18n_profiles_list",
+            "i18n_keys_list"
+          ],
+          "repeats": 2,
+          "successes": 0,
+          "success_rate": 0.0,
+          "mean_score": 15.0,
+          "selection_score": 83.3,
+          "tool_error": true,
+          "errored_repeats": 0,
+          "inconclusive": false,
+          "sample_reasoning": "The agent called `auth_check` successfully, but `i18n_profiles_list` failed with an error and `i18n_keys_list` was never called, failing to complete the required task steps."
+        },
+        {
+          "description": "Discover all existing metrics in the project by calling `metrics_list`. Pick one metric from the returned results and call `metrics_show` using that metric's ID or name to view its complete definition.",
+          "rubric": "Verify that the agent calls `metrics_list` first to discover metric identifiers. Verify that `metrics_show` is called using an ID or name extracted directly from the list response.",
+          "expected_tools": [
+            "metrics_list",
+            "metrics_show"
+          ],
+          "repeats": 2,
+          "successes": 0,
+          "success_rate": 0.0,
+          "mean_score": 0.0,
+          "selection_score": 50.0,
+          "tool_error": true,
+          "errored_repeats": 0,
+          "inconclusive": false,
+          "sample_reasoning": "The initial call to `metrics_list` errored due to authentication failure, preventing the agent from obtaining metric IDs and calling `metrics_show`."
+        },
+        {
+          "description": "List tracked production errors using `errors_list`. If any errors are returned, select the fingerprint/ID of one error and retrieve its occurrence time series using `errors_series`.",
+          "rubric": "Verify that the agent calls `errors_list` to find tracked errors without inventing an error ID. If errors exist, verify that `errors_series` is invoked using an ID obtained from the list result.",
+          "expected_tools": [
+            "errors_list",
+            "errors_series"
+          ],
+          "repeats": 2,
+          "successes": 0,
+          "success_rate": 0.0,
+          "mean_score": 0.0,
+          "selection_score": 50.0,
+          "tool_error": true,
+          "errored_repeats": 0,
+          "inconclusive": false,
+          "sample_reasoning": "The tool `errors_list` failed due to an authentication error, preventing the agent from listing tracked production errors or obtaining an error time series."
+        }
+      ],
+      "inconclusive": false,
+      "truncated": false,
+      "interactive_requests": 0,
+      "interactive_summary": ""
+    },
+    "gauntlet_version": "0.7.0",
+    "unevaluated_reason": ""
+  }
+}

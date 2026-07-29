@@ -1,0 +1,201 @@
+{
+  "name": "kawacode-mcp",
+  "spec": "npx -y @kawacode/mcp@6.9.4",
+  "error": null,
+  "report": {
+    "spec": "npx -y @kawacode/mcp@6.9.4",
+    "server": {
+      "name": "kawa-intents",
+      "version": "0.3.0",
+      "title": null,
+      "protocol_version": "2025-11-25",
+      "instructions": null
+    },
+    "tool_count": 26,
+    "dimensions": [
+      {
+        "key": "schema_health",
+        "title": "Schema Health",
+        "score": 100.0,
+        "weight": 1.0,
+        "summary": "Structural validity of each tool's JSON input schema: valid schema, typed and described properties, and a consistent required list.",
+        "findings": []
+      },
+      {
+        "key": "description_quality",
+        "title": "Description Quality (heuristic)",
+        "score": 100.0,
+        "weight": 1.0,
+        "summary": "Offline heuristics on tool descriptions (presence and length). An LLM-judged 'can an agent tell when to use this?' score is added in the agentic stage.",
+        "findings": []
+      },
+      {
+        "key": "security",
+        "title": "Security Signals",
+        "score": 100.0,
+        "weight": 2.0,
+        "summary": "Static scan of the server's init instructions plus tool and parameter descriptions for tool-poisoning / prompt-injection markers and hidden characters (Invariant Labs / OWASP MCP threat model).",
+        "findings": []
+      },
+      {
+        "key": "task_success",
+        "title": "Agent Task Success",
+        "score": 0.0,
+        "weight": 3.0,
+        "summary": "Whether a live agent, given only this server's tools, completes generated tasks (LLM-judged, repeated for a success rate).",
+        "findings": [
+          {
+            "tool": null,
+            "severity": "medium",
+            "message": "agent failed a task (0/2 passed) \u2014 tool errors blocked it (server signal)",
+            "detail": "Read the active intent resource at kawa://intent/active to discover the current repository details (such as repoOrigin,  \u2014 The agent did not inspect the active intent resource and its call to get_project_decisions failed with an error."
+          },
+          {
+            "tool": null,
+            "severity": "medium",
+            "message": "agent failed a task (0/2 passed) \u2014 tool errors blocked it (server signal)",
+            "detail": "Check the active intent context at kawa://intent/active to find the repoOrigin and repoPath. Once identified, call get_p \u2014 The agent failed to check the intent resource and both attempts to run `get_project_decisions` resulted in tool errors, preventing any trade"
+          },
+          {
+            "tool": null,
+            "severity": "medium",
+            "message": "agent failed a task (0/2 passed) \u2014 tool errors blocked it (server signal)",
+            "detail": "Retrieve the project workspace details by reading the kawa://intent/active resource, then use get_project_decisions to f \u2014 The agent failed to read the active resource and all attempts to call get_project_decisions resulted in tool execution errors."
+          }
+        ]
+      },
+      {
+        "key": "tool_selection",
+        "title": "Tool-Selection Accuracy",
+        "score": 100.0,
+        "weight": 1.5,
+        "summary": "Whether the agent called the tools each task was expected to use.",
+        "findings": []
+      },
+      {
+        "key": "tool_reliability",
+        "title": "Tool Reliability",
+        "score": 0.0,
+        "weight": 1.0,
+        "summary": "Fraction of the agent's tool calls the server executed without error \u2014 a server-quality signal distinct from whether the agent finished the task.",
+        "findings": [
+          {
+            "tool": null,
+            "severity": "medium",
+            "message": "12/12 agent tool calls returned an error",
+            "detail": null
+          }
+        ]
+      },
+      {
+        "key": "response_safety",
+        "title": "Response Safety (runtime)",
+        "score": 100.0,
+        "weight": 1.0,
+        "summary": "Dynamic scan of the server's live tool outputs for prompt-injection / poisoning markers and hidden characters. Markers here may be the server poisoning its responses, or untrusted content it passed through \u2014 either exposes the agent. Reported (and it lowers the score) but does not cap the grade on its own. Reflects the outputs the generated tasks happened to elicit, so it can vary run to run.",
+        "findings": []
+      },
+      {
+        "key": "robustness",
+        "title": "Robustness",
+        "score": 100.0,
+        "weight": 1.0,
+        "summary": "Fraction of probed tools that reject malformed / schema-violating arguments \u2014 a well-behaved server rejects them rather than silently accepting, hanging, or crashing (LLM-free).",
+        "findings": []
+      }
+    ],
+    "overall_score": 65.2,
+    "grade": "D",
+    "generated_at": "2026-07-29T03:02:58+00:00",
+    "security_critical": false,
+    "agentic": {
+      "provider": "gemini",
+      "model": "gemini-flash-latest",
+      "tasks_generated": 3,
+      "repeats": 2,
+      "excluded_write_tools": [
+        "get_relevant_context",
+        "check_active_intent",
+        "create_and_activate_intent",
+        "activate_intent",
+        "resume_intent",
+        "get_intents_for_file",
+        "get_intents_for_lines",
+        "list_team_intents",
+        "get_intent_changes",
+        "complete_intent",
+        "update_intent",
+        "log_work",
+        "record_decision",
+        "get_session_decisions",
+        "get_decision_detail",
+        "edit_session_decision",
+        "detect_intent_conflicts",
+        "infer_history",
+        "evolve_decisions",
+        "update_features",
+        "pre_edit_decision_check",
+        "pre_edit_acknowledge",
+        "get_resolution_context",
+        "arbiter_resolve",
+        "arbiter_apply"
+      ],
+      "results": [
+        {
+          "description": "Read the active intent resource at kawa://intent/active to discover the current repository details (such as repoOrigin, repoPath, and workspaceId), then retrieve all recorded project decisions using get_project_decisions.",
+          "rubric": "The agent must first inspect the resource kawa://intent/active to discover the necessary repository context. It must then call get_project_decisions using the parameters obtained from that resource and present the retrieved project decisions.",
+          "expected_tools": [
+            "get_project_decisions"
+          ],
+          "repeats": 2,
+          "successes": 0,
+          "success_rate": 0.0,
+          "mean_score": 0.0,
+          "selection_score": 100.0,
+          "tool_error": true,
+          "errored_repeats": 0,
+          "inconclusive": false,
+          "sample_reasoning": "The agent did not inspect the active intent resource and its call to get_project_decisions failed with an error."
+        },
+        {
+          "description": "Check the active intent context at kawa://intent/active to find the repoOrigin and repoPath. Once identified, call get_project_decisions to examine the project's decision history and summarize any past architectural trade-offs.",
+          "rubric": "The agent correctly reads kawa://intent/active to discover repository parameters, invokes get_project_decisions with those parameters, and provides a summary of the trade-offs described in the decisions.",
+          "expected_tools": [
+            "get_project_decisions"
+          ],
+          "repeats": 2,
+          "successes": 0,
+          "success_rate": 0.0,
+          "mean_score": 0.0,
+          "selection_score": 100.0,
+          "tool_error": true,
+          "errored_repeats": 0,
+          "inconclusive": false,
+          "sample_reasoning": "The agent failed to check the intent resource and both attempts to run `get_project_decisions` resulted in tool errors, preventing any trade-off summary from being generated."
+        },
+        {
+          "description": "Retrieve the project workspace details by reading the kawa://intent/active resource, then use get_project_decisions to fetch and list all key architectural decisions made across the project intents.",
+          "rubric": "The agent fetches context from kawa://intent/active, calls get_project_decisions with the discovered repository and workspace values, and lists the key architectural decisions found in the response.",
+          "expected_tools": [
+            "get_project_decisions"
+          ],
+          "repeats": 2,
+          "successes": 0,
+          "success_rate": 0.0,
+          "mean_score": 0.0,
+          "selection_score": 100.0,
+          "tool_error": true,
+          "errored_repeats": 0,
+          "inconclusive": false,
+          "sample_reasoning": "The agent failed to read the active resource and all attempts to call get_project_decisions resulted in tool execution errors."
+        }
+      ],
+      "inconclusive": false,
+      "truncated": false,
+      "interactive_requests": 0,
+      "interactive_summary": ""
+    },
+    "gauntlet_version": "0.7.0",
+    "unevaluated_reason": ""
+  }
+}

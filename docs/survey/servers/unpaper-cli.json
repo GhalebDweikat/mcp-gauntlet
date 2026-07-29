@@ -1,0 +1,6 @@
+{
+  "name": "unpaper-cli",
+  "spec": "npx -y @unpaper/cli@0.2.1",
+  "error": "McpError: Connection closed",
+  "report": null
+}

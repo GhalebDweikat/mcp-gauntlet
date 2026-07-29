@@ -1,0 +1,62 @@
+{
+  "name": "thrain-spotlight-mcp",
+  "spec": "npx -y @thrain/spotlight-mcp@0.1.1",
+  "error": null,
+  "report": {
+    "spec": "npx -y @thrain/spotlight-mcp@0.1.1",
+    "server": {
+      "name": "spotlight",
+      "version": "0.1.0",
+      "title": null,
+      "protocol_version": "2025-11-25",
+      "instructions": null
+    },
+    "tool_count": 1,
+    "dimensions": [
+      {
+        "key": "schema_health",
+        "title": "Schema Health",
+        "score": 100.0,
+        "weight": 1.0,
+        "summary": "Structural validity of each tool's JSON input schema: valid schema, typed and described properties, and a consistent required list.",
+        "findings": []
+      },
+      {
+        "key": "description_quality",
+        "title": "Description Quality (heuristic)",
+        "score": 100.0,
+        "weight": 1.0,
+        "summary": "Offline heuristics on tool descriptions (presence and length). An LLM-judged 'can an agent tell when to use this?' score is added in the agentic stage.",
+        "findings": []
+      },
+      {
+        "key": "security",
+        "title": "Security Signals",
+        "score": 100.0,
+        "weight": 2.0,
+        "summary": "Static scan of the server's init instructions plus tool and parameter descriptions for tool-poisoning / prompt-injection markers and hidden characters (Invariant Labs / OWASP MCP threat model).",
+        "findings": []
+      }
+    ],
+    "overall_score": 100.0,
+    "grade": "A",
+    "generated_at": "2026-07-29T03:14:42+00:00",
+    "security_critical": false,
+    "agentic": {
+      "provider": "gemini",
+      "model": "gemini-flash-latest",
+      "tasks_generated": 0,
+      "repeats": 2,
+      "excluded_write_tools": [
+        "check_pdf_accessibility"
+      ],
+      "results": [],
+      "inconclusive": false,
+      "truncated": false,
+      "interactive_requests": 0,
+      "interactive_summary": ""
+    },
+    "gauntlet_version": "0.7.0",
+    "unevaluated_reason": ""
+  }
+}

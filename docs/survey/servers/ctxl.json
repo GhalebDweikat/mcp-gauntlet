@@ -1,0 +1,6 @@
+{
+  "name": "ctxl",
+  "spec": "npx -y ctxl@0.0.2",
+  "error": "MCPConnectionError: McpError: Connection closed \u2014 the server said: npm error could not determine executable to run",
+  "report": null
+}

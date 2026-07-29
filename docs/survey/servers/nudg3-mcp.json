@@ -1,0 +1,204 @@
+{
+  "name": "nudg3-mcp",
+  "spec": "uvx nudg3-mcp@1.1.0",
+  "error": null,
+  "report": {
+    "spec": "uvx nudg3-mcp@1.1.0",
+    "server": {
+      "name": "nudg3",
+      "version": "3.4.5",
+      "title": null,
+      "protocol_version": "2025-11-25",
+      "instructions": "Nudg3 brand visibility intelligence \u2014 tracks how brands appear across AI search providers (ChatGPT, Gemini, Claude, Perplexity, Google AI Overviews). \n\nKEY CONCEPT: Nudg3 separates two types of visibility:\n- Organic visibility (discovery/unbranded queries): Can AI find your brand without being asked by name? This is the true competitive metric.\n- Branded visibility (research + purchase queries): What does AI say when someone asks about your brand specifically?\nAlways present organic visibility first \u2014 it reflects real AI discoverability.\n\nAPI key personas (1.1.0):\n- Workspace-scoped key (single brand): every tool just works; ignore workspace_id parameters.\n- Agency or company-scoped key (multi-client portfolio): call list_workspaces first.\n  If only one workspace is accessible, tools auto-resolve. Otherwise pass workspace_id\n  explicitly on every tool \u2014 the WORKSPACE_ID_REQUIRED error response includes the\n  full portfolio inline so you can ask the user which one to use.\n\nInvestigation flow:\n1. Start with get_overview for organic + branded health check with investigation suggestions\n2. Follow the suggested_investigations in each response to drill deeper\n3. Use analyze_competitors (organic only), analyze_prompts, analyze_sources, or analyze_responses\n4. Use get_reports to view visibility audit reports with scores and executive summaries\n5. Use get_insights to see AI-generated opportunities, threats, and recommendations from a report\n6. Use get_actions to see workspace action items derived from insights\n7. Use export_data only when the user wants raw CSV data\n\nEach tool returns summarized data (not raw time-series) with explicit next-step suggestions.\nReports/insights/actions require the read:insights scope (Professional tier or above)."
+    },
+    "tool_count": 11,
+    "dimensions": [
+      {
+        "key": "schema_health",
+        "title": "Schema Health",
+        "score": 100.0,
+        "weight": 1.0,
+        "summary": "Structural validity of each tool's JSON input schema: valid schema, typed and described properties, and a consistent required list.",
+        "findings": []
+      },
+      {
+        "key": "description_quality",
+        "title": "Description Quality (heuristic)",
+        "score": 100.0,
+        "weight": 1.0,
+        "summary": "Offline heuristics on tool descriptions (presence and length). An LLM-judged 'can an agent tell when to use this?' score is added in the agentic stage.",
+        "findings": []
+      },
+      {
+        "key": "security",
+        "title": "Security Signals",
+        "score": 100.0,
+        "weight": 2.0,
+        "summary": "Static scan of the server's init instructions plus tool and parameter descriptions for tool-poisoning / prompt-injection markers and hidden characters (Invariant Labs / OWASP MCP threat model).",
+        "findings": []
+      },
+      {
+        "key": "task_success",
+        "title": "Agent Task Success",
+        "score": 6.7,
+        "weight": 3.0,
+        "summary": "Whether a live agent, given only this server's tools, completes generated tasks (LLM-judged, repeated for a success rate).",
+        "findings": [
+          {
+            "tool": null,
+            "severity": "medium",
+            "message": "agent failed a task (0/2 passed) \u2014 agent did not complete it (agent signal)",
+            "detail": "List the accessible workspaces to discover the available workspace ID. Using the discovered workspace ID, analyze the co \u2014 The agent was unable to discover a workspace ID or perform the competitor analysis because the API calls failed due to a missing API key."
+          },
+          {
+            "tool": null,
+            "severity": "medium",
+            "message": "agent failed a task (0/2 passed) \u2014 agent did not complete it (agent signal)",
+            "detail": "First inspect the available tools and features in the workspace metric catalog. Next, discover the accessible workspace  \u2014 The agent failed to discover the workspace ID and perform citation source analysis because the required tools returned errors due to a missi"
+          },
+          {
+            "tool": null,
+            "severity": "medium",
+            "message": "agent failed a task (0/2 passed) \u2014 agent did not complete it (agent signal)",
+            "detail": "Discover which workspace ID is accessible with the current API key, then export the 'chat' dataset as CSV for that works \u2014 The agent failed to discover a workspace ID or export the dataset because all relevant API calls returned missing API key errors."
+          }
+        ]
+      },
+      {
+        "key": "tool_selection",
+        "title": "Tool-Selection Accuracy",
+        "score": 100.0,
+        "weight": 1.5,
+        "summary": "Whether the agent called the tools each task was expected to use.",
+        "findings": []
+      },
+      {
+        "key": "tool_reliability",
+        "title": "Tool Reliability",
+        "score": 100.0,
+        "weight": 1.0,
+        "summary": "Fraction of the agent's tool calls the server executed without error \u2014 a server-quality signal distinct from whether the agent finished the task.",
+        "findings": []
+      },
+      {
+        "key": "response_safety",
+        "title": "Response Safety (runtime)",
+        "score": 100.0,
+        "weight": 1.0,
+        "summary": "Dynamic scan of the server's live tool outputs for prompt-injection / poisoning markers and hidden characters. Markers here may be the server poisoning its responses, or untrusted content it passed through \u2014 either exposes the agent. Reported (and it lowers the score) but does not cap the grade on its own. Reflects the outputs the generated tasks happened to elicit, so it can vary run to run.",
+        "findings": [
+          {
+            "tool": "list_workspaces",
+            "severity": "info",
+            "message": "tool output references sensitive files or secrets",
+            "detail": "\u2026e one at https://app.nudg3.ai/api-keys\"}{\"error\": true, \"message\": \"\u2026 (normalized for matching)"
+          },
+          {
+            "tool": "analyze_competitors",
+            "severity": "info",
+            "message": "tool output references sensitive files or secrets",
+            "detail": "\u2026e one at https://app.nudg3.ai/api-keys\"}{\"error\": true, \"message\": \"\u2026 (normalized for matching)"
+          },
+          {
+            "tool": "analyze_sources",
+            "severity": "info",
+            "message": "tool output references sensitive files or secrets",
+            "detail": "\u2026e one at https://app.nudg3.ai/api-keys\"}{\"error\": true, \"message\": \"\u2026 (normalized for matching)"
+          },
+          {
+            "tool": "export_data",
+            "severity": "info",
+            "message": "tool output references sensitive files or secrets",
+            "detail": "\u2026e one at https://app.nudg3.ai/api-keys\"}{\"error\": true, \"message\": \"\u2026 (normalized for matching)"
+          }
+        ]
+      },
+      {
+        "key": "robustness",
+        "title": "Robustness",
+        "score": 100.0,
+        "weight": 1.0,
+        "summary": "Fraction of probed tools that reject malformed / schema-violating arguments \u2014 a well-behaved server rejects them rather than silently accepting, hanging, or crashing (LLM-free).",
+        "findings": []
+      }
+    ],
+    "overall_score": 75.7,
+    "grade": "C",
+    "generated_at": "2026-07-29T03:06:50+00:00",
+    "security_critical": false,
+    "agentic": {
+      "provider": "gemini",
+      "model": "gemini-flash-latest",
+      "tasks_generated": 3,
+      "repeats": 2,
+      "excluded_write_tools": [
+        "get_overview",
+        "analyze_prompts",
+        "analyze_responses",
+        "get_reports",
+        "get_insights",
+        "get_actions"
+      ],
+      "results": [
+        {
+          "description": "List the accessible workspaces to discover the available workspace ID. Using the discovered workspace ID, analyze the competitive landscape using `analyze_competitors` for the date range '2024-01-01 to 2024-01-31'.",
+          "rubric": "The agent must first call `list_workspaces` to identify a workspace ID. Then, it must call `analyze_competitors` using the discovered `workspace_id` and the date range '2024-01-01 to 2024-01-31'.",
+          "expected_tools": [
+            "list_workspaces",
+            "analyze_competitors"
+          ],
+          "repeats": 2,
+          "successes": 0,
+          "success_rate": 0.0,
+          "mean_score": 0.0,
+          "selection_score": 100.0,
+          "tool_error": false,
+          "errored_repeats": 0,
+          "inconclusive": false,
+          "sample_reasoning": "The agent was unable to discover a workspace ID or perform the competitor analysis because the API calls failed due to a missing API key."
+        },
+        {
+          "description": "First inspect the available tools and features in the workspace metric catalog. Next, discover the accessible workspace ID and perform a citation source analysis using `analyze_sources` for that workspace for the date range '2024-02-01 to 2024-02-28'.",
+          "rubric": "The agent must call `get_metric_catalog` to inspect available metrics/tools, call `list_workspaces` to discover the target `workspace_id`, and then call `analyze_sources` with the correct `workspace_id` and date range '2024-02-01 to 2024-02-28'.",
+          "expected_tools": [
+            "get_metric_catalog",
+            "list_workspaces",
+            "analyze_sources"
+          ],
+          "repeats": 2,
+          "successes": 0,
+          "success_rate": 0.0,
+          "mean_score": 20.0,
+          "selection_score": 100.0,
+          "tool_error": false,
+          "errored_repeats": 0,
+          "inconclusive": false,
+          "sample_reasoning": "The agent failed to discover the workspace ID and perform citation source analysis because the required tools returned errors due to a missing API key."
+        },
+        {
+          "description": "Discover which workspace ID is accessible with the current API key, then export the 'chat' dataset as CSV for that workspace covering the date range from '2024-03-01' to '2024-03-07'.",
+          "rubric": "The agent must call `list_workspaces` first to obtain a valid workspace ID. It must then call `export_data` passing dataset 'chat', `date_from` '2024-03-01', `date_to` '2024-03-07', and the discovered `workspace_id`.",
+          "expected_tools": [
+            "list_workspaces",
+            "export_data"
+          ],
+          "repeats": 2,
+          "successes": 0,
+          "success_rate": 0.0,
+          "mean_score": 0.0,
+          "selection_score": 100.0,
+          "tool_error": false,
+          "errored_repeats": 0,
+          "inconclusive": false,
+          "sample_reasoning": "The agent failed to discover a workspace ID or export the dataset because all relevant API calls returned missing API key errors."
+        }
+      ],
+      "inconclusive": false,
+      "truncated": false,
+      "interactive_requests": 0,
+      "interactive_summary": ""
+    },
+    "gauntlet_version": "0.7.0",
+    "unevaluated_reason": ""
+  }
+}

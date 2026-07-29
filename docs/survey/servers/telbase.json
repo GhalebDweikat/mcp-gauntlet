@@ -1,0 +1,6 @@
+{
+  "name": "telbase",
+  "spec": "npx -y telbase@0.14.0-beta.2",
+  "error": "McpError: Connection closed",
+  "report": null
+}

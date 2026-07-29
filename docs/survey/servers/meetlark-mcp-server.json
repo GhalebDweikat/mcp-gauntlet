@@ -1,0 +1,6 @@
+{
+  "name": "meetlark-mcp-server",
+  "spec": "npx -y @meetlark/mcp-server@1.0.3",
+  "error": "timed out after 120s",
+  "report": null
+}

@@ -1,0 +1,6 @@
+{
+  "name": "clize-clize",
+  "spec": "npx -y @clize/clize@0.23.1",
+  "error": "MCPConnectionError: McpError: Connection closed \u2014 the server said: build                        \u505a\u4e00\u4e2a\u4f5c\u54c1(\u7aef\u5230\u7aef):build site = \u7ad9\u70b9/UI \u00b7 build clip = / \u77ed\u7247;\u65b9\u6cd5/\u6821\u9a8c\u514d\u8d39,\u6210\u54c1\u6b65\u9aa4 \ud83d\udcb0 / help [command]               display ",
+  "report": null
+}

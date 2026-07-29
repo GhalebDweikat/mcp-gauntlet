@@ -1,0 +1,416 @@
+{
+  "name": "raven-mcp",
+  "spec": "npx -y raven-mcp@2.3.0",
+  "error": null,
+  "report": {
+    "spec": "npx -y raven-mcp@2.3.0",
+    "server": {
+      "name": "raven-mcp",
+      "version": "2.3.0",
+      "title": null,
+      "protocol_version": "2025-11-25",
+      "instructions": "Raven is a design-intelligence server: audits (page/layout/screen/contrast/tap-targets/typography/consistency), design systems and tokens, brand/content/service-design knowledge, creative scoring, and a Taste Engine that makes a person's design judgment portable and growable.\n\nPROJECT KICKOFF \u2014 calibrate taste BEFORE the first design work. Taste is per-surface: the same person wants different rules on a monochrome portfolio than on a product site, and a different voice on each. At the START of a new project (or the first design/copy/UI work in any project), if a taste profile exists (list_taste_profiles), call get_taste_interview with the profile and a project name (mode defaults to 'kickoff', depth defaults to 'first_run'). If it returns existing_binding: null, ask the user just its 4 core `questions` conversationally \u2014 identity, aesthetic (how it should read here \u2014 multiple-choice options given), voice (three register examples so the user can pick by ear), and matchers (which URL hosts identify the project) \u2014 then persist with bind_taste_surface and proceed; offer the returned `more_questions` (typography/spacing/color/layout/motion/imagery/entrance/loading/navigation/libraries, references, per-rule overrides, the open-ended special question) as OPTIONAL deeper calibration rather than asking them all upfront, or re-run with depth:'full' if the user wants the complete interview at once. Dimension answers go in design_notes and are echoed in every audit. A cold-start project with no profile at all can start from create_taste_profile({ name, template: 'portfolio'|'saas-marketing'|'app' }) for a small sensible starter ruleset before the first interview even runs. The interview is a blocking gate: collect the user's answers before committing any design direction, palette, type choice, or name \u2014 never answer its questions yourself or start design work while it is pending. Every question carries skippable + priority (core|extended); skipping is fine but leaves that item uncalibrated. A 'references' question takes example links/screenshots and interviews what specifically the person likes about each. The interview ends with an open-ended 'special' question (textures, signature details, motifs \u2014 stored as design_notes.special) that suggests the person's choices from their other bound surfaces once it has them. From then on pass project:'<name>' on every audit_taste \u2014 bindings also auto-match by URL hostname in url mode. When the surface is a website to be built, suggest building it as a Next.js app by default; if the user prefers another stack, record it in design_notes.libraries. Do NOT wait for an audit to return a calibration_hint; that is the reactive backstop, not the intended flow.\n\nWhen a user dislikes generated/designed output on an ALREADY-calibrated project, that dissatisfaction is a calibration signal, not a dead end \u2014 re-run get_taste_interview with mode:'refine' (it re-interviews against the stored binding: what fell short, then each stored design_notes value to keep/tighten/replace, then voice, then an optional reject precedent) and re-bind with bind_taste_surface.\n\nLEARNING LOOP \u2014 whenever the user makes, approves, or corrects a taste, direction, or design decision during work (not just at interview time), record it with record_taste_decision: the project, a short dimension name, what was chosen, what was rejected, why, and whether it was user-directed, user-approved, or user-corrected (a user overriding a generated choice is the highest-signal record). Recorded decisions evolve future kickoff interviews \u2014 recurring choices return as suggested defaults on their dimension's question, and decision categories no standard question covers become NEW interview questions. Record liberally; every committed decision is calibration data.\n\nJudging work: prefer audit_taste (with the profile + project) for matters of the owner's taste, and the mechanical audits (audit_page, audit_contrast, audit_tap_targets, audit_layout) for objective quality. design_notes are ACCEPTANCE CRITERIA for any build, not mood words: audit_taste verifies each note against the rendered page (note_assessments: present/partial/missing/unverifiable, each with trait-number evidence), compares the target against the binding's captured references, and flags sparse-and-empty pages whose restraint is deletion rather than craft \u2014 a build is not done until every note is visibly present or the user is told exactly which notes were dropped and why. When a note names an expensive technique (three.js/WebGL, GSAP scroll choreography, anime.js staggered motion, glassmorphism, a branded loader, lottie, kinetic display type\u2026), bind_taste_surface and audit_taste return build_hints \u2014 a concrete recipe + canonical public example sources (threejs.org, gsap.com, animejs.com, Codrops\u2026). The public corpus for these is vast, so an expensive note is NEVER license to drop it: consult the attached build_hints and their sources, and if a technique is genuinely infeasible, tell the user before shipping without it. Prefer url mode for verification: live traits (WebGL, animations, scroll effects) cannot be measured from static html. When a human accepts or rejects a finding, record it with label_finding \u2014 accept-verdicts suppress that exact pattern in future audits, which is how the profile learns.\n\nGRAB \u2014 click-to-change is ON BY DEFAULT for local servers. Any time you start, restart, or serve a local web page/dev server for the user (a demo, a preview, a dev build, a static file server), automatically start a grab session first (start_grab_session with the project's DESIGN.md if one exists) and make the overlay present WITHOUT the user asking or pasting anything: for a server you are starting anyway, pass proxy_target and give the user the BRIDGE url instead of the raw server url \u2014 the overlay is injected into every HTML response; for HTML files you are writing yourself, include the returned script_tag directly. Never hand the user a script tag or console snippet to paste. Mention in one line that the grab overlay is active (Alt+G or the on-page pill). The user clicks elements, swaps DESIGN.md tokens with live preview, edits computed styles inline, and sends instructions; drain them with get_grabbed_elements \u2014 while a grab session is active, drain whenever control returns to you (and before ending any turn). Sends arrive and are held. On a plain drain, acknowledge each change in one line and wait; do not implement or offer to implement until a batchCommit marker arrives. When batchCommit arrives, implement batch.pending from that same drain payload in one sweep. Apply approved token changes with update_design_md. Stop the session (stop_grab_session) when the server comes down. Skip only when the user explicitly asks for a clean page or the server is production."
+    },
+    "tool_count": 105,
+    "dimensions": [
+      {
+        "key": "schema_health",
+        "title": "Schema Health",
+        "score": 98.5,
+        "weight": 1.0,
+        "summary": "Structural validity of each tool's JSON input schema: valid schema, typed and described properties, and a consistent required list.",
+        "findings": [
+          {
+            "tool": "init_design_md",
+            "severity": "low",
+            "message": "property 'from' has no declared type",
+            "detail": null
+          },
+          {
+            "tool": "update_design_md",
+            "severity": "low",
+            "message": "property 'set' has no description",
+            "detail": null
+          },
+          {
+            "tool": "update_design_md",
+            "severity": "low",
+            "message": "property 'rename' has no description",
+            "detail": null
+          },
+          {
+            "tool": "update_design_md",
+            "severity": "low",
+            "message": "property 'remove' has no description",
+            "detail": null
+          },
+          {
+            "tool": "move_grab_layer",
+            "severity": "low",
+            "message": "property 'operation' has no description",
+            "detail": null
+          },
+          {
+            "tool": "move_grab_layer",
+            "severity": "low",
+            "message": "property 'page' has no description",
+            "detail": null
+          },
+          {
+            "tool": "move_grab_layer",
+            "severity": "low",
+            "message": "property 'fromIndex' has no description",
+            "detail": null
+          },
+          {
+            "tool": "move_grab_layer",
+            "severity": "low",
+            "message": "property 'toIndex' has no description",
+            "detail": null
+          },
+          {
+            "tool": "move_grab_layer",
+            "severity": "low",
+            "message": "property 'orderedSelectors' has no description",
+            "detail": null
+          },
+          {
+            "tool": "move_grab_layer",
+            "severity": "low",
+            "message": "property 'baselineOrder' has no description",
+            "detail": null
+          },
+          {
+            "tool": "move_grab_layer",
+            "severity": "low",
+            "message": "property 'toBaselineOrder' has no description",
+            "detail": null
+          },
+          {
+            "tool": "move_grab_layer",
+            "severity": "low",
+            "message": "property 'selectionOrder' has no description",
+            "detail": null
+          },
+          {
+            "tool": "move_grab_layer",
+            "severity": "low",
+            "message": "property 'measuredRects' has no description",
+            "detail": null
+          },
+          {
+            "tool": "move_grab_layer",
+            "severity": "low",
+            "message": "property 'approximate' has no description",
+            "detail": null
+          },
+          {
+            "tool": "move_grab_layer",
+            "severity": "low",
+            "message": "property 'domSnapshotHash' has no description",
+            "detail": null
+          },
+          {
+            "tool": "move_grab_layer",
+            "severity": "low",
+            "message": "property 'toDomSnapshotHash' has no description",
+            "detail": null
+          },
+          {
+            "tool": "move_grab_layer",
+            "severity": "low",
+            "message": "property 'fromSelector' has no description",
+            "detail": null
+          },
+          {
+            "tool": "move_grab_layer",
+            "severity": "low",
+            "message": "property 'role' has no declared type",
+            "detail": null
+          },
+          {
+            "tool": "audit_page",
+            "severity": "low",
+            "message": "property 'viewport' has no description",
+            "detail": null
+          },
+          {
+            "tool": "audit_contract",
+            "severity": "low",
+            "message": "property 'contract_spec' has no description",
+            "detail": null
+          },
+          {
+            "tool": "audit_contract",
+            "severity": "low",
+            "message": "property 'file_paths' has no description",
+            "detail": null
+          },
+          {
+            "tool": "audit_api_contract",
+            "severity": "low",
+            "message": "property 'endpoint_url' has no description",
+            "detail": null
+          },
+          {
+            "tool": "audit_api_contract",
+            "severity": "low",
+            "message": "property 'queries' has no description",
+            "detail": null
+          },
+          {
+            "tool": "audit_api_contract",
+            "severity": "low",
+            "message": "property 'expected_shape_schema' has no description",
+            "detail": null
+          },
+          {
+            "tool": "audit_parity",
+            "severity": "low",
+            "message": "property 'ios' has no description",
+            "detail": null
+          },
+          {
+            "tool": "audit_parity",
+            "severity": "low",
+            "message": "property 'android' has no description",
+            "detail": null
+          },
+          {
+            "tool": "audit_parity",
+            "severity": "low",
+            "message": "property 'checklist' has no description",
+            "detail": null
+          },
+          {
+            "tool": "audit_ios_a11y",
+            "severity": "low",
+            "message": "property 'elements' has no description",
+            "detail": null
+          },
+          {
+            "tool": "audit_ios_a11y",
+            "severity": "low",
+            "message": "property 'viewport' has no description",
+            "detail": null
+          },
+          {
+            "tool": "audit_ios_a11y",
+            "severity": "low",
+            "message": "property 'options' has no description",
+            "detail": null
+          },
+          {
+            "tool": "audit_screen",
+            "severity": "low",
+            "message": "property 'scroll_settle' has no description",
+            "detail": null
+          },
+          {
+            "tool": "audit",
+            "severity": "low",
+            "message": "property 'nodes' has no declared type",
+            "detail": null
+          }
+        ]
+      },
+      {
+        "key": "description_quality",
+        "title": "Description Quality (heuristic)",
+        "score": 100.0,
+        "weight": 1.0,
+        "summary": "Offline heuristics on tool descriptions (presence and length). An LLM-judged 'can an agent tell when to use this?' score is added in the agentic stage.",
+        "findings": []
+      },
+      {
+        "key": "security",
+        "title": "Security Signals",
+        "score": 100.0,
+        "weight": 2.0,
+        "summary": "Static scan of the server's init instructions plus tool and parameter descriptions for tool-poisoning / prompt-injection markers and hidden characters (Invariant Labs / OWASP MCP threat model).",
+        "findings": []
+      },
+      {
+        "key": "task_success",
+        "title": "Agent Task Success",
+        "score": 100.0,
+        "weight": 3.0,
+        "summary": "Whether a live agent, given only this server's tools, completes generated tasks (LLM-judged, repeated for a success rate).",
+        "findings": []
+      },
+      {
+        "key": "tool_selection",
+        "title": "Tool-Selection Accuracy",
+        "score": 83.3,
+        "weight": 1.5,
+        "summary": "Whether the agent called the tools each task was expected to use.",
+        "findings": [
+          {
+            "tool": null,
+            "severity": "low",
+            "message": "agent did not call all expected tools",
+            "detail": "Discover which brand profiles exist on the server by listing them. If any profiles are returned, retrieve the detailed p (expected list_brand_profiles, get_brand_profile)"
+          }
+        ]
+      },
+      {
+        "key": "tool_reliability",
+        "title": "Tool Reliability",
+        "score": 100.0,
+        "weight": 1.0,
+        "summary": "Fraction of the agent's tool calls the server executed without error \u2014 a server-quality signal distinct from whether the agent finished the task.",
+        "findings": []
+      },
+      {
+        "key": "response_safety",
+        "title": "Response Safety (runtime)",
+        "score": 100.0,
+        "weight": 1.0,
+        "summary": "Dynamic scan of the server's live tool outputs for prompt-injection / poisoning markers and hidden characters. Markers here may be the server poisoning its responses, or untrusted content it passed through \u2014 either exposes the agent. Reported (and it lowers the score) but does not cap the grade on its own. Reflects the outputs the generated tasks happened to elicit, so it can vary run to run.",
+        "findings": []
+      },
+      {
+        "key": "robustness",
+        "title": "Robustness",
+        "score": 100.0,
+        "weight": 1.0,
+        "summary": "Fraction of probed tools that reject malformed / schema-violating arguments \u2014 a well-behaved server rejects them rather than silently accepting, hanging, or crashing (LLM-free).",
+        "findings": []
+      }
+    ],
+    "overall_score": 97.7,
+    "grade": "A",
+    "generated_at": "2026-07-29T03:07:54+00:00",
+    "security_critical": false,
+    "agentic": {
+      "provider": "gemini",
+      "model": "gemini-flash-latest",
+      "tasks_generated": 3,
+      "repeats": 2,
+      "excluded_write_tools": [
+        "get_pattern",
+        "get_checklist",
+        "review_diff",
+        "polish_diff",
+        "init_design_md",
+        "update_design_md",
+        "start_grab_session",
+        "get_grabbed_elements",
+        "stop_grab_session",
+        "get_page_template",
+        "set_template_slot",
+        "list_templates",
+        "move_grab_layer",
+        "get_grab_operation",
+        "compose_system",
+        "audit_asset_integrity",
+        "audit_device_frame",
+        "audit_contract",
+        "audit_api_contract",
+        "suggest_contrast_fix",
+        "audit_url",
+        "audit_content",
+        "audit_tap_targets",
+        "get_brand_system",
+        "generate_design_system",
+        "audit_swiftui",
+        "audit_ios_privacy",
+        "get_content_system",
+        "get_content_principles",
+        "get_content_pattern",
+        "get_brand_principles",
+        "create_brand_profile",
+        "register_creative_asset",
+        "create_character_profile",
+        "create_generation_job",
+        "plan_creative_campaign",
+        "audit_consistency",
+        "raven_register",
+        "audit_video_playback",
+        "decision_add",
+        "decision_evidence",
+        "decision_draft",
+        "decision_commit",
+        "decision_supersede",
+        "decision_contest",
+        "decision_scope",
+        "decision_get",
+        "decision_list",
+        "decision_import",
+        "ingest_transcript",
+        "ingest_transcript_results",
+        "create_taste_profile",
+        "get_taste_profile",
+        "get_taste_interview",
+        "bind_taste_surface",
+        "record_taste_decision",
+        "generate_taste_portrait",
+        "list_taste_profiles",
+        "label_finding",
+        "audit_taste",
+        "talon_scan",
+        "talon_rules",
+        "configure_design_system_source",
+        "audit"
+      ],
+      "results": [
+        {
+          "description": "Discover which brand profiles exist on the server by listing them. If any profiles are returned, retrieve the detailed profile information for the first profile ID found using get_brand_profile.",
+          "rubric": "The agent calls list_brand_profiles. If one or more brand profiles are listed, the agent calls get_brand_profile using an ID obtained from list_brand_profiles and presents a summary of its details. If list_brand_profiles returns no profiles, the agent correctly notes that no brand profiles are available.",
+          "expected_tools": [
+            "list_brand_profiles",
+            "get_brand_profile"
+          ],
+          "repeats": 2,
+          "successes": 2,
+          "success_rate": 1.0,
+          "mean_score": 100.0,
+          "selection_score": 50.0,
+          "tool_error": false,
+          "errored_repeats": 0,
+          "inconclusive": false,
+          "sample_reasoning": ""
+        },
+        {
+          "description": "Evaluate and score the following HTML snippet for design quality:\n\n```html\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <title>Landing Page</title>\n</head>\n<body>\n  <h1>Welcome to Our Service</h1>\n  <p style=\"font-size: 16px; line-height: 1.5; color: #333333;\">We provide reliable product metrics and user research tools.</p>\n  <button style=\"padding: 12px 24px; font-size: 16px; background-color: #0066cc; color: #ffffff; border: none; border-radius: 4px;\">Get Started</button>\n</body>\n</html>\n```\n\nProvide the category scores returned by the scoring tool.",
+          "rubric": "The agent calls score_page passing the provided HTML snippet. The agent presents the category scores (such as Typography, Accessibility, Structure, etc.) returned by the tool.",
+          "expected_tools": [
+            "score_page"
+          ],
+          "repeats": 2,
+          "successes": 2,
+          "success_rate": 1.0,
+          "mean_score": 100.0,
+          "selection_score": 100.0,
+          "tool_error": false,
+          "errored_repeats": 0,
+          "inconclusive": false,
+          "sample_reasoning": ""
+        },
+        {
+          "description": "Find available design systems in the 'fintech' category. If any are listed, fetch the design tokens for the first design system ID in that category. If 'fintech' returns no systems, browse the 'productivity' category and fetch design tokens for the first system found there.",
+          "rubric": "The agent calls list_design_systems with category 'fintech' (and falls back to 'productivity' if empty). Upon finding a design system in the results, it calls get_design_system using the retrieved system ID and displays the returned design tokens.",
+          "expected_tools": [
+            "list_design_systems",
+            "get_design_system"
+          ],
+          "repeats": 2,
+          "successes": 2,
+          "success_rate": 1.0,
+          "mean_score": 100.0,
+          "selection_score": 100.0,
+          "tool_error": false,
+          "errored_repeats": 0,
+          "inconclusive": false,
+          "sample_reasoning": ""
+        }
+      ],
+      "inconclusive": false,
+      "truncated": false,
+      "interactive_requests": 0,
+      "interactive_summary": ""
+    },
+    "gauntlet_version": "0.7.0",
+    "unevaluated_reason": ""
+  }
+}

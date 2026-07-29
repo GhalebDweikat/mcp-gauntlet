@@ -1,0 +1,790 @@
+{
+  "name": "percher-mcp",
+  "spec": "npx -y @percher/mcp@0.6.15",
+  "error": null,
+  "report": {
+    "spec": "npx -y @percher/mcp@0.6.15",
+    "server": {
+      "name": "percher",
+      "version": "0.6.15",
+      "title": null,
+      "protocol_version": "2025-11-25",
+      "instructions": "Percher publishes web apps to <name>.percher.run.\nCanonical flow: percher_publish -> percher_wait_for_deploy -> if recovery.nextAction='run_doctor': percher_doctor -> follow its recovery until 'none' or 'ask_user'.\nEvery tool that can fail returns a machine-readable `recovery` field. Always read recovery.nextAction; never regex-parse the human text.\nCall EXACTLY the suggested tool with EXACTLY recovery.args \u2014 fields like mode and deployId are load-bearing.\nIf nextAction='ask_user', ask recovery.prompt verbatim and wait.\npercher_publish defaults to async (returns 'queued' fast); pass waitForLive:true only if the user wants to block.\nNo token? publish returns auth_pending with a login URL; follow recovery (wait_auth). Check recovery.alternativeActions for the anonymous-publish path.\npercher_doctor is the recovery hub for any unclear failure."
+    },
+    "tool_count": 51,
+    "dimensions": [
+      {
+        "key": "schema_health",
+        "title": "Schema Health",
+        "score": 89.1,
+        "weight": 1.0,
+        "summary": "Structural validity of each tool's JSON input schema: valid schema, typed and described properties, and a consistent required list.",
+        "findings": [
+          {
+            "tool": "percher_login",
+            "severity": "low",
+            "message": "property 'token' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_login",
+            "severity": "low",
+            "message": "property 'apiUrl' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_init",
+            "severity": "low",
+            "message": "property 'force' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_init",
+            "severity": "low",
+            "message": "property 'name' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_init",
+            "severity": "low",
+            "message": "property 'dataMode' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_init",
+            "severity": "low",
+            "message": "property 'interactive' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_appstore_kit",
+            "severity": "low",
+            "message": "property 'name' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_appstore_kit",
+            "severity": "low",
+            "message": "property 'url' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_appstore_kit",
+            "severity": "low",
+            "message": "property 'packageName' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_appstore_kit",
+            "severity": "low",
+            "message": "property 'fingerprint' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_appstore_kit",
+            "severity": "low",
+            "message": "property 'teamId' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_appstore_kit",
+            "severity": "low",
+            "message": "property 'bundleId' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_appstore_kit",
+            "severity": "low",
+            "message": "property 'force' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_appstore_kit",
+            "severity": "low",
+            "message": "property 'outDir' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_logs",
+            "severity": "low",
+            "message": "property 'app' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_logs",
+            "severity": "low",
+            "message": "property 'tail' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_logs",
+            "severity": "low",
+            "message": "property 'follow' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_logs",
+            "severity": "low",
+            "message": "property 'level' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_logs",
+            "severity": "low",
+            "message": "property 'source' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_logs",
+            "severity": "low",
+            "message": "property 'search' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_logs",
+            "severity": "low",
+            "message": "property 'deployId' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_logs",
+            "severity": "low",
+            "message": "property 'since' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_cache_reset",
+            "severity": "low",
+            "message": "property 'app' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_env_set",
+            "severity": "low",
+            "message": "property 'app' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_env_set",
+            "severity": "low",
+            "message": "property 'values' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_env_unset",
+            "severity": "low",
+            "message": "property 'app' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_env_unset",
+            "severity": "low",
+            "message": "property 'key' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_env_list",
+            "severity": "low",
+            "message": "property 'app' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_export",
+            "severity": "low",
+            "message": "property 'app' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_export",
+            "severity": "low",
+            "message": "property 'out' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_export",
+            "severity": "low",
+            "message": "property 'deliveryKind' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_open",
+            "severity": "low",
+            "message": "property 'app' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_versions",
+            "severity": "low",
+            "message": "property 'app' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_diff",
+            "severity": "low",
+            "message": "property 'app' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_diff",
+            "severity": "low",
+            "message": "property 'base' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_diff",
+            "severity": "low",
+            "message": "property 'head' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_diff",
+            "severity": "low",
+            "message": "property 'patch' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_rename",
+            "severity": "low",
+            "message": "property 'app' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_rename",
+            "severity": "low",
+            "message": "property 'name' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_rollback",
+            "severity": "low",
+            "message": "property 'app' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_rollback",
+            "severity": "low",
+            "message": "property 'commitSha' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_backups",
+            "severity": "low",
+            "message": "property 'app' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_restore",
+            "severity": "low",
+            "message": "property 'app' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_restore",
+            "severity": "low",
+            "message": "property 'source' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_restore",
+            "severity": "low",
+            "message": "property 'components' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_restore",
+            "severity": "low",
+            "message": "property 'dryRun' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_deploys",
+            "severity": "low",
+            "message": "property 'app' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_deploys",
+            "severity": "low",
+            "message": "property 'limit' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_deploys_inspect",
+            "severity": "low",
+            "message": "property 'app' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_deploys_inspect",
+            "severity": "low",
+            "message": "property 'id' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_deploys_inspect",
+            "severity": "low",
+            "message": "property 'latestFailed' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_doctor",
+            "severity": "low",
+            "message": "property 'app' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_doctor",
+            "severity": "low",
+            "message": "property 'mode' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_doctor",
+            "severity": "low",
+            "message": "property 'deployId' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_reset_superuser",
+            "severity": "low",
+            "message": "property 'app' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_reset_superuser",
+            "severity": "low",
+            "message": "property 'reveal' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_data",
+            "severity": "low",
+            "message": "property 'action' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_data",
+            "severity": "low",
+            "message": "property 'app' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_data",
+            "severity": "low",
+            "message": "property 'provider' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_data",
+            "severity": "low",
+            "message": "property 'clientId' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_data",
+            "severity": "low",
+            "message": "property 'clientSecret' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_app_topology",
+            "severity": "low",
+            "message": "property 'app' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_app_resources",
+            "severity": "low",
+            "message": "property 'app' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_app_resources",
+            "severity": "low",
+            "message": "property 'window' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_app_resources",
+            "severity": "low",
+            "message": "property 'metrics' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_app_insights",
+            "severity": "low",
+            "message": "property 'app' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_billing",
+            "severity": "low",
+            "message": "property 'action' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_billing",
+            "severity": "low",
+            "message": "property 'plan' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_create_from_template",
+            "severity": "low",
+            "message": "property 'name' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_create_from_template",
+            "severity": "low",
+            "message": "property 'template' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_create_from_template",
+            "severity": "low",
+            "message": "property 'directory' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_create_from_template",
+            "severity": "low",
+            "message": "property 'force' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_domain",
+            "severity": "low",
+            "message": "property 'action' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_domain",
+            "severity": "low",
+            "message": "property 'app' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_domain",
+            "severity": "low",
+            "message": "property 'domain' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_share",
+            "severity": "low",
+            "message": "property 'action' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_share",
+            "severity": "low",
+            "message": "property 'app' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_share",
+            "severity": "low",
+            "message": "property 'email' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_share",
+            "severity": "low",
+            "message": "property 'role' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_share",
+            "severity": "low",
+            "message": "property 'shareId' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_invites",
+            "severity": "low",
+            "message": "property 'action' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_invites",
+            "severity": "low",
+            "message": "property 'shareId' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_transfer",
+            "severity": "low",
+            "message": "property 'action' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_transfer",
+            "severity": "low",
+            "message": "property 'app' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_transfer",
+            "severity": "low",
+            "message": "property 'email' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_transfer",
+            "severity": "low",
+            "message": "property 'transferId' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_transfers",
+            "severity": "low",
+            "message": "property 'action' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_transfers",
+            "severity": "low",
+            "message": "property 'transferId' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_webhook",
+            "severity": "low",
+            "message": "property 'action' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_webhook",
+            "severity": "low",
+            "message": "property 'url' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_github",
+            "severity": "low",
+            "message": "property 'action' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_github",
+            "severity": "low",
+            "message": "property 'app' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_github",
+            "severity": "low",
+            "message": "property 'repoUrl' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_github",
+            "severity": "low",
+            "message": "property 'branch' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_github",
+            "severity": "low",
+            "message": "property 'autoPreviews' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_forgejo",
+            "severity": "low",
+            "message": "property 'action' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_forgejo",
+            "severity": "low",
+            "message": "property 'app' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_forgejo",
+            "severity": "low",
+            "message": "property 'repoUrl' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_forgejo",
+            "severity": "low",
+            "message": "property 'branch' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_forgejo",
+            "severity": "low",
+            "message": "property 'autoPreviews' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_set_preview_branch",
+            "severity": "low",
+            "message": "property 'app' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_supabase",
+            "severity": "low",
+            "message": "property 'action' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_supabase",
+            "severity": "low",
+            "message": "property 'projectRef' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_supabase",
+            "severity": "low",
+            "message": "property 'token' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_supabase",
+            "severity": "low",
+            "message": "property 'outputDir' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_supabase",
+            "severity": "low",
+            "message": "property 'rootDir' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_supabase",
+            "severity": "low",
+            "message": "property 'apply' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_supabase",
+            "severity": "low",
+            "message": "property 'pbIdentifier' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_supabase",
+            "severity": "low",
+            "message": "property 'supabaseIdentifiers' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_supabase",
+            "severity": "low",
+            "message": "property 'scaffoldClient' has no description",
+            "detail": null
+          },
+          {
+            "tool": "percher_supabase",
+            "severity": "low",
+            "message": "property 'build' has no description",
+            "detail": null
+          }
+        ]
+      },
+      {
+        "key": "description_quality",
+        "title": "Description Quality (heuristic)",
+        "score": 99.6,
+        "weight": 1.0,
+        "summary": "Offline heuristics on tool descriptions (presence and length). An LLM-judged 'can an agent tell when to use this?' score is added in the agentic stage.",
+        "findings": [
+          {
+            "tool": "percher_env_unset",
+            "severity": "low",
+            "message": "description is short",
+            "detail": "29 chars"
+          },
+          {
+            "tool": "percher_whoami",
+            "severity": "low",
+            "message": "description is short",
+            "detail": "23 chars"
+          },
+          {
+            "tool": "percher_versions",
+            "severity": "low",
+            "message": "description is short",
+            "detail": "34 chars"
+          },
+          {
+            "tool": "percher_rollback",
+            "severity": "low",
+            "message": "description is short",
+            "detail": "37 chars"
+          }
+        ]
+      },
+      {
+        "key": "security",
+        "title": "Security Signals",
+        "score": 100.0,
+        "weight": 2.0,
+        "summary": "Static scan of the server's init instructions plus tool and parameter descriptions for tool-poisoning / prompt-injection markers and hidden characters (Invariant Labs / OWASP MCP threat model).",
+        "findings": [
+          {
+            "tool": "percher_reproduce",
+            "severity": "info",
+            "message": "description references data-transfer / exfiltration tooling",
+            "detail": "\u2026returned, env VALUES are NOT exfiltrated. Returns { status, tmpDir, cu\u2026"
+          },
+          {
+            "tool": "percher_export",
+            "severity": "info",
+            "message": "description references sensitive files or secrets",
+            "detail": "\u2026gs \u2192 Export and confirm their password to include encrypted env valu\u2026"
+          },
+          {
+            "tool": "percher_reset_superuser",
+            "severity": "info",
+            "message": "description references sensitive files or secrets",
+            "detail": "Reset PocketBase superuser credentials. Creates a new superuser pass\u2026"
+          },
+          {
+            "tool": "percher_account_delete",
+            "severity": "info",
+            "message": "description references sensitive files or secrets",
+            "detail": "\u2026he user to confirm with their password in the dashboard. Do not retr\u2026 (normalized for matching)"
+          },
+          {
+            "tool": "percher_github",
+            "severity": "info",
+            "message": "description references sensitive files or secrets",
+            "detail": "\u2026our interface supports (boxed credential block, copy button, secret-in\u2026 (normalized for matching)"
+          },
+          {
+            "tool": "percher_forgejo",
+            "severity": "info",
+            "message": "description references sensitive files or secrets",
+            "detail": "\u2026our interface supports (boxed credential block, copy button, secret-in\u2026 (normalized for matching)"
+          },
+          {
+            "tool": "percher_supabase",
+            "severity": "info",
+            "message": "description references sensitive files or secrets",
+            "detail": "\u2026pabase into PocketBase (reads credentials from env vars; auth users sti\u2026 (normalized for matching)"
+          },
+          {
+            "tool": "percher_delete_app",
+            "severity": "info",
+            "message": "description references sensitive files or secrets",
+            "detail": "\u2026he user to confirm with their password in the dashboard. Do not retr\u2026"
+          }
+        ]
+      }
+    ],
+    "overall_score": 97.2,
+    "grade": "A",
+    "generated_at": "2026-07-29T03:21:38+00:00",
+    "security_critical": false,
+    "agentic": null,
+    "gauntlet_version": "0.7.0",
+    "unevaluated_reason": ""
+  }
+}

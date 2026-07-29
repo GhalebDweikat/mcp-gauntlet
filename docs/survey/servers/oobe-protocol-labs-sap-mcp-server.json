@@ -1,0 +1,6 @@
+{
+  "name": "oobe-protocol-labs-sap-mcp-server",
+  "spec": "npx -y @oobe-protocol-labs/sap-mcp-server@0.7.1",
+  "error": "MCPConnectionError: McpError: Connection closed \u2014 the server said: requireStack: [ '~/workplace/git/mcp-gauntlet/package.json' ] / } / Node.js v22.23.1",
+  "report": null
+}

@@ -1,0 +1,6 @@
+{
+  "name": "nauro",
+  "spec": "uvx nauro@1.9.0",
+  "error": "MCPConnectionError: McpError: Connection closed \u2014 the server said: Installed 46 packages in 782ms",
+  "report": null
+}

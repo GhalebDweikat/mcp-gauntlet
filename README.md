@@ -76,6 +76,22 @@ Each run produces a graded report card (JSON + Markdown) across:
 A live leaderboard ranks popular public MCP servers by their gauntlet score:
 **[ghalebdweikat.github.io/mcp-gauntlet](https://ghalebdweikat.github.io/mcp-gauntlet/)**
 
+### Registry survey — 50 servers
+
+**[ghalebdweikat.github.io/mcp-gauntlet/survey](https://ghalebdweikat.github.io/mcp-gauntlet/survey/)**
+
+A separate board, from a survey of 50 servers taken mechanically from the official MCP
+registry as of 2026-07-28 — every entry that is installable over stdio and declares no
+required credential, capped at two per publisher so one vendor's cluster could not stand in
+for the ecosystem. `scripts/build_survey_list.py` does the selection, so the sample can be
+argued with rather than taken on trust.
+
+The headline is not a ranking. **23 of the 50 could not be started at all**: packages
+published with no executable, servers that need an account the registry did not declare,
+servers that never answered. Each row says which. Kept separate from the board above
+because the two were scored by different versions, and scores only mean something within
+one.
+
 Generate one yourself across any set of servers listed in a JSON file:
 
 ```bash

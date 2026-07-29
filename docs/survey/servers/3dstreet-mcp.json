@@ -1,0 +1,75 @@
+{
+  "name": "3dstreet-mcp",
+  "spec": "npx -y 3dstreet-mcp@0.2.2",
+  "error": null,
+  "report": {
+    "spec": "npx -y 3dstreet-mcp@0.2.2",
+    "server": {
+      "name": "3dstreet-mcp",
+      "version": "0.1.0",
+      "title": null,
+      "protocol_version": "2024-11-05",
+      "instructions": "3DStreet MCP relay. All scene tools are forwarded to a paired 3DStreet browser tab \u2014 without one, `tools/list` returns empty and any `tools/call` will fail with \"No 3DStreet tab is paired\" or \"Timed out waiting for the 3DStreet tab\".\n\nWhen that happens, instruct the user to open this URL in their browser to auto-pair the tab with this relay:\n\n    https://3dstreet.app/#mcp\n\nOnce the user confirms the tab paired (the AI Assistant pane in 3DStreet shows \"MCP relay paired\"), retry the tool call. The relay caches tool definitions across brief reconnects, so a once-paired user does not need re-instructing on transient drops."
+    },
+    "tool_count": 0,
+    "dimensions": [
+      {
+        "key": "schema_health",
+        "title": "Schema Health",
+        "score": 100.0,
+        "weight": 1.0,
+        "summary": "Structural validity of each tool's JSON input schema: valid schema, typed and described properties, and a consistent required list.",
+        "findings": []
+      },
+      {
+        "key": "description_quality",
+        "title": "Description Quality (heuristic)",
+        "score": 100.0,
+        "weight": 1.0,
+        "summary": "Offline heuristics on tool descriptions (presence and length). An LLM-judged 'can an agent tell when to use this?' score is added in the agentic stage.",
+        "findings": []
+      },
+      {
+        "key": "security",
+        "title": "Security Signals",
+        "score": 100.0,
+        "weight": 2.0,
+        "summary": "Static scan of the server's init instructions plus tool and parameter descriptions for tool-poisoning / prompt-injection markers and hidden characters (Invariant Labs / OWASP MCP threat model).",
+        "findings": []
+      },
+      {
+        "key": "discovery",
+        "title": "Discovery",
+        "score": 0.0,
+        "weight": 1.0,
+        "summary": "The gauntlet scores a server's tools; this server exposes none, so there is nothing to evaluate.",
+        "findings": [
+          {
+            "tool": null,
+            "severity": "medium",
+            "message": "server exposes no tools",
+            "detail": null
+          }
+        ]
+      }
+    ],
+    "overall_score": 0.0,
+    "grade": "N/A",
+    "generated_at": "2026-07-29T03:14:53+00:00",
+    "security_critical": false,
+    "agentic": {
+      "provider": "gemini",
+      "model": "gemini-flash-latest",
+      "tasks_generated": 0,
+      "repeats": 2,
+      "excluded_write_tools": [],
+      "results": [],
+      "inconclusive": false,
+      "truncated": false,
+      "interactive_requests": 0,
+      "interactive_summary": ""
+    },
+    "gauntlet_version": "0.7.0",
+    "unevaluated_reason": ""
+  }
+}

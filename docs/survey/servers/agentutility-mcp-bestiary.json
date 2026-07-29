@@ -1,0 +1,6 @@
+{
+  "name": "agentutility-mcp-bestiary",
+  "spec": "npx -y @agentutility/mcp-bestiary@0.1.3",
+  "error": "MCPConnectionError: McpError: Connection closed \u2014 the server said: [@agentutility/mcp-bestiary] FATAL: X402_PRIVATE_KEY env var is required. / Set it to a hex-encoded EVM private key with USDC balance",
+  "report": null
+}

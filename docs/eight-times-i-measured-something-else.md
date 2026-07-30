@@ -29,7 +29,8 @@ realistic things a user might want, and grades whether the agent achieved them.
 
 For a filesystem server it generated:
 
-> *"Search for all PNG image files in `/workspace/assets` matching pattern `*.png`."*
+> *"Search for all PNG image files in `/workspace/assets` matching pattern `*.png`, and then
+> load `/workspace/assets/logo.png`…"*
 
 `/workspace/assets` does not exist. It never did. The model was shown a tool called
 `search_files` that takes a `path`, and nothing else — so it invented a plausible path, every
@@ -39,14 +40,15 @@ The published board said `filesystem` was a **D (67.3)** and `git` was a **C (72
 Correctly grounded, they are **A (99.4)** and **A (98.9)**. Agent task success went from 0.0
 and 16.7 respectively to 100.0 on both.
 
-What made it invisible for weeks: servers whose tools are *self-contained* were unaffected.
-`sqlite` can answer "list all tables" with no invented identifier, so it scored an A. `memory`
-scored an A. The failure correlated perfectly with a property of the tools — do they take an
-environment-specific identifier? — and therefore looked exactly like a real difference in
-server quality.
+What made it invisible: servers whose tools are *self-contained* were barely touched. `sqlite`
+can answer "list all tables" with no invented identifier, and scored an A. So did `memory`. The
+two servers it hit hard were the two whose every useful tool takes a path — so the damage tracked
+a property of the tools, and therefore looked exactly like a real difference in server quality.
+(Not a clean correlation: `everything` graded a B at 66.7% task success with self-contained
+tools, and `sqlite` only managed 83.3%. Plenty of ordinary failure to hide in.)
 
 **The fix wasn't a better prompt.** It was inverting the prompt's policy. It used to say
-"include any specific input values the agent needs", which for these servers *requires*
+"including any specific input values the agent needs", which for these servers *requires*
 invention. Now it forbids inventing an identifier at all: a task must either use a value the
 harness can state as fact — the server's own command-line arguments, its zero-argument tools,
 its published resource URIs — or make its first step a discovery call. *"Discover which
@@ -68,6 +70,10 @@ the *previous run's* security findings. The scanner read them, found the phrases
 and flagged the git server for relaying sensitive-looking content.
 
 The evaluator caught itself and filed a report about the server.
+
+This one never reached a published row — I saw it in a run and fixed it first, and the git row
+that shipped carried zero security findings. I am including it because the mechanism is the
+point, not the blast radius.
 
 ## 3. The filesystem server was flagged for a sentence I wrote
 
@@ -155,7 +161,11 @@ recorded. Reproducibility is good. This was not.
 | package | registry says | npm actually ships |
 |---|---|---|
 | `@adeu/mcp-server` | 1.7.1 | **1.30.0** |
-| `@oobe-protocol-labs/sap-mcp-server` | 0.7 | **0.9.52** |
+| `@oobe-protocol-labs/sap-mcp-server` | 0.7.1 | **0.9.52** |
+| `@callmcp/server` | 0.1.2 | 0.1.5 |
+
+(The third row is there so the lag does not look uniform. Sometimes it is small. Sometimes it
+is twenty-three minor versions.)
 
 Pinning meant scanning code the maintainer shipped long ago and has since fixed. Two servers
 that scored **A** on latest failed outright on the recorded version — one timed out, one died

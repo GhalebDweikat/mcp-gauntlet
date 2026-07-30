@@ -78,6 +78,11 @@ scoring model stops moving; the reasoning is at
 **[ghalebdweikat.github.io/mcp-gauntlet](https://ghalebdweikat.github.io/mcp-gauntlet/)** and
 the data is kept in `boards-withheld/` rather than deleted, so the corrections stay auditable.
 
+The long version is written up as
+**[Seven times my MCP evaluator graded my own environment instead of the server](docs/seven-times-i-measured-my-own-environment.md)**
+— every one of them the same bug wearing a different hat, and the pattern generalises to any
+eval system.
+
 The short version: inside three days the harness was found to have graded servers on its own
 defects three separate times — invented filesystem paths, credential-vocabulary false
 positives, and pinning to a registry version that lagged the published package by 23 minor

@@ -484,7 +484,12 @@ async def test_budget_stop_cannot_inflate_the_score() -> None:
         async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
             self.calls += 1
             if name == "slow_good":
-                await anyio.sleep(0.06)
+                # Comfortably longer than the budget, not marginally. The original 0.06s
+                # against a 0.05s budget was a 10ms margin, and Windows' timer granularity
+                # is ~15ms — so under full-suite load the elapsed reading landed on the wrong
+                # side and a second tool got probed. Flaky in the suite, passing in isolation,
+                # which is the worst combination.
+                await anyio.sleep(0.5)
                 return SimpleNamespace(isError=True)  # correct rejection
             return SimpleNamespace(isError=False)  # silently accepts
 

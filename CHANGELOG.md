@@ -3,6 +3,27 @@
 All notable changes to mcp-gauntlet are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.7.1] — 2026-07-30
+
+### Fixed
+
+- **The CLI crashed on Windows consoles using a legacy codepage.** Windows hands a
+  process the ANSI codepage rather than UTF-8, and cp1252 cannot encode the warning sign
+  printed on every run — so `uvx mcp-gauntlet run ...`, the command on the project page,
+  died with `UnicodeEncodeError` before showing a result. Present in every release up to
+  and including 0.7.0; found by running the published wheel instead of the working tree.
+
+  The worse half of the same bug: cp1252 also cannot encode the Cyrillic, Greek,
+  fullwidth and mathematical-bold letters that make up a homoglyph finding. Those
+  characters *are* the finding — a tool named with a Cyrillic `а` is reported by showing
+  it — so the confusable check crashed the run at the exact moment it caught an attack,
+  and a clean exit was the only outcome a Windows user could get. Removing the decorative
+  glyphs would not have fixed this; stdout and stderr are now put on UTF-8 at startup,
+  with `errors="replace"` so an un-reencodable stream degrades to mojibake instead of a
+  traceback. Two tests spawn real subprocesses under `PYTHONIOENCODING=cp1252` — pytest's
+  capture replaces stdout, so an in-process test cannot see this class of bug — and both
+  were confirmed to fail with the fix removed.
+
 ## [0.7.0] — 2026-07-30
 
 ### Added

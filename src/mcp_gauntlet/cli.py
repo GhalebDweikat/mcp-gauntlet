@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import inspect
 import os
+import sys
 from pathlib import Path
 
 import anyio
@@ -31,6 +33,28 @@ from mcp_gauntlet.report import (
     to_markdown,
 )
 from mcp_gauntlet.robustness import run_robustness_probes
+
+
+def _use_utf8_stdio() -> None:
+    """Put stdout and stderr on UTF-8 before rich takes hold of them.
+
+    Windows gives a process the ANSI codepage — cp1252 across most of the world —
+    and cp1252 cannot encode a warning sign, an arrow, or, the part that actually
+    matters, the Cyrillic and Greek letters a homoglyph finding is *about*. Printing
+    such a finding raised UnicodeEncodeError, so the check that caught an attack was
+    the one that killed the run. ``errors="replace"`` keeps a stream we cannot
+    re-encode from taking the run down with it: mojibake beats a traceback.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:  # pythonw, a plain file object, some capture shims
+            continue
+        # A detached, closed, or non-seekable stream is not worth failing a run over.
+        with contextlib.suppress(ValueError, OSError):
+            reconfigure(encoding="utf-8", errors="replace")
+
+
+_use_utf8_stdio()
 
 app = typer.Typer(
     add_completion=False,

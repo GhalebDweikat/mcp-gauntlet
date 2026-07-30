@@ -604,6 +604,16 @@ def render_index(results: list[LeaderboardResult], board_url: str | None = None)
     else:
         versions = "an unrecorded version of mcp-gauntlet"
 
+    # And which SDK read the servers. Same reasoning as the gauntlet version: a 2.0-era
+    # client reads different field names off an identical server, so two runs of one
+    # gauntlet version can legitimately disagree. Appended to the same sentence rather than
+    # given a column, since it repeats one value down every row.
+    sdks = sorted(
+        {r.report.mcp_sdk_version for r in results if r.report and r.report.mcp_sdk_version}
+    )
+    if sdks:
+        versions += f" via mcp SDK {', '.join(sdks)}"
+
     board = (
         _BOARD_HEAD
         + "".join(_board_row(r, str(i)) for i, r in enumerate(ranked, start=1))

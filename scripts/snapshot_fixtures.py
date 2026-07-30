@@ -41,7 +41,7 @@ FIXTURES = (
 )
 
 # Fields that legitimately differ between two runs of identical code.
-VOLATILE = {"generated_at", "gauntlet_version"}
+VOLATILE = {"generated_at", "gauntlet_version", "mcp_sdk_version"}
 
 
 def _capture(name: str) -> dict[str, Any]:

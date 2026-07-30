@@ -178,6 +178,17 @@ def _version() -> str:
     return __version__
 
 
+def _sdk_version() -> str:
+    """The MCP SDK this score was measured through.
+
+    Local import to keep `report.py` free of an adapters dependency at module scope — the
+    scoring model must not need to know an SDK exists.
+    """
+    from mcp_gauntlet.adapters import sdk_version
+
+    return sdk_version()
+
+
 def _has_critical_security(dimensions: list[DimensionResult]) -> bool:
     """Whether the (server-authored) security dimension carries a HIGH finding.
 
@@ -204,6 +215,11 @@ class GauntletReport(BaseModel):
     # published score has to say which methodology it came from. Defaulted, not required,
     # so a report saved by an older version still loads.
     gauntlet_version: str = ""
+    # Which MCP SDK produced this score, and therefore which protocol era it was measured in.
+    # A 2.0-era client reads different field names off the same server, so two runs of the
+    # same gauntlet version can disagree — the version stamp alone was not enough to make a
+    # score reproducible. Defaulted, so reports written before this field existed still load.
+    mcp_sdk_version: str = ""
     # Why the live-agent evaluation was deliberately not run — currently only "this server
     # needs credentials nobody gave it". Kept as prose because the board prints it verbatim:
     # a reader deciding whether a missing score is the server's fault or the harness's needs
@@ -250,6 +266,7 @@ class GauntletReport(BaseModel):
                     security_critical=_has_critical_security(dimensions),
                     agentic=agentic,
                     gauntlet_version=_version(),
+                    mcp_sdk_version=_sdk_version(),
                     unevaluated_reason=unevaluated_reason,
                 )
             )
@@ -275,6 +292,7 @@ class GauntletReport(BaseModel):
                 security_critical=security_critical,
                 agentic=agentic,
                 gauntlet_version=_version(),
+                mcp_sdk_version=_sdk_version(),
                 unevaluated_reason=unevaluated_reason,
             )
         )
@@ -437,6 +455,11 @@ def to_markdown(report: GauntletReport) -> str:
         f"- **Server spec:** `{_md_code(report.spec)}`",
         f"- **Server:** {_md(report.server.name or '(unknown)')} v{_md(version)}",
         f"- **MCP protocol:** {_md(report.server.protocol_version or '(not reported)')}",
+        # Both, because they answer different questions: the protocol is what the SERVER
+        # agreed to speak, the SDK is which field names the HARNESS read off it. A 2.0-era
+        # client reads the same server differently, so a score is only reproducible if both
+        # are recorded.
+        f"- **Measured through:** mcp SDK {_md(report.mcp_sdk_version or '(not recorded)')}",
         f"- **Tools:** {report.tool_count}",
         f"- **Overall:** **{report.grade}** ({report.overall_score:.1f}/100)",
         f"- **Generated:** {report.generated_at}",

@@ -378,3 +378,43 @@ def test_dimension_keys_used_across_modules_are_the_enum_values() -> None:
         ],
     )
     assert not relayed.security_critical
+
+
+def test_a_report_records_which_sdk_measured_it() -> None:
+    """The version stamp alone was not enough to make a score reproducible.
+
+    METHODOLOGY rests comparability on `gauntlet_version`, and tells readers to reproduce a
+    score with `uvx mcp-gauntlet@<version>`. But a 2.0-era SDK reads different field names
+    off an identical server, so two runs of the same gauntlet version can legitimately
+    disagree — and nothing on the report said which era it was. Measured: a 2.0-built server
+    negotiates down to 2025-11-25, so both eras really do see the same servers.
+    """
+    report = GauntletReport.build(
+        spec="s",
+        server=ServerInfo(name="n", version="1"),
+        tool_count=1,
+        dimensions=[_dim("security", 100.0, weight=2.0)],
+    )
+    assert report.mcp_sdk_version, "no SDK recorded — the score cannot be attributed"
+    assert report.mcp_sdk_version[0].isdigit()
+
+    # And it reaches the human-readable report, not just the JSON.
+    assert "mcp SDK" in to_markdown(report)
+
+
+def test_a_report_written_before_the_field_existed_still_loads() -> None:
+    # Every saved leaderboard row predates this field. Defaulted, so a rebuild of an old
+    # board must not need a migration — the whole point of --render-only being free.
+    old = {
+        "spec": "s",
+        "server": {"name": "n", "version": "1"},
+        "tool_count": 1,
+        "dimensions": [],
+        "overall_score": 90.0,
+        "grade": "A",
+        "generated_at": "2026-07-01T00:00:00+00:00",
+        "gauntlet_version": "0.4.0",
+    }
+    loaded = GauntletReport.model_validate(old)
+    assert loaded.mcp_sdk_version == ""
+    assert loaded.grade == "A"

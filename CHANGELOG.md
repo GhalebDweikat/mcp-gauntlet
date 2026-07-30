@@ -3,9 +3,37 @@
 All notable changes to mcp-gauntlet are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [0.7.0] — 2026-07-28
+## [0.7.0] — 2026-07-30
+
+### Added
+
+- **One SDK adapter, and nothing reads an SDK field outside it.** `mcp` 2.0 renames every
+  field to snake_case, and those fields were read through `getattr(obj, "camelCaseName",
+  default)` — which does not raise on a rename, it returns the default, so the check built on
+  it measures nothing and reports every server clean. That is not hypothetical: a fix shipped
+  for the new protocol's interaction pattern had the same bug, reading `resultType` where 2.0
+  says `result_type`. Discovery now raises on a missing field; live-result reads keep their
+  defaults, because one of them runs after the whole paid agent evaluation and a raise there
+  would discard it. A test asserts no legacy-spelled SDK read survives outside `adapters/`.
+- **`mcp_sdk_version` on every report.** Comparability rested entirely on `gauntlet_version`,
+  but a 2.0-era SDK reads different field names off an identical server, so two runs of one
+  gauntlet version could disagree with nothing saying why. Shown next to the negotiated
+  protocol: one is what the *server* agreed to speak, the other is what the *harness* read.
+- **MRTR (`input_required`) results are declined like the pushed elicitation they replace.**
+  Revision 2026-07-28 forbids a server pushing elicitation at the client; it returns the
+  request inside an ordinary tool result. The decline counter watched only the old path, so
+  such a call would have been charged to the server's Tool Reliability — the reverse of what
+  that attribution is for.
+- **`scripts/era_probe.py`** — builds a server on `mcp` 2.0 and points the current client at
+  it. Measured: the handshake succeeds and the server negotiates down to 2025-11-25, so the
+  `mcp<2` pin is not urgent. Two rounds of argument, thirty minutes of measurement.
+- **A fixture score snapshot** (`scripts/snapshot_fixtures.py`), because the existing fixture
+  tests asserted `grade in ("A","B")` — which a regression from 98.3 to 92 passes. It pins
+  each fixture's full report and every tool's drift fingerprint, and it has been verified to
+  actually fail when tampered with.
 
 ### Changed
+
 
 - **Secret and exfiltration references no longer affect the score.** Auditing a 50-server
   survey before publishing it produced 25 of these findings and every one was a false

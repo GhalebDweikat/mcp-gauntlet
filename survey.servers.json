@@ -1,4 +1,5 @@
 {
+  "_note": "The CURRENT selection, regenerated after package pinning was reverted. This is NOT the list that produced the withheld survey board \u2014 that board pinned every spec to the version the registry recorded, so it shares no specs with this file and cannot be reproduced from it. The provenance record for what actually ran is boards-withheld/registry-survey/servers-as-scanned.json. Rebuild this file with scripts/build_survey_list.py; the registry grows daily, so the membership will differ.",
   "servers": [
     {
       "name": "adeu-mcp-server",

@@ -284,5 +284,6 @@ for tool poisoning in the wild and did not find any. That is a negative result, 
 more now than I would have a week ago — not because the scanner got stronger, but because I know
 much more precisely what it was measuring.
 
-The code, the methodology, and every one of these eight fixes with its reasoning:
+The code, the methodology, the [design notes](design/) including the ones that record what I
+got wrong, and every one of these eight fixes:
 [github.com/GhalebDweikat/mcp-gauntlet](https://github.com/GhalebDweikat/mcp-gauntlet).

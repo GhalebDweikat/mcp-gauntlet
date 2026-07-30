@@ -1,0 +1,404 @@
+{
+  "servers": [
+    {
+      "name": "3dstreet-mcp",
+      "spec": "npx -y 3dstreet-mcp@0.2.2",
+      "outcome": "N/A 0.0",
+      "reason": null,
+      "self_reported_version": "0.1.0",
+      "gauntlet_version": "0.7.0"
+    },
+    {
+      "name": "adeu-mcp-server",
+      "spec": "npx -y @adeu/mcp-server@1.7.1",
+      "outcome": "not scored",
+      "reason": "timed out after 120s",
+      "self_reported_version": null,
+      "gauntlet_version": null
+    },
+    {
+      "name": "aetherwealth-mcp",
+      "spec": "npx -y @aetherwealth/mcp@0.2.2",
+      "outcome": "A 97.4",
+      "reason": null,
+      "self_reported_version": "0.2.2",
+      "gauntlet_version": "0.7.0"
+    },
+    {
+      "name": "agentutility-mcp-agentops",
+      "spec": "npx -y @agentutility/mcp-agentops@0.1.1",
+      "outcome": "not scored",
+      "reason": "MCPConnectionError: McpError: Connection closed \u2014 the server said: [@agentutility/mcp-agentops] FATAL: X402_PRIVATE_KEY env var is required. / Set it to a hex-encoded EVM private key with USDC balance",
+      "self_reported_version": null,
+      "gauntlet_version": null
+    },
+    {
+      "name": "agentutility-mcp-bestiary",
+      "spec": "npx -y @agentutility/mcp-bestiary@0.1.3",
+      "outcome": "not scored",
+      "reason": "MCPConnectionError: McpError: Connection closed \u2014 the server said: [@agentutility/mcp-bestiary] FATAL: X402_PRIVATE_KEY env var is required. / Set it to a hex-encoded EVM private key with USDC balance",
+      "self_reported_version": null,
+      "gauntlet_version": null
+    },
+    {
+      "name": "ai-dossier-mcp-server",
+      "spec": "npx -y @ai-dossier/mcp-server@1.0.4",
+      "outcome": "D 63.1",
+      "reason": null,
+      "self_reported_version": "1.0.4",
+      "gauntlet_version": "0.7.0"
+    },
+    {
+      "name": "ankimcp-anki-mcp-server",
+      "spec": "npx -y @ankimcp/anki-mcp-server@0.22.5",
+      "outcome": "not scored",
+      "reason": "MCPConnectionError: McpError: Connection closed \u2014 the server said: \u001b[31m\u2717\u001b[0m Failed to start MCP HTTP server: listen EADDRINUSE: address already in use 127.0.0.1:3000",
+      "self_reported_version": null,
+      "gauntlet_version": null
+    },
+    {
+      "name": "autonomad-travel",
+      "spec": "npx -y autonomad-travel@1.4.0",
+      "outcome": "A 99.8",
+      "reason": null,
+      "self_reported_version": "1.4.0",
+      "gauntlet_version": "0.7.0"
+    },
+    {
+      "name": "bourdon",
+      "spec": "uvx bourdon@0.12.5",
+      "outcome": "not scored",
+      "reason": "McpError: Connection closed",
+      "self_reported_version": null,
+      "gauntlet_version": null
+    },
+    {
+      "name": "businys-mcp-server",
+      "spec": "npx -y @businys/mcp-server@1.0.1",
+      "outcome": "not scored",
+      "reason": "MCPConnectionError: McpError: Connection closed \u2014 the server said: npm error code EUNSUPPORTEDPROTOCOL / npm error Unsupported URL Type \"workspace:\": workspace:*",
+      "self_reported_version": null,
+      "gauntlet_version": null
+    },
+    {
+      "name": "callmcp-server",
+      "spec": "npx -y @callmcp/server@0.1.2",
+      "outcome": "A 96.2",
+      "reason": null,
+      "self_reported_version": "0.1.0",
+      "gauntlet_version": "0.7.0"
+    },
+    {
+      "name": "cleanor-mcp",
+      "spec": "npx -y @cleanor/mcp@0.6.1",
+      "outcome": "A 100.0",
+      "reason": null,
+      "self_reported_version": "0.6.0",
+      "gauntlet_version": "0.7.0"
+    },
+    {
+      "name": "clize-clize",
+      "spec": "npx -y @clize/clize@0.23.1",
+      "outcome": "not scored",
+      "reason": "MCPConnectionError: McpError: Connection closed \u2014 the server said: build                        \u505a\u4e00\u4e2a\u4f5c\u54c1(\u7aef\u5230\u7aef):build site = \u7ad9\u70b9/UI \u00b7 build clip = / \u77ed\u7247;\u65b9\u6cd5/\u6821\u9a8c\u514d\u8d39,\u6210\u54c1\u6b65\u9aa4 \ud83d\udcb0 / help [command]               display ",
+      "self_reported_version": null,
+      "gauntlet_version": null
+    },
+    {
+      "name": "contextlayer-mcp",
+      "spec": "npx -y @contextlayer/mcp@0.0.3",
+      "outcome": "not scored",
+      "reason": "MCPConnectionError: McpError: Connection closed \u2014 the server said: npm error could not determine executable to run",
+      "self_reported_version": null,
+      "gauntlet_version": null
+    },
+    {
+      "name": "contextstudios-mcp",
+      "spec": "npx -y contextstudios-mcp@2.0.0",
+      "outcome": "not scored",
+      "reason": "MCPConnectionError: McpError: Connection closed \u2014 the server said: npm error could not determine executable to run",
+      "self_reported_version": null,
+      "gauntlet_version": null
+    },
+    {
+      "name": "contio-mcp",
+      "spec": "npx -y @contio/mcp@1.0.1",
+      "outcome": "not scored",
+      "reason": "MCPConnectionError: McpError: Connection closed \u2014 the server said: npm error could not determine executable to run",
+      "self_reported_version": null,
+      "gauntlet_version": null
+    },
+    {
+      "name": "ctxl",
+      "spec": "npx -y ctxl@0.0.2",
+      "outcome": "not scored",
+      "reason": "MCPConnectionError: McpError: Connection closed \u2014 the server said: npm error could not determine executable to run",
+      "self_reported_version": null,
+      "gauntlet_version": null
+    },
+    {
+      "name": "demomagic-mcp",
+      "spec": "npx -y @demomagic/mcp@0.1.0",
+      "outcome": "A 100.0",
+      "reason": null,
+      "self_reported_version": "0.1.0",
+      "gauntlet_version": "0.7.0"
+    },
+    {
+      "name": "engrava-mcp",
+      "spec": "uvx engrava-mcp@0.5.1",
+      "outcome": "not scored",
+      "reason": "MCPConnectionError: McpError: Connection closed \u2014 the server said:   raise StoreResolutionError(msg) / | engrava_mcp.config.StoreResolutionError: No engrava store configured. Set ENGRAVA_MCP_CONFIG to",
+      "self_reported_version": null,
+      "gauntlet_version": null
+    },
+    {
+      "name": "justdrop-mcp",
+      "spec": "npx -y justdrop-mcp@0.1.6",
+      "outcome": "A 100.0",
+      "reason": null,
+      "self_reported_version": "0.1.6",
+      "gauntlet_version": "0.7.0"
+    },
+    {
+      "name": "kavel-mcp",
+      "spec": "npx -y kavel-mcp@0.1.1",
+      "outcome": "A 100.0",
+      "reason": null,
+      "self_reported_version": "0.1.1",
+      "gauntlet_version": "0.7.0"
+    },
+    {
+      "name": "kawacode-mcp",
+      "spec": "npx -y @kawacode/mcp@6.9.4",
+      "outcome": "D 65.2",
+      "reason": null,
+      "self_reported_version": "0.3.0",
+      "gauntlet_version": "0.7.0"
+    },
+    {
+      "name": "mcpcap",
+      "spec": "uvx mcpcap@0.9.6",
+      "outcome": "C 73.0",
+      "reason": null,
+      "self_reported_version": "2.14.7",
+      "gauntlet_version": "0.7.0"
+    },
+    {
+      "name": "meetlark-mcp-server",
+      "spec": "npx -y @meetlark/mcp-server@1.0.3",
+      "outcome": "not scored",
+      "reason": "timed out after 120s",
+      "self_reported_version": null,
+      "gauntlet_version": null
+    },
+    {
+      "name": "nauro",
+      "spec": "uvx nauro@1.9.0",
+      "outcome": "not scored",
+      "reason": "MCPConnectionError: McpError: Connection closed \u2014 the server said: Installed 46 packages in 782ms",
+      "self_reported_version": null,
+      "gauntlet_version": null
+    },
+    {
+      "name": "nudg3-mcp",
+      "spec": "uvx nudg3-mcp@1.1.0",
+      "outcome": "C 75.7",
+      "reason": null,
+      "self_reported_version": "3.4.5",
+      "gauntlet_version": "0.7.0"
+    },
+    {
+      "name": "oobe-protocol-labs-sap-mcp-server",
+      "spec": "npx -y @oobe-protocol-labs/sap-mcp-server@0.7.1",
+      "outcome": "not scored",
+      "reason": "MCPConnectionError: McpError: Connection closed \u2014 the server said: requireStack: [ '~/workplace/git/mcp-gauntlet/package.json' ] / } / Node.js v22.23.1",
+      "self_reported_version": null,
+      "gauntlet_version": null
+    },
+    {
+      "name": "percher-mcp",
+      "spec": "npx -y @percher/mcp@0.6.15",
+      "outcome": "A 97.2",
+      "reason": null,
+      "self_reported_version": "0.6.15",
+      "gauntlet_version": "0.7.0"
+    },
+    {
+      "name": "perplexity-ai-mcp-server",
+      "spec": "npx -y @perplexity-ai/mcp-server@1.2.0",
+      "outcome": "not scored",
+      "reason": "MCPConnectionError: McpError: Connection closed \u2014 the server said: Error: PERPLEXITY_API_KEY environment variable is required",
+      "self_reported_version": null,
+      "gauntlet_version": null
+    },
+    {
+      "name": "popdot-mcp",
+      "spec": "npx -y popdot-mcp@1.0.2",
+      "outcome": "A 100.0",
+      "reason": null,
+      "self_reported_version": "1.1.0",
+      "gauntlet_version": "0.7.0"
+    },
+    {
+      "name": "positif-ai",
+      "spec": "uvx positif-ai@0.2.1",
+      "outcome": "not scored",
+      "reason": "MCPConnectionError: McpError: Connection closed \u2014 the server said: \u2570\u2500\u25b6 Because there is no version of positif-ai==0.2.1 and you require / positif-ai==0.2.1, we can conclude that your requirements are ",
+      "self_reported_version": null,
+      "gauntlet_version": null
+    },
+    {
+      "name": "pretrip-mcp",
+      "spec": "npx -y pretrip-mcp@1.0.1",
+      "outcome": "A 100.0",
+      "reason": null,
+      "self_reported_version": "1.0.0",
+      "gauntlet_version": "0.7.0"
+    },
+    {
+      "name": "radmail-mcp",
+      "spec": "npx -y radmail-mcp@0.3.2",
+      "outcome": "A 96.5",
+      "reason": null,
+      "self_reported_version": "0.3.2",
+      "gauntlet_version": "0.7.0"
+    },
+    {
+      "name": "rapay-mcp-server",
+      "spec": "npx -y @rapay/mcp-server@1.2.5",
+      "outcome": "A 100.0",
+      "reason": null,
+      "self_reported_version": "1.2.5",
+      "gauntlet_version": "0.7.0"
+    },
+    {
+      "name": "raven-mcp",
+      "spec": "npx -y raven-mcp@2.3.0",
+      "outcome": "A 97.7",
+      "reason": null,
+      "self_reported_version": "2.3.0",
+      "gauntlet_version": "0.7.0"
+    },
+    {
+      "name": "reka-mcp",
+      "spec": "uvx reka-mcp@0.1.10",
+      "outcome": "not scored",
+      "reason": "MCPConnectionError: McpError: Connection closed \u2014 the server said: File \"~/.cache/uv/archive-v0/ogNjuR7BrWL7Q2Ed/lib/python3.14/site-packages/reka_mcp/server.py\", line 10, in <module> / from mcp.serve",
+      "self_reported_version": null,
+      "gauntlet_version": null
+    },
+    {
+      "name": "shipeasy-mcp",
+      "spec": "npx -y @shipeasy/mcp@2.8.0",
+      "outcome": "D 64.9",
+      "reason": null,
+      "self_reported_version": "0.1.0",
+      "gauntlet_version": "0.7.0"
+    },
+    {
+      "name": "snowsure-mcp-server",
+      "spec": "npx -y snowsure-mcp-server@3.7.0",
+      "outcome": "not scored",
+      "reason": "timed out after 120s",
+      "self_reported_version": null,
+      "gauntlet_version": null
+    },
+    {
+      "name": "spideriq-mcp-gate",
+      "spec": "npx -y @spideriq/mcp-gate@1.3.0",
+      "outcome": "A 99.8",
+      "reason": null,
+      "self_reported_version": "1.3.0",
+      "gauntlet_version": "0.7.0"
+    },
+    {
+      "name": "spideriq-mcp-leads",
+      "spec": "npx -y @spideriq/mcp-leads@1.9.0",
+      "outcome": "C 76.9",
+      "reason": null,
+      "self_reported_version": "1.9.0",
+      "gauntlet_version": "0.7.0"
+    },
+    {
+      "name": "ssid-mcp",
+      "spec": "npx -y ssid-mcp@0.1.1",
+      "outcome": "A 100.0",
+      "reason": null,
+      "self_reported_version": "0.1.0",
+      "gauntlet_version": "0.7.0"
+    },
+    {
+      "name": "synchronex-mcp-proxy",
+      "spec": "npx -y @synchronex/mcp-proxy@1.0.1",
+      "outcome": "A 96.6",
+      "reason": null,
+      "self_reported_version": "1.0.0",
+      "gauntlet_version": "0.7.0"
+    },
+    {
+      "name": "telbase",
+      "spec": "npx -y telbase@0.14.0-beta.2",
+      "outcome": "not scored",
+      "reason": "McpError: Connection closed",
+      "self_reported_version": null,
+      "gauntlet_version": null
+    },
+    {
+      "name": "testivai-mcp",
+      "spec": "npx -y @testivai/mcp@0.5.5",
+      "outcome": "B 82.6",
+      "reason": null,
+      "self_reported_version": "0.5.5",
+      "gauntlet_version": "0.7.0"
+    },
+    {
+      "name": "thrain-blackout-mcp",
+      "spec": "npx -y @thrain/blackout-mcp@1.1.0",
+      "outcome": "A 100.0",
+      "reason": null,
+      "self_reported_version": "1.0.0",
+      "gauntlet_version": "0.7.0"
+    },
+    {
+      "name": "thrain-spotlight-mcp",
+      "spec": "npx -y @thrain/spotlight-mcp@0.1.1",
+      "outcome": "A 100.0",
+      "reason": null,
+      "self_reported_version": "0.1.0",
+      "gauntlet_version": "0.7.0"
+    },
+    {
+      "name": "toolprint-hypertool-mcp",
+      "spec": "npx -y @toolprint/hypertool-mcp@0.0.42",
+      "outcome": "not scored",
+      "reason": "McpError: Connection closed",
+      "self_reported_version": null,
+      "gauntlet_version": null
+    },
+    {
+      "name": "trusty-squire-mcp",
+      "spec": "npx -y @trusty-squire/mcp@1.1.5",
+      "outcome": "not scored",
+      "reason": "MCPConnectionError: McpError: Connection closed \u2014 the server said: ebsockify / cloudflared is not in Debian/Ubuntu repos \u2014 install its package: curl -L https://github.com/cloudflare/cloudflared/releas",
+      "self_reported_version": null,
+      "gauntlet_version": null
+    },
+    {
+      "name": "unpaper-cli",
+      "spec": "npx -y @unpaper/cli@0.2.1",
+      "outcome": "not scored",
+      "reason": "McpError: Connection closed",
+      "self_reported_version": null,
+      "gauntlet_version": null
+    },
+    {
+      "name": "vaaya-mcp",
+      "spec": "npx -y @vaaya/mcp@0.3.3",
+      "outcome": "A 100.0",
+      "reason": null,
+      "self_reported_version": "1.0.0",
+      "gauntlet_version": "0.7.0"
+    }
+  ]
+}

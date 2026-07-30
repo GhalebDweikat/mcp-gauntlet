@@ -15,6 +15,23 @@ from mcp_gauntlet.content import block_text
 from mcp_gauntlet.models import PromptArgumentInfo, PromptInfo, ResourceInfo, ServerInfo, ToolInfo
 
 
+def _either(obj: Any, *names: str, default: Any) -> Any:
+    """A live-result read: first present name wins, and a mapping is accepted too.
+
+    Separate from `require()` on purpose. `require` raises so a renamed field cannot pass
+    silently, which is right during discovery — before any spend. It is wrong here, where a
+    raise costs a completed evaluation. So this defaults, and the loudness has to come from
+    the contract test instead.
+    """
+    for name in names:
+        value = getattr(obj, name, None)
+        if value is None and isinstance(obj, dict):
+            value = obj.get(name)
+        if value is not None:
+            return value
+    return default
+
+
 class LegacyAdapter:
     era: Literal["legacy", "modern"] = "legacy"
     stdio_logger_name = "mcp.client.stdio"
@@ -109,3 +126,32 @@ class LegacyAdapter:
         capabilities = getattr(init, "capabilities", None)
         tools = getattr(capabilities, "tools", None)
         return bool(getattr(tools, "listChanged", False))
+
+    # ------------------------------------------------------------- live results
+    # No require() below this line, deliberately. These run during an evaluation, and
+    # robustness.py's read happens last — after the full agentic eval — so a raise would
+    # discard a run already paid for. Both spellings are read because a mis-detected era
+    # must produce a suspicious number, not a lost report.
+
+    def result_is_error(self, result: Any) -> bool:
+        return bool(_either(result, "isError", "is_error", default=False))
+
+    def result_content(self, result: Any) -> list[Any]:
+        return list(_either(result, "content", default=None) or [])
+
+    def result_structured(self, result: Any) -> Any:
+        return _either(result, "structuredContent", "structured_content", default=None)
+
+    def asks_for_input(self, result: Any) -> bool:
+        if result is None:
+            return False
+        if _either(result, "resultType", "result_type", default=None) == "input_required":
+            return True
+        # Belt and braces: a server can carry the requests without setting the type, and the
+        # requests are the thing that actually needs a human.
+        return bool(_either(result, "inputRequests", "input_requests", default=None))
+
+    def protocol_error_type(self) -> type[BaseException]:
+        from mcp.shared.exceptions import McpError
+
+        return McpError

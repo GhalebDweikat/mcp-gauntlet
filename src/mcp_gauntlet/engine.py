@@ -14,6 +14,7 @@ from mcp import ClientSession
 from mcp.types import InitializeResult
 from openai import AsyncOpenAI
 
+from mcp_gauntlet.adapters import adapter
 from mcp_gauntlet.checks import run_static_checks, scan_tool
 from mcp_gauntlet.client import discover_in_session, open_session
 from mcp_gauntlet.config import ServerSpec
@@ -189,12 +190,11 @@ async def _check_definition_drift(
             )
         )
     if second is not None:
-        tools_capability = getattr(getattr(init, "capabilities", None), "tools", None)
         findings.extend(
             compare_within_session(
                 discovery.tools,
                 second.tools,
-                declared_list_changed=bool(getattr(tools_capability, "listChanged", False)),
+                declared_list_changed=adapter().list_changed(init),
             )
         )
         # Scan what the second listing actually said. Reporting only that a definition moved

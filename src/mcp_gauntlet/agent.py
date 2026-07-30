@@ -16,6 +16,7 @@ from mcp import ClientSession
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 
+from mcp_gauntlet.adapters import adapter
 from mcp_gauntlet.client import InteractionLog
 from mcp_gauntlet.content import block_text
 from mcp_gauntlet.llm import chat_completion
@@ -75,40 +76,15 @@ class ToolCallRecord(BaseModel):
 
 
 def _asks_for_input(result: Any) -> bool:
-    """Whether a tool result is the MRTR "I need something from the user" shape.
+    """Whether a tool result is the MRTR "I need something from a human" shape.
 
-    MCP revision 2026-07-28 removed server-initiated elicitation and sampling: instead of
-    pushing a request at the client, a server returns `resultType: "input_required"` with an
-    `inputRequests` map and waits to be called again carrying the answers.
-
-    mcp-gauntlet drives no user and no second LLM, so this is declined exactly as the old
-    push-style request was — but it has to be *seen* first, and it arrives as an ordinary
-    result rather than on the receive loop. Read defensively through getattr and a dict
-    fallback: on an older SDK the field does not exist, and on a newer one it may be a model
-    or a plain mapping depending on how strictly the result was parsed.
+    Delegated to the adapter because the field was renamed: `mcp` 2.0 calls it
+    `result_type`, and the first version of this read only `resultType` — so against the
+    modern servers that are the only ones speaking MRTR it returned None, and a call the
+    harness declined was charged to the server's reliability. The seam exists for exactly
+    this.
     """
-    if result is None:
-        return False
-
-    def read(*names: str) -> Any:
-        # BOTH spellings, deliberately. `mcp` 2.0 renamed these to snake_case
-        # (`CallToolResult.result_type`, verified against 2.0.0), and reading only the
-        # camelCase name would return None on exactly the servers this exists for — the
-        # attribution would invert silently, which is the bug this function was written to
-        # prevent. The dict fallback covers a result that was never parsed into a model.
-        for name in names:
-            value = getattr(result, name, None)
-            if value is None and isinstance(result, dict):
-                value = result.get(name)
-            if value is not None:
-                return value
-        return None
-
-    if read("result_type", "resultType") == "input_required":
-        return True
-    # Belt and braces: a server can carry the requests without setting the type, and the
-    # requests are the thing that actually needs a human.
-    return bool(read("input_requests", "inputRequests"))
+    return adapter().asks_for_input(result)
 
 
 class AgentTrace(BaseModel):
@@ -148,9 +124,10 @@ _block_text = block_text  # shared with the prompt path; see mcp_gauntlet.conten
 
 def _render_tool_result(result: Any) -> tuple[bool, str]:
     """Turn an MCP CallToolResult into (ok, text-for-the-model)."""
-    is_error = bool(getattr(result, "isError", False))
+    sdk = adapter()
+    is_error = sdk.result_is_error(result)
     parts: list[str] = []
-    for block in getattr(result, "content", None) or []:
+    for block in sdk.result_content(result):
         text = _block_text(block)
         parts.append(text if text is not None else f"[{getattr(block, 'type', 'content')}]")
     # ALWAYS include the structured result, not only as a fallback for empty content: a
@@ -168,7 +145,7 @@ def _render_tool_result(result: Any) -> tuple[bool, str]:
     # normalization and hidden-character checks look for — the escape neutralized the scan
     # on the path this was opened to cover. A real client hands the model the parsed object
     # with the characters intact, so the scanner must see them intact too.
-    structured = getattr(result, "structuredContent", None)
+    structured = sdk.result_structured(result)
     if structured is not None:
         parts.append(json.dumps(structured, ensure_ascii=False, default=str))
     return (not is_error, "\n".join(parts) if parts else "(no content)")

@@ -14,8 +14,8 @@ from typing import Any
 
 import anyio
 from mcp import ClientSession
-from mcp.shared.exceptions import McpError
 
+from mcp_gauntlet.adapters import adapter
 from mcp_gauntlet.models import ToolInfo
 from mcp_gauntlet.report import Dim, DimensionResult, Finding, Severity
 from mcp_gauntlet.schemas import (
@@ -194,6 +194,17 @@ def is_scored(schema: Any) -> bool:
     return not declares_arg_contract(schema) or declares_arguments(schema)
 
 
+def _protocol_error() -> type[BaseException]:
+    """The SDK's protocol-error class, via the adapter.
+
+    A JSON-RPC error is the *correct* way for a server to reject malformed input, so this
+    class is control flow rather than a failure — and it moved package in `mcp` 2.0. Resolved
+    through the adapter so the era owns the answer, and imported lazily so a top-level import
+    cannot fail before the adapter has been chosen.
+    """
+    return adapter().protocol_error_type()
+
+
 async def run_robustness_probes(
     session: ClientSession,
     tools: list[ToolInfo],
@@ -297,7 +308,7 @@ async def run_robustness_probes(
                 Finding(severity=Severity.INFO, message="stopped probing after a timeout")
             )
             break
-        except McpError:
+        except _protocol_error():
             scores.append(100.0)  # protocol-level rejection = correct handling
             continue
         except Exception as exc:  # noqa: BLE001 - transport may be compromised; stop probing
@@ -318,7 +329,7 @@ async def run_robustness_probes(
             )
             break
 
-        if bool(getattr(result, "isError", False)):
+        if adapter().result_is_error(result):
             scores.append(100.0)  # rejected via an isError result = correct handling
         else:
             # Silently accepting schema-violating input is a validation failure, not a

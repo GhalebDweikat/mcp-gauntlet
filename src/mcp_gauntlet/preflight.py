@@ -19,6 +19,7 @@ from typing import Any
 
 from mcp import ClientSession
 
+from mcp_gauntlet.adapters import adapter
 from mcp_gauntlet.content import block_text
 from mcp_gauntlet.models import ToolInfo
 
@@ -102,10 +103,9 @@ async def probe_credentials(
             if looks_like_missing_credentials(str(exc)):
                 reasons.append(f"{tool.name}: {str(exc)[:160]}")
             continue
-        text = " ".join(
-            t for block in (getattr(result, "content", None) or []) if (t := block_text(block))
-        )
-        if not getattr(result, "isError", False):
+        sdk = adapter()
+        text = " ".join(t for block in sdk.result_content(result) if (t := block_text(block)))
+        if not sdk.result_is_error(result):
             return None  # something worked without credentials — the server is usable
         if looks_like_missing_credentials(text):
             reasons.append(f"{tool.name}: {text.strip()[:160]}")

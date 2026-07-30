@@ -90,3 +90,30 @@ class SdkAdapter(Protocol):
     def page_params(self, cursor: str | None) -> dict[str, Any]: ...
 
     def list_changed(self, init: Any) -> bool: ...
+
+    # ------------------------------------------------------------- live results
+    # These read a CallToolResult during an evaluation, so none of them may raise:
+    # `robustness.py`'s read runs last, after the whole agentic eval, and a raise there
+    # would discard a run already paid for. They default instead, and each reads both
+    # spellings — the era is chosen by SDK version, so the canonical name is right, but a
+    # mis-detected era must degrade to a wrong-looking number rather than a lost report.
+
+    def result_is_error(self, result: Any) -> bool: ...
+
+    def result_content(self, result: Any) -> list[Any]: ...
+
+    def result_structured(self, result: Any) -> Any: ...
+
+    def asks_for_input(self, result: Any) -> bool:
+        """Whether the server answered "I need something from a human" (MRTR).
+
+        Revision 2026-07-28 forbids a server pushing elicitation or sampling at the client;
+        it returns `result_type: "input_required"` inside an ordinary result instead. The
+        harness declines that exactly as it declined the pushed form — but it has to be seen
+        first, and it arrives where nothing was looking.
+        """
+        ...
+
+    def protocol_error_type(self) -> type[BaseException]:
+        """The SDK's protocol-error class, which Robustness treats as a correct rejection."""
+        ...

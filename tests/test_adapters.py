@@ -105,3 +105,64 @@ def test_the_adapter_is_resolved_once() -> None:
     # It is consulted in hot loops (every tool, every page); resolving per call would mean
     # an importlib.metadata lookup each time.
     assert adapter() is adapter()
+
+
+def test_live_result_reads_never_raise_on_an_unfamiliar_shape() -> None:
+    """The rule that separates discovery from live calls.
+
+    `require()` raises so a renamed field cannot pass silently — right during discovery,
+    which happens before any spend. It is wrong on a live result: robustness.py's read runs
+    LAST, after the whole agentic eval, so a raise there discards a run already paid for.
+    That is R2's rule, and it is why these read defensively instead.
+    """
+    sdk = LegacyAdapter()
+    alien = SimpleNamespace()  # nothing we recognise at all
+    assert sdk.result_is_error(alien) is False
+    assert sdk.result_content(alien) == []
+    assert sdk.result_structured(alien) is None
+    assert sdk.asks_for_input(alien) is False
+
+
+def test_live_result_reads_accept_either_era_spelling() -> None:
+    # The era is chosen by SDK version, so the canonical name is right — but a mis-detected
+    # era has to produce a suspicious number, not a lost report.
+    legacy = SimpleNamespace(isError=True, structuredContent={"a": 1}, resultType="input_required")
+    modern = SimpleNamespace(
+        is_error=True, structured_content={"a": 1}, result_type="input_required"
+    )
+    sdk = LegacyAdapter()
+    for shape in (legacy, modern):
+        assert sdk.result_is_error(shape) is True
+        assert sdk.result_structured(shape) == {"a": 1}
+        assert sdk.asks_for_input(shape) is True
+
+
+def test_the_protocol_error_type_resolves_to_a_real_exception() -> None:
+    # Robustness treats it as control flow — a JSON-RPC error is the CORRECT way for a server
+    # to reject malformed input — and the class moved package in mcp 2.0.
+    error_type = LegacyAdapter().protocol_error_type()
+    assert isinstance(error_type, type)
+    assert issubclass(error_type, BaseException)
+
+
+def test_no_sdk_shaped_read_survives_outside_the_adapters() -> None:
+    """The seam is only real if nothing bypasses it.
+
+    A camelCase getattr anywhere else is an SDK field being read directly, which is precisely
+    what goes silently null when the SDK renames it. Scoped to camelCase literals rather than
+    all getattr calls, because plenty of legitimate ones exist (exception groups, pydantic
+    errors, content-block unions) and a grep with standing exemptions is a grep nobody reads.
+    """
+    import re
+    from pathlib import Path
+
+    src = Path(__file__).resolve().parent.parent / "src" / "mcp_gauntlet"
+    pattern = re.compile(r'getattr\([^,]+,\s*"[a-z]+[A-Z]')
+    offenders = [
+        f"{path.relative_to(src)}:{n}"
+        for path in src.rglob("*.py")
+        if "adapters" not in path.parts
+        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        if pattern.search(line)
+    ]
+    assert not offenders, "SDK fields read outside adapters/: " + ", ".join(offenders)

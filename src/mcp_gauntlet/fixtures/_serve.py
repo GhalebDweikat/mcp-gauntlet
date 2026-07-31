@@ -30,7 +30,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-__all__ = ["Tool", "context_type", "serve"]
+__all__ = ["Tool", "context_type", "prompt_def", "serve", "serve_raw", "tool_def"]
 
 
 @dataclass(frozen=True)
@@ -109,6 +109,148 @@ def _annotations(spec: Mapping[str, Any] | None, *, modern: bool) -> Any:
     if unknown:  # a typo here would silently drop a hint the fixture meant to declare
         raise ValueError(f"unknown annotation(s) {sorted(unknown)}")
     return ToolAnnotations(**{_LEGACY_ANNOTATION_NAMES[k]: v for k, v in spec.items()})
+
+
+def tool_def(
+    *,
+    name: str,
+    description: str,
+    input_schema: Mapping[str, Any],
+    output_schema: Mapping[str, Any] | None = None,
+    title: str | None = None,
+    annotations: Mapping[str, Any] | None = None,
+) -> Any:
+    """A hand-built `types.Tool`, spelled the way the installed SDK spells it.
+
+    The function-based path above cannot express a tool whose schema is deliberately
+    malformed, whose payload is nested behind a `$ref`, or whose definition changes between
+    two `tools/list` calls. Those are exactly what the malicious demo is made of, so it
+    needs to construct the SDK's own type — and that type renamed every field in 2.0.
+    """
+    from mcp import types
+
+    modern = _is_modern()
+    fields: dict[str, Any] = {"name": name, "description": description}
+    fields["input_schema" if modern else "inputSchema"] = dict(input_schema)
+    if output_schema is not None:
+        fields["output_schema" if modern else "outputSchema"] = dict(output_schema)
+    if title is not None:
+        fields["title"] = title
+    if annotations is not None:
+        fields["annotations"] = _annotations(annotations, modern=modern)
+    return types.Tool(**fields)
+
+
+def prompt_def(
+    *,
+    name: str,
+    title: str | None = None,
+    description: str | None = None,
+    arguments: Sequence[Any] = (),
+) -> Any:
+    """A `types.Prompt`. Every field kept its name across the eras; this is here for symmetry
+    with `tool_def` so a fixture never imports `mcp.types` itself."""
+    from mcp import types
+
+    return types.Prompt(name=name, title=title, description=description, arguments=list(arguments))
+
+
+def serve_raw(
+    name: str,
+    *,
+    list_tools: Callable[[], Sequence[Any]],
+    call_tool: Callable[[str, dict[str, Any]], tuple[list[Any], dict[str, Any] | None]],
+    list_prompts: Callable[[], Sequence[Any]] | None = None,
+    get_prompt: Callable[[str, dict[str, str] | None], tuple[str | None, list[Any]]] | None = None,
+) -> None:
+    """Serve hand-built definitions over stdio, on whichever era is installed.
+
+    The two eras' low-level servers share a name and nothing else. 1.x registers handlers
+    through decorators (`@server.list_tools()`) and wraps their return value into the result
+    type for you. 2.0 replaced that with `add_request_handler(method, params_type, handler)`,
+    where the handler is passed a request context and returns the result model itself. The
+    callbacks above are in the fixture's own terms so a fixture states its behaviour once.
+
+    `mcp.server.lowlevel.Server` still *imports* under 2.0 — which is a trap worth naming,
+    since the decorators it is imported for are gone. It fails at `@server.list_tools()`
+    with an AttributeError rather than at the import, so the era check has to come first.
+    """
+    import anyio
+    from mcp.server.stdio import stdio_server
+
+    modern = _is_modern()
+
+    if modern:
+        from mcp import types
+        from mcp.server.lowlevel import Server
+
+        server: Any = Server(name)
+
+        async def _tools_handler(_ctx: Any, _params: Any) -> Any:
+            return types.ListToolsResult(tools=list(list_tools()))
+
+        async def _call_handler(_ctx: Any, params: Any) -> Any:
+            content, structured = call_tool(params.name, dict(params.arguments or {}))
+            # snake_case exists only in 2.0; against the pinned SDK this cannot resolve.
+            return types.CallToolResult(  # type: ignore[call-arg]
+                content=content, structured_content=structured
+            )
+
+        server.add_request_handler("tools/list", types.PaginatedRequestParams, _tools_handler)
+        server.add_request_handler("tools/call", types.CallToolRequestParams, _call_handler)
+
+        if list_prompts is not None:
+
+            async def _prompts_handler(_ctx: Any, _params: Any) -> Any:
+                return types.ListPromptsResult(prompts=list(list_prompts()))
+
+            server.add_request_handler(
+                "prompts/list", types.PaginatedRequestParams, _prompts_handler
+            )
+
+        if get_prompt is not None:
+
+            async def _get_prompt_handler(_ctx: Any, params: Any) -> Any:
+                description, messages = get_prompt(params.name, dict(params.arguments or {}))
+                return types.GetPromptResult(description=description, messages=messages)
+
+            server.add_request_handler(
+                "prompts/get", types.GetPromptRequestParams, _get_prompt_handler
+            )
+    else:
+        from mcp import types
+        from mcp.server.lowlevel import Server
+
+        server = Server(name)
+
+        @server.list_tools()
+        async def _list_tools() -> list[Any]:
+            return list(list_tools())
+
+        @server.call_tool()
+        async def _call_tool(tool: str, arguments: dict[str, Any]) -> Any:
+            content, structured = call_tool(tool, arguments)
+            # 1.x reads a bare list as unstructured, and a (list, dict) tuple as both.
+            return content if structured is None else (content, structured)
+
+        if list_prompts is not None:
+
+            @server.list_prompts()
+            async def _list_prompts() -> list[Any]:
+                return list(list_prompts())
+
+        if get_prompt is not None:
+
+            @server.get_prompt()
+            async def _get_prompt(prompt: str, arguments: dict[str, str] | None) -> Any:
+                description, messages = get_prompt(prompt, arguments)
+                return types.GetPromptResult(description=description, messages=messages)
+
+    async def _main() -> None:
+        async with stdio_server() as (read, write):
+            await server.run(read, write, server.create_initialization_options())
+
+    anyio.run(_main)
 
 
 def serve(

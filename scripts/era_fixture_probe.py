@@ -14,6 +14,19 @@ own throwaway environment via `uv`, and only the JSON crosses between them.
 this possible — the harness pins `mcp<2`, so a fixture that reached into the harness could
 never be run under the SDK this probe exists to test.
 
+Two fixtures are checked, because they exercise the two halves of the shim:
+
+* a **declared** fixture, built from typed Python functions, covering the path the six
+  ordinary fixtures use;
+* the **real malicious demo**, verbatim from the package, covering the raw path — a
+  hand-built schema with a payload behind a `$ref`, a poisoned annotation title, prompts,
+  and a definition that changes between the first and second `tools/list`. Its import line
+  is the only thing rewritten, so what runs here is the server users actually get.
+
+`tools/list` is called twice, because the rug-pull only exists in the difference between
+the two answers. A probe that listed once would report the malicious server identical
+across eras while being blind to the single attack that needs a second look.
+
 **What this does and does not establish.** MEASURED 2026-07-31: with `mcp` 2.0.0 on *both*
 ends, the handshake still settled on **2025-11-25**, even though that SDK's
 `LATEST_PROTOCOL_VERSION` is 2026-07-28 and `ClientSession` exposes no way to ask for it.
@@ -23,7 +36,7 @@ independent: field names are a Python-API fact, the negotiated revision is a wir
 Nothing here should be read as evidence about MRTR, `cache_scope`, or anything else that
 only exists once 2026-07-28 is actually negotiated.
 
-    python scripts/era_fixture_probe.py            # both eras, compare
+    python scripts/era_fixture_probe.py            # both fixtures, both eras, compare
     python scripts/era_fixture_probe.py --keep     # leave the workspace for inspection
 """
 
@@ -38,14 +51,16 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SERVE = ROOT / "src" / "mcp_gauntlet" / "fixtures" / "_serve.py"
+FIXTURE_DIR = ROOT / "src" / "mcp_gauntlet" / "fixtures"
+SERVE = FIXTURE_DIR / "_serve.py"
+MALICIOUS = FIXTURE_DIR / "malicious_server.py"
 
 LEGACY_SDK = "mcp==1.29.0"  # the last 1.x, protocol 2025-11-25
 MODERN_SDK = "mcp==2.0.0"  # the first 2.x, protocol 2026-07-28
 
-# A fixture exercising every field the mapping has to carry across: a description, a typed
-# schema, annotation hints (camelCase in 1.x, snake_case in 2.0) and a display title.
-FIXTURE = '''
+# Exercises every field the mapping carries across: a description, a typed schema,
+# annotation hints (camelCase in 1.x, snake_case in 2.0) and a display title.
+DECLARED = '''
 from _serve import Tool, serve
 
 
@@ -92,38 +107,57 @@ def either(obj, *names, default=None):
     return default
 
 
+def snapshot(listed):
+    tools = {}
+    for t in listed.tools:
+        ann = getattr(t, "annotations", None)
+        tools[t.name] = {
+            "description": t.description,
+            "input_schema": either(t, "input_schema", "inputSchema", default={}),
+            "output_schema": either(t, "output_schema", "outputSchema"),
+            "title": getattr(t, "title", None),
+            "annotation_title": getattr(ann, "title", None),
+            "read_only_hint": either(ann, "read_only_hint", "readOnlyHint"),
+            "destructive_hint": either(ann, "destructive_hint", "destructiveHint"),
+            "meta": getattr(t, "meta", None),
+        }
+    return tools
+
+
 async def main():
-    params = StdioServerParameters(command=sys.executable, args=["fixture.py"], cwd=".")
+    target = sys.argv[1]
+    params = StdioServerParameters(command=sys.executable, args=[target], cwd=".")
     async with stdio_client(params) as (r, w), ClientSession(r, w) as s:
         init = await s.initialize()
-        listed = await s.list_tools()
-        tools = {}
-        for t in listed.tools:
-            ann = getattr(t, "annotations", None)
-            tools[t.name] = {
-                "description": t.description,
-                "input_schema": either(t, "input_schema", "inputSchema", default={}),
-                "output_schema": either(t, "output_schema", "outputSchema"),
-                "title": getattr(t, "title", None),
-                "annotation_title": getattr(ann, "title", None),
-                "read_only_hint": either(ann, "read_only_hint", "readOnlyHint"),
-                "destructive_hint": either(ann, "destructive_hint", "destructiveHint"),
-                "meta": getattr(t, "meta", None),
-            }
+        # Twice: the rug-pull lives entirely in the difference between the two answers.
+        first = snapshot(await s.list_tools())
+        second = snapshot(await s.list_tools())
+        prompts = {}
+        try:
+            for p in (await s.list_prompts()).prompts:
+                got = await s.get_prompt(p.name)
+                prompts[p.name] = {
+                    "description": got.description,
+                    "messages": [getattr(m.content, "text", None) for m in got.messages],
+                }
+        except Exception:
+            prompts = {}
         print("@@JSON@@" + json.dumps({
             "sdk": md.version("mcp"),
             "protocol": str(either(init, "protocol_version", "protocolVersion")),
-            "tools": tools,
+            "first": first,
+            "second": second,
+            "prompts": prompts,
         }, sort_keys=True))
 
 anyio.run(main)
 """
 
 
-def _run_era(workspace: Path, sdk: str) -> dict:
-    """Discover the fixture from inside a throwaway environment holding exactly one SDK."""
+def _run_era(workspace: Path, sdk: str, target: str) -> dict:
+    """Discover a fixture from inside a throwaway environment holding exactly one SDK."""
     done = subprocess.run(
-        ["uv", "run", "--isolated", "--no-project", "--with", sdk, "python", "dump.py"],
+        ["uv", "run", "--isolated", "--no-project", "--with", sdk, "python", "dump.py", target],
         cwd=workspace,
         capture_output=True,
         text=True,
@@ -131,11 +165,51 @@ def _run_era(workspace: Path, sdk: str) -> dict:
     )
     marker = [ln for ln in done.stdout.splitlines() if ln.startswith("@@JSON@@")]
     if done.returncode != 0 or not marker:
-        print(f"--- {sdk} failed (exit {done.returncode}) ---")
+        print(f"--- {target} under {sdk} failed (exit {done.returncode}) ---")
         print(done.stdout[-1500:])
         print(done.stderr[-2500:], file=sys.stderr)
-        raise SystemExit(f"could not discover the fixture under {sdk}")
+        raise SystemExit(f"could not discover {target} under {sdk}")
     return json.loads(marker[0].removeprefix("@@JSON@@"))
+
+
+def _report(label: str, legacy: dict, modern: dict) -> int:
+    print(f"\n=== {label} ===")
+    print(f"  legacy: mcp {legacy['sdk']:8} protocol {legacy['protocol']}")
+    print(f"  modern: mcp {modern['sdk']:8} protocol {modern['protocol']}")
+
+    drift_legacy = legacy["first"] != legacy["second"]
+    drift_modern = modern["first"] != modern["second"]
+    if drift_legacy or drift_modern:
+        print(
+            f"  definition drift between the two listings: "
+            f"legacy={drift_legacy} modern={drift_modern}"
+        )
+
+    failures = 0
+    for section in ("first", "second", "prompts"):
+        if legacy[section] == modern[section]:
+            continue
+        failures += 1
+        print(f"\n  DIFFERENT in '{section}':")
+        for key in sorted(set(legacy[section]) | set(modern[section])):
+            was, now = legacy[section].get(key), modern[section].get(key)
+            if was == now:
+                continue
+            print(f"    {key}:")
+            for field in sorted(set(was or {}) | set(now or {})):
+                a, b = (was or {}).get(field), (now or {}).get(field)
+                if a != b:
+                    print(f"      {field}:\n        legacy: {a!r}\n        modern: {b!r}")
+    if failures == 0:
+        print(
+            f"  IDENTICAL - {len(legacy['first'])} tool(s), both listings, "
+            f"and {len(legacy['prompts'])} prompt(s)"
+        )
+    # The rug-pull must actually fire, or this fixture has silently stopped demonstrating it.
+    if label == "malicious" and not (drift_legacy and drift_modern):
+        print("  FAILED: the rug-pull did not fire in both eras")
+        failures += 1
+    return failures
 
 
 def main() -> int:
@@ -146,30 +220,28 @@ def main() -> int:
     workspace = Path(tempfile.mkdtemp(prefix="era-fixture-"))
     try:
         shutil.copy(SERVE, workspace / "_serve.py")
-        (workspace / "fixture.py").write_text(FIXTURE, encoding="utf-8")
+        (workspace / "declared.py").write_text(DECLARED, encoding="utf-8")
         (workspace / "dump.py").write_text(DUMPER, encoding="utf-8")
 
-        legacy = _run_era(workspace, LEGACY_SDK)
-        modern = _run_era(workspace, MODERN_SDK)
+        # The real demo, with only its import rewritten — so what runs is what ships.
+        source = MALICIOUS.read_text(encoding="utf-8")
+        rewritten = source.replace("from mcp_gauntlet.fixtures._serve import", "from _serve import")
+        if rewritten == source:
+            raise SystemExit("malicious_server.py no longer imports _serve as expected")
+        (workspace / "malicious.py").write_text(rewritten, encoding="utf-8")
 
-        print(f"legacy: mcp {legacy['sdk']:8} protocol {legacy['protocol']}")
-        print(f"modern: mcp {modern['sdk']:8} protocol {modern['protocol']}")
+        failures = 0
+        for label, target in (("declared", "declared.py"), ("malicious", "malicious.py")):
+            legacy = _run_era(workspace, LEGACY_SDK, target)
+            modern = _run_era(workspace, MODERN_SDK, target)
+            failures += _report(label, legacy, modern)
 
-        if legacy["tools"] == modern["tools"]:
-            print(f"\nIDENTICAL - {len(legacy['tools'])} tool(s) map the same in both eras")
-            return 0
-
-        print("\nDIFFERENT - the eras disagree about the same fixture:")
-        for name in sorted(set(legacy["tools"]) | set(modern["tools"])):
-            was, now = legacy["tools"].get(name), modern["tools"].get(name)
-            if was == now:
-                continue
-            print(f"\n  {name}:")
-            for field in sorted(set(was or {}) | set(now or {})):
-                a, b = (was or {}).get(field), (now or {}).get(field)
-                if a != b:
-                    print(f"    {field}:\n      legacy: {a!r}\n      modern: {b!r}")
-        return 1
+        print()
+        if failures:
+            print(f"{failures} mismatch(es) between the eras")
+            return 1
+        print("Both fixtures map identically across mcp 1.x and 2.x")
+        return 0
     finally:
         if args.keep:
             print(f"\nworkspace kept at {workspace}")

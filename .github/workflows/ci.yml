@@ -33,6 +33,43 @@ jobs:
         shell: bash
         run: bash scripts/gates.sh
 
+  suite-modern:
+    # The `check` matrix runs whatever uv.lock pins, which is deliberately still a 1.x SDK:
+    # that is what nearly every user has today, so it stays the primary leg. This one runs
+    # the same suite against 2.x, which the widened `mcp>=1.9,<3` pin now permits a
+    # resolver to choose.
+    #
+    # Note `--no-sync`. `uv run` re-syncs against the lockfile by default, which would
+    # silently undo the 2.0 install and run this leg against 1.x while reporting success —
+    # a green job testing the wrong thing, which is the failure mode this repository keeps
+    # finding in itself.
+    #
+    # pytest only, not the full gate script: mypy type-checks against the INSTALLED SDK, so
+    # the `type: ignore` comments covering the era that is not installed correctly become
+    # "unused ignore" errors here. Type-checking each era is what the `check` matrix does.
+    name: suite (mcp 2.x)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Sync dependencies
+        run: uv sync --extra dev
+      - name: Force the modern SDK over the locked one
+        run: uv pip install "mcp>=2,<3"
+      - name: Confirm the SDK actually swapped
+        # Without this, a failed or ignored install leaves 1.x in place and the whole job
+        # passes as a duplicate of the `check` matrix.
+        run: |
+          uv run --no-sync python -c "
+          import importlib.metadata as m
+          v = m.version('mcp')
+          print('running against mcp', v)
+          assert v.split('.')[0] == '2', f'expected a 2.x SDK, got {v}'
+          "
+      - name: Tests
+        run: uv run --no-sync pytest -q
+
   cross-era:
     # The dual-SDK leg. It does NOT need the `mcp<2` pin widened: the probe builds a
     # throwaway environment per era and only JSON crosses between them, which is also the

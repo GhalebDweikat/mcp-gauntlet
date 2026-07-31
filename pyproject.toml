@@ -32,12 +32,17 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
 ]
 dependencies = [
-    # Upper bound is deliberate and load-bearing. `mcp` 2.0.0 is targeted for 2026-07-28 —
-    # the same day the next protocol revision finalizes — and renames FastMCP, replaces
-    # ClientSession with a new Client class, and moves the types into a separate package.
-    # Unbounded, every fresh install of mcp-gauntlet would break on release day. The SDK's
-    # own release notes tell library authors to pin this.
-    "mcp>=1.9,<2",
+    # Widened from `<2` once both eras were actually verified, not merely believed to work:
+    # every SDK read goes through `adapters/`, the fixtures build on either SDK, and the
+    # suite passes under 1.29.0 and 2.0.0 alike. `scripts/era_fixture_probe.py` runs in CI
+    # and fails if the two eras ever disagree about the same server.
+    #
+    # `<3` rather than unbounded, for the reason `<2` was right in the first place: 2.0
+    # renamed every field to snake_case, and the old reads did not raise — they returned
+    # their defaults, so the checks built on them would have measured nothing and reported
+    # every server clean. A major bump is exactly when that happens again, and an unbounded
+    # pin would ship it to every fresh install on release day.
+    "mcp>=1.9,<3",
     "openai>=1.40",
     "typer>=0.12",
     "rich>=13.7",

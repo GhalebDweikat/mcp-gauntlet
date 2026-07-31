@@ -390,7 +390,7 @@ async def _discover_resources(session: ClientSession) -> list[ResourceInfo]:
         templates = _dedup_by_name(
             await _paginate(
                 lambda c: session.list_resource_templates(**_page_params(c)),
-                lambda p: list(p.resourceTemplates),
+                adapter().resource_templates,
             )
         )
         found.extend(adapter().resource_info(template, is_template=True) for template in templates)

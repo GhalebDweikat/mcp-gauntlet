@@ -153,26 +153,84 @@ def test_the_protocol_error_type_resolves_to_a_real_exception() -> None:
     assert issubclass(error_type, BaseException)
 
 
+# Every 1.x SDK field name that 2.0 renamed. Named explicitly rather than matched by shape,
+# because the shape-based version of this guard had a hole big enough to drive a bug
+# through: it looked for `getattr(x, "camelCase")` and so could not see `page.camelCase`,
+# and a plain attribute read of `resourceTemplates` sat in client.py the whole time. Under
+# 2.0 that raised AttributeError into a broad `except` that logs at debug — so template
+# discovery returned nothing and "no templates" became indistinguishable from "could not
+# read them".
+#
+# A list is the right instrument here where a regex was not. Widening the regex to all
+# camelCase attribute access would have matched `logging.getLogger`, `logger.setLevel` and
+# `logger.addHandler`, and buying precision with an exemption list gives you a grep nobody
+# reads. These names are finite, knowable, and exactly the thing that must not be read
+# outside the seam.
+_RENAMED_SDK_FIELDS = (
+    "inputSchema",
+    "outputSchema",
+    "isError",
+    "structuredContent",
+    "resultType",
+    "inputRequests",
+    "nextCursor",
+    "serverInfo",
+    "protocolVersion",
+    "readOnlyHint",
+    "destructiveHint",
+    "idempotentHint",
+    "openWorldHint",
+    "mimeType",
+    "uriTemplate",
+    "resourceTemplates",
+    "listChanged",
+)
+
+
 def test_no_sdk_shaped_read_survives_outside_the_adapters() -> None:
     """The seam is only real if nothing bypasses it.
 
-    A camelCase getattr anywhere else is an SDK field being read directly, which is precisely
-    what goes silently null when the SDK renames it. Scoped to camelCase literals rather than
-    all getattr calls, because plenty of legitimate ones exist (exception groups, pydantic
-    errors, content-block unions) and a grep with standing exemptions is a grep nobody reads.
+    An SDK field read anywhere else is exactly what goes silently null when the SDK renames
+    it — the read does not raise, it returns a default (or, for a plain attribute access,
+    raises into whichever `except` happens to be nearest), and the check built on it then
+    measures nothing while reporting every server clean.
+
+    Both access forms are checked, because the bug that motivated this used the one the
+    original guard could not see.
     """
-    import re
+    import ast
     from pathlib import Path
 
-    src = Path(__file__).resolve().parent.parent / "src" / "mcp_gauntlet"
-    pattern = re.compile(r'getattr\([^,]+,\s*"[a-z]+[A-Z]')
-    offenders = [
-        f"{path.relative_to(src)}:{n}"
-        for path in src.rglob("*.py")
-        if "adapters" not in path.parts
-        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
-        if pattern.search(line)
-    ]
+    # Parsed, not grepped. `drift.py` explains the `tools.listChanged` capability in its
+    # docstring and names it in a user-facing message, and a regex cannot tell that prose
+    # from a read. Chasing that with more regex is how a guard accretes exemptions until
+    # nobody trusts it; the AST simply does not see inside a string.
+    root = Path(__file__).resolve().parent.parent
+    renamed = set(_RENAMED_SDK_FIELDS)
+    offenders: list[str] = []
+
+    for area in ("src/mcp_gauntlet", "tests"):
+        for path in (root / area).rglob("*.py"):
+            if "adapters" in path.parts or path.name == "sdk_shapes.py":
+                continue  # the seam itself, and the test helper that builds both spellings
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                hit: str | None = None
+                if isinstance(node, ast.Attribute) and node.attr in renamed:
+                    hit = node.attr
+                elif (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == "getattr"
+                    and len(node.args) >= 2
+                    and isinstance(node.args[1], ast.Constant)
+                    and node.args[1].value in renamed
+                ):
+                    hit = str(node.args[1].value)
+                if hit is not None:
+                    line = getattr(node, "lineno", 0)
+                    offenders.append(f"{path.relative_to(root)}:{line} ({hit})")
+
     assert not offenders, "SDK fields read outside adapters/: " + ", ".join(offenders)
 
 
@@ -295,3 +353,32 @@ def test_neither_era_is_missing_a_method_the_other_has() -> None:
     legacy_api = {n for n in dir(LegacyAdapter) if not n.startswith("_")}
     modern_api = {n for n in dir(ModernAdapter) if not n.startswith("_")}
     assert legacy_api == modern_api, f"asymmetric: {legacy_api ^ modern_api}"
+
+
+def test_both_eras_read_the_template_list_off_a_page() -> None:
+    """The container field, not the entries — the one list whose name changed.
+
+    `resources`, `prompts` and `tools` all kept their names; `resourceTemplates` became
+    `resource_templates`. Nothing tested the extraction itself, only the mapping of an
+    individual entry, so a plain `page.resourceTemplates` in client.py went unnoticed in
+    both eras: correct on 1.x, and on 2.0 an AttributeError swallowed by a broad `except`
+    that logs at debug. Template discovery returned nothing and the report read clean.
+    """
+    from mcp_gauntlet.adapters.modern import ModernAdapter
+
+    entry = SimpleNamespace(name="doc")
+    legacy_page = SimpleNamespace(resourceTemplates=[entry])
+    modern_page = SimpleNamespace(resource_templates=[entry])
+    assert LegacyAdapter().resource_templates(legacy_page) == [entry]
+    assert ModernAdapter().resource_templates(modern_page) == [entry]
+
+
+def test_reading_the_template_list_from_the_wrong_era_raises() -> None:
+    # The property that was missing. An empty list means "this server publishes no
+    # templates"; it must never also mean "we could not find the field".
+    from mcp_gauntlet.adapters.modern import ModernAdapter
+
+    with pytest.raises(SdkFieldMissing):
+        ModernAdapter().resource_templates(SimpleNamespace(resourceTemplates=[]))
+    with pytest.raises(SdkFieldMissing):
+        LegacyAdapter().resource_templates(SimpleNamespace(resource_templates=[]))

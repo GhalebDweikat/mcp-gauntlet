@@ -87,6 +87,17 @@ class SdkAdapter(Protocol):
 
     def next_cursor(self, page: Any) -> str | None: ...
 
+    def resource_templates(self, page: Any) -> list[Any]:
+        """The template entries off one `resources/templates/list` page.
+
+        On the adapter because it is the one list whose *container* field was renamed —
+        `resources` and `prompts` and `tools` kept their names, `resourceTemplates` became
+        `resource_templates`. Reading it directly is what made template discovery go quiet
+        under 2.0: the AttributeError landed in a broad `except` that logs at debug, so "no
+        templates" and "could not read the templates" became the same empty list.
+        """
+        ...
+
     def page_params(self, cursor: str | None) -> dict[str, Any]: ...
 
     def list_changed(self, init: Any) -> bool: ...

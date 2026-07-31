@@ -111,6 +111,9 @@ class LegacyAdapter:
         cursor = require(page, "nextCursor", default=None)
         return str(cursor) if cursor else None
 
+    def resource_templates(self, page: Any) -> list[Any]:
+        return list(require(page, "resourceTemplates") or [])
+
     def page_params(self, cursor: str | None) -> dict[str, Any]:
         """Keyword arguments requesting one page of a paginated list.
 

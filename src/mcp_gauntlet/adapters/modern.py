@@ -120,6 +120,9 @@ class ModernAdapter:
         cursor = require(page, "next_cursor", default=None)
         return str(cursor) if cursor else None
 
+    def resource_templates(self, page: Any) -> list[Any]:
+        return list(require(page, "resource_templates") or [])
+
     def page_params(self, cursor: str | None) -> dict[str, Any]:
         """Keyword arguments requesting one page of a paginated list.
 

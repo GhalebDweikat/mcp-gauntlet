@@ -53,6 +53,18 @@ codebase evaluates servers through both — one adapter per era, every check wri
   to the server's Tool Reliability. Both eras' hooks are now implemented, and the session
   *refuses to construct* if neither exists: a zero from "nothing happened" and a zero from
   "we stopped looking" are the same number.
+- **Resource-template discovery went silent on 2.0, and the guard meant to prevent that
+  could not see it.** `client.py` read `page.resourceTemplates` directly — the one list
+  container whose name changed (`resources`, `prompts` and `tools` all kept theirs). Under
+  2.0 that raises `AttributeError` into a broad `except` that logs at debug, so templates
+  came back empty and "this server publishes no templates" became indistinguishable from
+  "we could not read them" — with the template text that reaches a model going unscanned
+  and the report reading clean. The read now goes through the adapter, where a missing
+  field raises. The guard that forbids SDK reads outside `adapters/` matched
+  `getattr(x, "camelCase")` and so was blind to a plain attribute access; it now parses the
+  AST and checks both forms against the list of fields 2.0 actually renamed. Parsed rather
+  than grepped because `drift.py` discusses `tools.listChanged` in prose, and buying
+  precision with an exemption list gives you a guard nobody reads.
 - **A crash could have been scored as a protocol violation.** The stdout-pollution check
   counts parse failures by watching the SDK's stdio logger for an error carrying an
   exception. 2.0 added a second such log call, for a stdout read failing mid-session — the

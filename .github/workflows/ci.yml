@@ -32,3 +32,22 @@ jobs:
       - name: Gates
         shell: bash
         run: bash scripts/gates.sh
+
+  cross-era:
+    # The dual-SDK leg. It does NOT need the `mcp<2` pin widened: the probe builds a
+    # throwaway environment per era and only JSON crosses between them, which is also the
+    # only way to run both — 1.x and 2.x cannot share an interpreter, since 2.0 moves to
+    # httpx2.
+    #
+    # This is the check that catches a self-consistently wrong adapter. The unit tests
+    # compare each adapter against stand-ins written by whoever wrote the adapter, so a
+    # mistaken assumption about the SDK lands in both and they agree with each other. Here
+    # the real SDKs disagree or they don't.
+    name: cross-era fixtures (mcp 1.x vs 2.x)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Same fixtures, both SDK eras
+        run: uv run --no-project python scripts/era_fixture_probe.py

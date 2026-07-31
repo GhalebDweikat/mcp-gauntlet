@@ -164,6 +164,10 @@ class ModernAdapter:
         return bool(_either(result, "input_requests", "inputRequests", default=None))
 
     def protocol_error_type(self) -> type[BaseException]:
-        from mcp.shared.exceptions import McpError
+        # `McpError` became `MCPError` in 2.0 — the module survived the rename, so the
+        # import fails rather than the module being missing. Found by running the suite
+        # against a real 2.0 environment; nothing in a 1.x-only environment could see it,
+        # which is the argument for the dual-SDK leg in one line.
+        from mcp.shared.exceptions import MCPError  # type: ignore[attr-defined]
 
-        return McpError
+        return MCPError

@@ -136,6 +136,12 @@ class ModernAdapter:
         tools = getattr(capabilities, "tools", None)
         return bool(getattr(tools, "list_changed", False))
 
+    def advertises_logging(self, init: Any) -> bool:
+        # `logging` kept its name across the eras; what changed is that 2026-07-28
+        # deprecates it.
+        capabilities = getattr(init, "capabilities", None)
+        return getattr(capabilities, "logging", None) is not None
+
     # ------------------------------------------------------------- live results
     # No require() below this line, for the reason given on `_either`.
 

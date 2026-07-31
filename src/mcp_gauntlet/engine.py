@@ -9,6 +9,7 @@ from __future__ import annotations
 import contextlib
 import logging
 from pathlib import Path
+from typing import Any
 
 from mcp import ClientSession
 from mcp.types import InitializeResult
@@ -158,6 +159,37 @@ async def _resolve_tasks(
     return tasks
 
 
+_LOGGING_DEPRECATED_FROM = "2026-07-28"
+
+
+def _deprecated_capability_findings(init: Any, protocol_version: str | None) -> list[Finding]:
+    """A capability the revision this server negotiated has deprecated.
+
+    Only `logging` can appear here. `sampling` and `roots` are *client* capabilities and
+    have no place in `ServerCapabilities` at all, so looking for them on a server would be
+    looking for something that cannot be there.
+
+    Gated on the negotiated revision, which is the whole honesty of it: a server speaking
+    2025-11-25 and advertising `logging` is doing nothing wrong, and reporting it would
+    manufacture a finding against every correct server built before the deprecation
+    existed. INFO either way — a deprecation is a note for the author, not a defect in what
+    the server does today.
+    """
+    if not protocol_version or protocol_version < _LOGGING_DEPRECATED_FROM:
+        return []
+    if not adapter().advertises_logging(init):
+        return []
+    return [
+        Finding(
+            severity=Severity.INFO,
+            message="server advertises the `logging` capability, deprecated in the "
+            f"revision it negotiated ({protocol_version})",
+            detail="Deprecated by SEP-2577 as of 2026-07-28. It still works; newer clients "
+            "may stop offering it.",
+        )
+    ]
+
+
 async def _check_definition_drift(
     session: ClientSession,
     init: InitializeResult,
@@ -269,7 +301,11 @@ async def evaluate_server(
         drift_findings = await _check_definition_drift(
             session, init, spec, discovery, cache_dir.parent / "baselines", track_drift
         )
-        session_findings = drift_findings + _protocol_findings(interactions.transport)
+        session_findings = (
+            drift_findings
+            + _protocol_findings(interactions.transport)
+            + _deprecated_capability_findings(init, discovery.server.protocol_version)
+        )
         dimensions = run_static_checks(discovery, session_findings)
 
         # The set of tools we'll actually execute (probes + agent) — read-only by default.

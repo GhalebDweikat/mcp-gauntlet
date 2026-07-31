@@ -127,6 +127,10 @@ class LegacyAdapter:
         tools = getattr(capabilities, "tools", None)
         return bool(getattr(tools, "listChanged", False))
 
+    def advertises_logging(self, init: Any) -> bool:
+        capabilities = getattr(init, "capabilities", None)
+        return getattr(capabilities, "logging", None) is not None
+
     # ------------------------------------------------------------- live results
     # No require() below this line, deliberately. These run during an evaluation, and
     # robustness.py's read happens last — after the full agentic eval — so a raise would

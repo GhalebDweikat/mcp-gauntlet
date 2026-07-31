@@ -91,6 +91,17 @@ class SdkAdapter(Protocol):
 
     def list_changed(self, init: Any) -> bool: ...
 
+    def advertises_logging(self, init: Any) -> bool:
+        """Whether the server declares the `logging` capability.
+
+        Deprecated as of revision 2026-07-28 (SEP-2577) — the SDK marks its own
+        `set_logging_level` and `send_log_message` with a deprecation warning. Note this is
+        the ONLY deprecated capability a *server* can advertise: `sampling` and `roots` are
+        client capabilities and appear nowhere in `ServerCapabilities`, so a check looking
+        for them on a server would have been looking for something that cannot be there.
+        """
+        ...
+
     # ------------------------------------------------------------- live results
     # These read a CallToolResult during an evaluation, so none of them may raise:
     # `robustness.py`'s read runs last, after the whole agentic eval, and a raise there

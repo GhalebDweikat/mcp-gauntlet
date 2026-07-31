@@ -166,3 +166,124 @@ def test_no_sdk_shaped_read_survives_outside_the_adapters() -> None:
         if pattern.search(line)
     ]
     assert not offenders, "SDK fields read outside adapters/: " + ", ".join(offenders)
+
+
+# --------------------------------------------------------------- both eras, one model
+#
+# The plan called this the strongest guarantee available, and it is the one that would
+# alone have caught both bugs found so far: an adapter reading the wrong spelling, and an
+# adapter forgetting a field its counterpart maps. Neither shows up testing one era.
+#
+# These use stand-in objects rather than real SDK types because the two SDKs cannot be
+# installed together — 2.0 moves to httpx2 — so no single environment can import both.
+# What is being pinned is the MAPPING, and the field names on the left of each pair were
+# read off the released 1.29.0 and 2.0.0 rather than inferred.
+
+
+def _tool_pair() -> tuple[SimpleNamespace, SimpleNamespace]:
+    """One logical tool, spelled the way each era's SDK spells it."""
+    schema = {"type": "object", "properties": {"q": {"type": "string"}}}
+    legacy = SimpleNamespace(
+        name="search",
+        description="Search the index.",
+        inputSchema=schema,
+        outputSchema={"type": "object"},
+        title="Search",
+        annotations=SimpleNamespace(
+            title="Read-only search", readOnlyHint=True, destructiveHint=False
+        ),
+        meta={"category": "query"},
+    )
+    modern = SimpleNamespace(
+        name="search",
+        description="Search the index.",
+        input_schema=schema,
+        output_schema={"type": "object"},
+        title="Search",
+        annotations=SimpleNamespace(
+            title="Read-only search", read_only_hint=True, destructive_hint=False
+        ),
+        meta={"category": "query"},
+    )
+    return legacy, modern
+
+
+def test_both_eras_map_the_same_tool_to_the_same_model() -> None:
+    from mcp_gauntlet.adapters.modern import ModernAdapter
+
+    legacy, modern = _tool_pair()
+    assert LegacyAdapter().tool_info(legacy) == ModernAdapter().tool_info(modern)
+
+
+def test_both_eras_map_the_same_handshake_to_the_same_model() -> None:
+    from mcp_gauntlet.adapters.modern import ModernAdapter
+
+    legacy = SimpleNamespace(
+        serverInfo=SimpleNamespace(name="srv", version="1.0", title="Srv"),
+        protocolVersion="2025-11-25",
+        instructions="be helpful",
+    )
+    modern = SimpleNamespace(
+        server_info=SimpleNamespace(name="srv", version="1.0", title="Srv"),
+        protocol_version="2025-11-25",
+        instructions="be helpful",
+    )
+    assert LegacyAdapter().server_info(legacy) == ModernAdapter().server_info(modern)
+
+
+def test_both_eras_map_the_same_resource_to_the_same_model() -> None:
+    from mcp_gauntlet.adapters.modern import ModernAdapter
+
+    legacy = SimpleNamespace(
+        name="doc", uri="file:///a", mimeType="text/plain", description="d", title="D", meta={}
+    )
+    modern = SimpleNamespace(
+        name="doc", uri="file:///a", mime_type="text/plain", description="d", title="D", meta={}
+    )
+    assert LegacyAdapter().resource_info(
+        legacy, is_template=False
+    ) == ModernAdapter().resource_info(modern, is_template=False)
+
+    legacy_t = SimpleNamespace(
+        name="doc", uriTemplate="file:///{p}", mimeType=None, description=None, title=None, meta={}
+    )
+    modern_t = SimpleNamespace(
+        name="doc",
+        uri_template="file:///{p}",
+        mime_type=None,
+        description=None,
+        title=None,
+        meta={},
+    )
+    assert LegacyAdapter().resource_info(
+        legacy_t, is_template=True
+    ) == ModernAdapter().resource_info(modern_t, is_template=True)
+
+
+def test_pointing_an_adapter_at_the_wrong_era_raises_rather_than_defaults() -> None:
+    """The inverse of the equivalence, and the reason require() exists.
+
+    A mis-detected era must fail at discovery — before any spend — not quietly produce a
+    tool with no schema, which every downstream check would read as a server that declared
+    none.
+    """
+    from mcp_gauntlet.adapters.modern import ModernAdapter
+
+    legacy, modern = _tool_pair()
+    with pytest.raises(SdkFieldMissing):
+        ModernAdapter().tool_info(legacy)
+    with pytest.raises(SdkFieldMissing):
+        LegacyAdapter().tool_info(modern)
+
+
+def test_neither_era_is_missing_a_method_the_other_has() -> None:
+    """A method absent from one adapter is a check that exists in one era only.
+
+    Protocol conformance is structural at type-check time; this makes it fail at runtime
+    too, since a missing method surfaces as an AttributeError deep inside an evaluation.
+    """
+    from mcp_gauntlet.adapters.modern import ModernAdapter
+
+    legacy_api = {n for n in dir(LegacyAdapter) if not n.startswith("_")}
+    modern_api = {n for n in dir(ModernAdapter) if not n.startswith("_")}
+    assert legacy_api == modern_api, f"asymmetric: {legacy_api ^ modern_api}"

@@ -65,6 +65,15 @@ class _ParseFailureHandler(logging.Handler):
         exc = record.exc_info[1] if record.exc_info else None
         if exc is None:
             return
+        # ...but "has an exception" stopped being specific enough. `mcp` 2.0 added a second
+        # logger.exception() on this same logger for a stdout read failing mid-session —
+        # which is the server dying, not the server polluting. Counting it would charge a
+        # crash to the protocol-compliance check. Discriminating on the exception TYPE keeps
+        # us off the log wording: a line that will not parse fails in json/pydantic, both of
+        # which are ValueError; a transport read fails with OSError or an anyio stream error,
+        # which is not.
+        if not isinstance(exc, ValueError):
+            return
         detail = ""
         # Pydantic puts the offending line in the error's context; fall back to the message.
         for err in getattr(exc, "errors", lambda: [])():

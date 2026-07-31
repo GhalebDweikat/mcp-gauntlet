@@ -24,22 +24,24 @@ from mcp_gauntlet.report import (
 )
 
 
-@pytest.mark.skipif(
+@pytest.mark.xfail(
     adapter().era == "modern",
+    strict=True,
     reason=(
-        "The 1.x path does not exist on 2.0. Measured against mcp 2.0.0: the client refuses "
-        "to forward a server-initiated elicitation at all, raising MCPError('Elicitation not "
-        "supported') from send_raw_request rather than delivering a request the harness can "
-        "count and decline. So there is no pushed request to attribute, and asserting the "
-        "count here would be asserting 1.x plumbing against an SDK that removed it. The "
-        "modern replacement is MRTR — the server returns result_type='input_required' inside "
-        "an ordinary result — and that is covered by the adapters' asks_for_input tests. "
-        "NOTE: this leaves a real gap, recorded rather than hidden: on 2.0 a server that "
-        "pushes elicitation makes the CALL RAISE, and a raised protocol error inside the "
-        "agent loop is charged to the server's Tool Reliability — the exact misattribution "
-        "the interaction counter exists to prevent. Closing it needs a way to tell that "
-        "refusal apart from a genuine server error, which the SDK does not currently give a "
-        "distinct exception type for."
+        "KNOWN BROKEN on mcp 2.0, recorded rather than skipped. `_RecordingSession` counts "
+        "by overriding the private `ClientSession._received_request`, and 2.0 removed that "
+        "method — MEASURED: `hasattr(ClientSession, '_received_request')` is True on 1.29.0 "
+        "and False on 2.0.0. So the override is simply never called: no error, no warning, "
+        "the counter stays at zero, and every declined elicitation is charged to the "
+        "server's Tool Reliability. That is the exact misattribution this counter exists to "
+        "prevent, arriving as a method that silently stopped being called.\n\n"
+        "The request does still reach the client — 2.0's default elicitation callback "
+        "declines it with INVALID_REQUEST/'Elicitation not supported' and the server then "
+        "raises — so this is observable, just not where we are looking. `message_handler` "
+        "was tried and counts nothing in EITHER era, so it is not the replacement hook.\n\n"
+        "strict=True on purpose: when the hook is fixed this test must fail for passing "
+        "unexpectedly, so the xfail cannot outlive the bug. Widening the `mcp` pin should "
+        "wait on this — shipping it would ship the misattribution."
     ),
 )
 async def test_recording_session_counts_a_real_elicitation() -> None:

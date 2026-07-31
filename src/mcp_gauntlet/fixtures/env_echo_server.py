@@ -7,16 +7,13 @@ credential-shaped value so the redaction path has something to scrub.
 
 import os
 
-from mcp.server.fastmcp import FastMCP
-
-mcp = FastMCP("env-echo-fixture", log_level="WARNING")
+from mcp_gauntlet.fixtures._serve import Tool, serve
 
 
-@mcp.tool()
 def whoami() -> str:
     """Return the value of the MCP_GAUNTLET_TEST_TOKEN environment variable, or '<unset>'."""
     return os.environ.get("MCP_GAUNTLET_TEST_TOKEN", "<unset>")
 
 
 if __name__ == "__main__":
-    mcp.run()
+    serve("env-echo-fixture", [Tool(whoami)])

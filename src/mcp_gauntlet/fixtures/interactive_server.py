@@ -6,17 +6,25 @@ prove the harness counts such server-initiated requests and attributes the resul
 tool failure to its own limitation rather than to the server's Tool Reliability.
 """
 
-from mcp.server.fastmcp import Context, FastMCP
+from typing import TYPE_CHECKING
+
 from pydantic import BaseModel
 
-mcp = FastMCP("interactive-fixture", log_level="WARNING")
+from mcp_gauntlet.fixtures._serve import Tool, context_type, serve
+
+if TYPE_CHECKING:  # the pinned SDK's class, so the annotation type-checks
+    from mcp.server.fastmcp import Context
+else:
+    # At runtime it must be the class the INSTALLED SDK injects on: both eras decide by
+    # inspecting this annotation, and the wrong class turns `ctx` into an ordinary argument
+    # that shows up in the tool's input schema.
+    Context = context_type()
 
 
 class Confirmation(BaseModel):
     confirm: bool
 
 
-@mcp.tool()
 async def confirm_and_run(item: str, ctx: Context) -> str:
     """Ask the user to confirm, then act on the item. Needs a client that supports
     elicitation (a confirmation prompt); without one, the action cannot proceed."""
@@ -26,11 +34,10 @@ async def confirm_and_run(item: str, ctx: Context) -> str:
     return f"Declined: no confirmation for {item}."
 
 
-@mcp.tool()
 def echo(text: str) -> str:
     """Return the text unchanged. Needs no interaction — always works."""
     return text
 
 
 if __name__ == "__main__":
-    mcp.run()
+    serve("interactive-fixture", [Tool(confirm_and_run), Tool(echo)])

@@ -11,7 +11,7 @@ the problem; only watching the transport does.
 
 import sys
 
-from mcp.server.fastmcp import FastMCP
+from mcp_gauntlet.fixtures._serve import Tool, serve
 
 # Written before the transport starts, exactly as a framework banner would be. `print`
 # defaults to stdout — which on a stdio server is the protocol channel, not a log.
@@ -19,10 +19,7 @@ print("[info] noisy-fixture starting up")
 print('    context: "Bootstrap"')
 print("[info] mapped tool routes: {add, describe}")
 
-mcp = FastMCP("noisy-fixture", log_level="WARNING")
 
-
-@mcp.tool()
 def add(a: int, b: int) -> int:
     """Add two integers and return their sum. Use when the user needs to add two numbers."""
     # Mid-session pollution, the kind a per-request log line produces.
@@ -30,7 +27,6 @@ def add(a: int, b: int) -> int:
     return a + b
 
 
-@mcp.tool()
 def describe() -> str:
     """Return a short description of this server. Use to check the server is responding."""
     return "A fixture that logs to stdout instead of stderr."
@@ -38,4 +34,4 @@ def describe() -> str:
 
 if __name__ == "__main__":
     sys.stdout.flush()
-    mcp.run()
+    serve("noisy-fixture", [Tool(add), Tool(describe)])

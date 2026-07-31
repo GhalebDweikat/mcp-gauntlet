@@ -14,30 +14,28 @@ Note the tools are deliberately well-formed: the point is that nothing in a *sta
 this server reveals the problem. Only calling it does.
 """
 
-from mcp.server.fastmcp import FastMCP
-
-mcp = FastMCP("gated-fixture", log_level="WARNING")
+from mcp_gauntlet.fixtures._serve import Tool, serve
 
 _AUTH_ERROR = "401 Unauthorized: missing API key. Set GATED_API_KEY to use this server."
 
 
-@mcp.tool()
 def list_projects() -> str:
     """List every project in your workspace. Use when the user asks what projects exist."""
     raise RuntimeError(_AUTH_ERROR)
 
 
-@mcp.tool()
 def get_project(project_id: str) -> str:
     """Fetch one project's details by its id. Use when the user names a specific project."""
     raise RuntimeError(_AUTH_ERROR)
 
 
-@mcp.tool()
 def search_documents(query: str) -> str:
     """Search the workspace's documents for a query string and return matching titles."""
     raise RuntimeError(_AUTH_ERROR)
 
 
 if __name__ == "__main__":
-    mcp.run()
+    serve(
+        "gated-fixture",
+        [Tool(list_projects), Tool(get_project), Tool(search_documents)],
+    )

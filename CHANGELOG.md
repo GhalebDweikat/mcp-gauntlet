@@ -3,6 +3,86 @@
 All notable changes to mcp-gauntlet are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.8.0] — 2026-07-31
+
+Runs on either MCP SDK era. `mcp>=1.9,<3`, so a resolver may pick 1.x or 2.x, and the same
+codebase evaluates servers through both — one adapter per era, every check written once.
+
+### Added
+
+- **Both SDK eras, verified rather than believed.** Every SDK field is read through
+  `adapters/legacy.py` or `adapters/modern.py`, chosen by installed package version (never
+  by attribute probing — 2.0 still exports `ClientSession` and `mcp.types`, so `hasattr`
+  cannot tell them apart). Discovery *raises* on a field it cannot find rather than
+  defaulting, because a defaulting read of a renamed field is how a check goes quiet and
+  scores every server clean. Live-result reads keep their defaults: one of them runs after
+  the whole paid agent evaluation, and a raise there would discard a run already paid for.
+- **`scripts/era_fixture_probe.py`, run on every push.** Builds the same fixture server on
+  `mcp` 1.29.0 and 2.0.0 in separate environments and fails if the two eras disagree about
+  it. This is the only check that can catch an adapter that is *self-consistently* wrong:
+  the unit tests compare each adapter against stand-ins written by whoever wrote the
+  adapter, so a mistaken assumption lands in both and they agree with each other. It runs
+  the real SDKs, including the malicious demo verbatim, listing tools twice so the rug-pull
+  is exercised — a probe that listed once would call that fixture identical across eras
+  while being blind to the one attack that needs a second look.
+- **CI runs the full suite against 2.x** as its own leg, with `--no-sync` (without it `uv
+  run` re-syncs and silently undoes the install, going green having tested 1.x) and an
+  assertion that the installed major really is 2.
+- **Three checks from revision 2026-07-28.** An argument mapped into an `Mcp-Param-*`
+  request header via `x-mcp-header` — reported when the argument is secret-named (the
+  *model* supplies that value, and proxies log headers where they do not log bodies), or
+  when the annotation is invalid, in which case compliant clients must drop the tool
+  entirely. A `$ref` pointing off the document. And a `logging` capability advertised on a
+  connection whose revision deprecates it.
+- **Baselines record which SDK measured them.** Drift fingerprints digest fields read
+  through the adapter, and the eras can produce different values for an identical server —
+  `{}` versus `None` for an absent output schema is enough. Without this, the first run
+  after an SDK upgrade would report every tool as silently redefined: MEDIUM findings on the
+  grade-capping dimension against servers that changed nothing.
+- **`scripts/gates.sh`** — every check in one command, nothing silenced, each exit code
+  printed, non-zero if any failed. It replaces ad-hoc shell chains that had two independent
+  ways to lie, both of which had already produced a green report of a red suite.
+
+### Fixed
+
+- **Interaction counting silently stopped working on 2.0.** The count of server-initiated
+  elicitation and sampling — the thing that lets the harness blame *itself* rather than the
+  server — came from overriding the private `ClientSession._received_request`, which 2.0
+  removed. Overriding a method the base class no longer has raises nothing and warns about
+  nothing, so the counter read zero and every declined elicitation would have been charged
+  to the server's Tool Reliability. Both eras' hooks are now implemented, and the session
+  *refuses to construct* if neither exists: a zero from "nothing happened" and a zero from
+  "we stopped looking" are the same number.
+- **A crash could have been scored as a protocol violation.** The stdout-pollution check
+  counts parse failures by watching the SDK's stdio logger for an error carrying an
+  exception. 2.0 added a second such log call, for a stdout read failing mid-session — the
+  server dying, not the server polluting. Now discriminated by exception type rather than
+  log wording: a line that will not parse fails in json or pydantic, both `ValueError`; a
+  transport read fails with `OSError`, which is not.
+- **`McpError` is `MCPError` in 2.0**, and the module kept its name — so the modern
+  adapter's protocol-error lookup raised `ImportError` on first use. Robustness treats that
+  class as control flow, since a JSON-RPC error is the *correct* way for a server to reject
+  malformed input. Found only by building a real 2.0 environment and running the tests in it.
+
+### Changed
+
+- Fixtures declare their tools as data and a shim builds a real server from that
+  declaration on whichever SDK is installed — `mcp.server.fastmcp`, which six of them were
+  built on, does not exist in 2.0. The malicious demo needs raw control (a payload behind a
+  `$ref`, a poisoned annotation title, a definition that changes between listings) and uses
+  a second path. **The fixture snapshot shows zero drift**, so no fixture's definition or
+  score moved.
+- METHODOLOGY no longer says this harness cannot speak 2026-07-28.
+
+### Comparability
+
+Scores from 0.8.0 are comparable with 0.7.1 for any server that does not use the features
+the three new checks look at. A server that maps an argument to a request header, points a
+`$ref` off the document, or advertises `logging` on a 2026-era connection can score lower
+than it did — because something is now being measured that was not measured before, not
+because the scoring model moved. Nothing else changed: the weights, the penalties and the
+grade cap are untouched, and the bundled fixtures score exactly what they scored in 0.7.1.
+
 ## [0.7.1] — 2026-07-30
 
 ### Fixed

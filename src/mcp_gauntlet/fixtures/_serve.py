@@ -60,11 +60,23 @@ _LEGACY_ANNOTATION_NAMES = {
 
 
 def _is_modern() -> bool:
-    # Same rule as the adapter: by package version, never by probing for an attribute. 2.0
-    # still exports ClientSession and mcp.types, so hasattr cannot tell the eras apart.
-    from mcp_gauntlet.adapters import sdk_version
+    """Whether the installed `mcp` is 2.x.
 
-    head = sdk_version().split(".", 1)[0]
+    Same rule as `adapters.sdk_version()` — by package version, never by probing for an
+    attribute, because 2.0 still exports ClientSession and mcp.types so hasattr cannot tell
+    the eras apart. Deliberately NOT importing that function: a fixture must be runnable
+    under an SDK the harness itself cannot be installed alongside, since the harness pins
+    `mcp<2`. Reaching into `mcp_gauntlet.adapters` here would make the modern branch
+    permanently untestable — the fixture could only ever run in an environment that, by
+    construction, has the wrong SDK for it.
+    """
+    import importlib.metadata
+
+    try:
+        version = importlib.metadata.version("mcp")
+    except importlib.metadata.PackageNotFoundError:  # pragma: no cover - mcp is a hard dep
+        return False
+    head = version.split(".", 1)[0]
     return head.isdigit() and int(head) >= 2
 
 

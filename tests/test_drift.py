@@ -196,3 +196,61 @@ def test_a_spec_key_never_puts_a_url_secret_in_the_filename() -> None:
     assert spec_key("https://u:pa55word@mcp.example.com/sse").find("pa55word") == -1
     # Still distinguishes two servers that differ only in the stripped part.
     assert spec_key("https://x.example/s?k=1") != spec_key("https://x.example/s?k=2")
+
+
+# --------------------------------------------------------- baselines carry their era
+
+
+def test_a_baseline_records_which_sdk_era_measured_it(tmp_path: Path) -> None:
+    from mcp_gauntlet.adapters import adapter
+    from mcp_gauntlet.drift import era_changed, load_baseline, save_baseline
+
+    path = tmp_path / "b.json"
+    save_baseline(path, ServerInfo(name="s", version="1"), [_tool("a")])
+    stored = load_baseline(path)
+    assert stored is not None
+    assert stored.era == adapter().era
+    assert era_changed(stored) is False
+
+
+def test_a_baseline_from_the_other_era_is_not_compared(tmp_path: Path) -> None:
+    """The fabricated rug-pull this exists to prevent.
+
+    `fingerprint()` digests fields read through the adapter, and the eras can legitimately
+    produce different values for an identical server — `{}` versus `None` for an absent
+    output schema is enough to change every digest. Comparing across that boundary would
+    report every tool as silently redefined: MEDIUM findings on the grade-capping dimension,
+    accusing servers that did not change of a rug-pull.
+    """
+    from dataclasses import replace
+
+    from mcp_gauntlet.adapters import adapter
+    from mcp_gauntlet.drift import era_changed, load_baseline, save_baseline
+
+    path = tmp_path / "b.json"
+    save_baseline(path, ServerInfo(name="s", version="1"), [_tool("a")])
+    stored = load_baseline(path)
+    assert stored is not None
+
+    other = "modern" if adapter().era == "legacy" else "legacy"
+    assert era_changed(replace(stored, era=other)) is True
+
+
+def test_a_baseline_predating_the_stamp_is_treated_as_legacy(tmp_path: Path) -> None:
+    """Not a guess: every published version pinned `mcp<2`, so no existing baseline can
+    have been recorded under a modern SDK. Treating them as unknown would reset every
+    user's baseline — turning the drift check off for one run — for nothing."""
+    import json
+
+    from mcp_gauntlet.adapters import adapter
+    from mcp_gauntlet.drift import era_changed, load_baseline
+
+    path = tmp_path / "old.json"
+    path.write_text(
+        json.dumps({"version": "1", "recorded_at": "", "tools": {"a": "deadbeef"}}),
+        encoding="utf-8",
+    )
+    stored = load_baseline(path)
+    assert stored is not None
+    assert stored.era == ""
+    assert era_changed(stored) is (adapter().era != "legacy")

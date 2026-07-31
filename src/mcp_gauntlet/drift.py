@@ -43,6 +43,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
+from mcp_gauntlet.adapters import adapter
 from mcp_gauntlet.jsonio import read_json_text
 from mcp_gauntlet.models import ServerInfo, ToolInfo
 from mcp_gauntlet.naming import slugify
@@ -102,12 +103,40 @@ class Baseline:
     version: str | None = None
     recorded_at: str = ""
     tools: dict[str, str] = field(default_factory=dict)
+    # Which SDK era produced these fingerprints. A digest is only comparable against one
+    # recorded the same way — see `era_changed`.
+    era: str = ""
 
     def to_json(self) -> str:
         return json.dumps(
-            {"version": self.version, "recorded_at": self.recorded_at, "tools": self.tools},
+            {
+                "version": self.version,
+                "recorded_at": self.recorded_at,
+                "era": self.era,
+                "tools": self.tools,
+            },
             indent=2,
         )
+
+
+def era_changed(baseline: Baseline) -> bool:
+    """Whether this baseline was recorded by a different SDK era than the one running now.
+
+    `fingerprint()` digests `output_schema`, both hints and `_meta`. Those are read through
+    the adapter, and the two eras can legitimately produce different values for the same
+    server — an absent output schema is `{}` on one path and `None` on another, and either
+    changes the digest. So the FIRST run after an SDK upgrade would find every tool's
+    fingerprint different and report every one of them as a silent redefinition: MEDIUM
+    findings, on the weight-2.0 grade-capping dimension, for servers that did not change at
+    all. On a published board that is a fabricated rug-pull accusation against every server
+    at once.
+
+    A baseline with no recorded era is treated as legacy rather than as a mismatch. That is
+    not a guess: every published version has pinned `mcp<2`, so no baseline in existence can
+    have been recorded under a modern SDK, and treating them as unknown would reset every
+    user's baseline for nothing.
+    """
+    return (baseline.era or "legacy") != adapter().era
 
 
 def baseline_file(base_dir: Path, key: str) -> Path:
@@ -141,6 +170,7 @@ def load_baseline(path: Path) -> Baseline | None:
         version=str(version) if version is not None else None,
         recorded_at=str(data.get("recorded_at") or ""),
         tools=tools,
+        era=str(data.get("era") or ""),
     )
 
 
@@ -150,6 +180,7 @@ def save_baseline(path: Path, server: ServerInfo, tools: list[ToolInfo]) -> None
         version=server.version,
         recorded_at=datetime.now(UTC).isoformat(timespec="seconds"),
         tools=fingerprint_all(tools),
+        era=adapter().era,
     )
     path.write_text(baseline.to_json(), encoding="utf-8")
 

@@ -24,6 +24,7 @@ from mcp_gauntlet.drift import (
     changed_within_session,
     compare_to_baseline,
     compare_within_session,
+    era_changed,
     load_baseline,
     save_baseline,
     spec_key,
@@ -220,6 +221,21 @@ async def _check_definition_drift(
                 detail=f"{path}: {exc}",
             )
         )
+    if baseline is not None and era_changed(baseline):
+        # Same principle as the unreadable case: say the comparison did not happen. The
+        # alternative is worse than useless — the fingerprints were produced by a different
+        # SDK era, so every tool would come back "redefined" and the report would accuse an
+        # unchanged server of a rug-pull. Recording below replaces it with a comparable one.
+        findings.append(
+            Finding(
+                severity=Severity.INFO,
+                message="the recorded tool definitions were measured with a different MCP "
+                "SDK, so this run was not compared against them",
+                detail=f"{path}: recorded under {baseline.era or 'legacy'}, "
+                f"running {adapter().era}",
+            )
+        )
+        baseline = None
     if baseline is not None:
         findings.extend(compare_to_baseline(baseline, discovery.server, discovery.tools))
     # Record AFTER comparing, so this run's surface becomes the next run's baseline. A

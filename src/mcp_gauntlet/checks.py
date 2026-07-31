@@ -24,7 +24,7 @@ from __future__ import annotations
 import json
 import re
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from statistics import mean
 from typing import Any
 
@@ -600,8 +600,188 @@ def _scan_text(
     return findings
 
 
+_X_MCP_HEADER = "x-mcp-header"
+_HEADER_PRIMITIVE_TYPES = frozenset({"integer", "string", "boolean"})
+# RFC 9110 token — what a header name is allowed to be.
+_RFC9110_TOKEN = re.compile("[!#$%&'*+\\-.^_`|~0-9A-Za-z]+")
+
+# Property NAMES meaning "this value is a secret". Deliberately narrower than the prose
+# credential vocabulary above, and governed by a different rule: that one is informational
+# because a server may legitimately *mention* credentials, which is how twenty-five false
+# positives happened. This one only ever fires on a property that is ALSO annotated to leave
+# as an HTTP header. A name on its own is never enough, or that same false-positive class
+# walks straight back in through a new door.
+_SECRET_PROPERTY_NAME = re.compile(
+    r"(?i)(?:^|[_\-.])(?:secret|token|password|passwd|apikey|api_key|auth|authorization"
+    r"|credential|bearer|private_key|session|cookie)(?:$|[_\-.])"
+)
+
+
+def _schema_positions(
+    schema: Any, path: tuple[str, ...] = (), pure: bool = True
+) -> Iterator[tuple[tuple[str, ...] | None, dict[str, Any]]]:
+    """Every schema position, carrying the pure-``properties`` path where one exists.
+
+    ``path`` is the chain of property names when the position is reachable from the root
+    through ``properties`` keys and nothing else; ``None`` when it was reached via ``allOf``,
+    ``$defs``, ``items`` or any other keyword.
+
+    That distinction is the entire point, and it is why this does not reuse
+    ``schemas.arg_surface``: that merges ``allOf`` and resolves ``$ref`` so the scanner sees
+    every string a model might read — right for scanning, and exactly backwards here. The
+    2026-07-28 rule is that an ``x-mcp-header`` annotation counts only where it is
+    *statically* reachable through ``properties``, so flattening first would declare valid a
+    placement the spec calls invalid.
+    """
+    if not isinstance(schema, dict):
+        return
+    yield (path if pure else None, schema)
+    for key, value in schema.items():
+        if key == "properties" and isinstance(value, dict):
+            for name, sub in value.items():
+                yield from _schema_positions(sub, (*path, str(name)), pure)
+        elif isinstance(value, dict):
+            yield from _schema_positions(value, path, False)
+        elif isinstance(value, list):
+            for item in value:
+                yield from _schema_positions(item, path, False)
+
+
+def _header_annotation_findings(tool: ToolInfo) -> list[Finding]:
+    """Arguments the server asks to be mirrored into ``Mcp-Param-*`` request headers.
+
+    New in revision 2026-07-28. A property carrying ``x-mcp-header`` tells the client to copy
+    that argument into an HTTP header on the tool call. Two different things are worth
+    reporting here, and they are not the same finding:
+
+    * **A secret-named argument mapped to a header.** The value is chosen by the *model*, and
+      headers get logged by proxies and gateways in places request bodies are not — so a
+      server can arrange for a credential the model supplies to be written into intermediary
+      logs nobody involved controls. MEDIUM: real and objective, but naming a header for an
+      API key is also how honest authenticated servers work, and only near-certain attack
+      signals may cap a grade.
+    * **An invalid annotation.** The spec says a compliant client MUST DROP a tool whose
+      annotations are malformed, so this is not cosmetic — the tool vanishes for every
+      2026-era client while still working on older ones, which is exactly the kind of fault
+      its own author never sees.
+    """
+    schema = tool.input_schema
+    if not schema:
+        return []
+    findings: list[Finding] = []
+    claimed: dict[str, str] = {}
+
+    for path, position in _schema_positions(schema):
+        if _X_MCP_HEADER not in position:
+            continue
+        header = position[_X_MCP_HEADER]
+        where = ".".join(path) if path else ""
+
+        if not path:
+            findings.append(
+                _f(
+                    tool.name,
+                    Severity.MEDIUM,
+                    f"{_X_MCP_HEADER} sits where the spec does not allow it, so 2026-era "
+                    "clients must drop this tool",
+                    detail="Valid only on a property reachable from the root through "
+                    "`properties` alone — not under allOf/$defs/items, and not on the root.",
+                )
+            )
+            continue
+
+        problem: str | None = None
+        if not isinstance(header, str):
+            problem = f"must be a string, not {type(header).__name__}"
+        elif not _RFC9110_TOKEN.fullmatch(header):
+            problem = f"{header!r} is not a valid header name (RFC 9110 token)"
+        elif not isinstance(position.get("type"), str):
+            problem = "the property declares no single `type`"
+        elif position["type"] not in _HEADER_PRIMITIVE_TYPES:
+            problem = (
+                "only integer/string/boolean properties may map to a header, "
+                f"not {position['type']!r}"
+            )
+        elif header.lower() in claimed:
+            problem = f"header {header!r} is already claimed by {claimed[header.lower()]!r}"
+
+        if problem is not None:
+            findings.append(
+                _f(
+                    tool.name,
+                    Severity.MEDIUM,
+                    f"invalid {_X_MCP_HEADER} on '{where}', so 2026-era clients must drop "
+                    "this tool",
+                    detail=problem,
+                )
+            )
+            continue
+
+        claimed[header.lower()] = where
+        if _SECRET_PROPERTY_NAME.search(path[-1]):
+            findings.append(
+                _f(
+                    tool.name,
+                    Severity.MEDIUM,
+                    f"secret-named argument '{where}' is mapped into the '{header}' request header",
+                    detail="The model supplies this value and the client copies it into an "
+                    "HTTP header, where proxies and gateways routinely log what they do not "
+                    "log from a request body. Authenticated servers legitimately do this, so "
+                    "it is reported for a human to judge and does not cap the grade.",
+                )
+            )
+        else:
+            findings.append(
+                _f(
+                    tool.name,
+                    Severity.INFO,
+                    f"argument '{where}' is sent as the '{header}' request header",
+                    detail="Recorded because it leaves the JSON body: an argument mapped to a "
+                    "header travels somewhere a reader of the schema alone would not expect.",
+                )
+            )
+    return findings
+
+
+def _external_ref_findings(tool: ToolInfo) -> list[Finding]:
+    """A ``$ref`` pointing off the document, at a URL the server chooses.
+
+    This harness never dereferences one — ``schemas.resolve_ref`` returns None for anything
+    that is not a local ``#/`` pointer, and a test pins that — so the finding is not about
+    what happens *here*. It is about two things true regardless: a client that does resolve
+    refs would fetch server-controlled content from a server-chosen host on the strength of a
+    tool listing, and this harness ships the raw schema verbatim to an LLM provider, so the
+    URL leaves the machine either way.
+    """
+    findings: list[Finding] = []
+    for schema, where in (
+        (tool.input_schema, "input schema"),
+        (tool.output_schema, "output schema"),
+    ):
+        if not schema:
+            continue
+        for _path, position in _schema_positions(schema):
+            ref = position.get("$ref")
+            if not isinstance(ref, str) or ref.startswith("#"):
+                continue
+            findings.append(
+                _f(
+                    tool.name,
+                    Severity.MEDIUM,
+                    f"{where} contains a $ref to something outside the document",
+                    detail=f"{ref[:200]} — a client that resolves refs would fetch "
+                    "server-controlled content from a server-chosen host. This harness never "
+                    "dereferences, but it does send the raw schema to the model provider, so "
+                    "the URL leaves the machine either way.",
+                )
+            )
+    return findings
+
+
 def _check_tool_security(tool: ToolInfo) -> list[Finding]:
     findings = _scan_text(tool.description or "", tool.name, "description")
+    findings.extend(_header_annotation_findings(tool))
+    findings.extend(_external_ref_findings(tool))
     # Scan BOTH display titles, deduped by text. Newer clients render `title` and older ones
     # render `annotations.title`, so scanning only the winner of that precedence leaves the
     # other a blind spot — a clean `title` beside a poisoned `annotations.title` scored a

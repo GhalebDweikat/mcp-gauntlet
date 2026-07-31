@@ -7,22 +7,28 @@ on:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    # Windows is in the matrix because 0.7.1 fixed a crash that only happened there, on a
+    # console encoding no Linux runner has. The maintainer develops on Windows, so until
+    # now the platform with the most local use was the one CI never exercised.
+    name: check (${{ matrix.os }}, py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         python-version: ["3.11", "3.12", "3.13"]
+        include:
+          - os: windows-latest
+            python-version: "3.13"
     steps:
       - uses: actions/checkout@v4
       - name: Install uv
         uses: astral-sh/setup-uv@v3
       - name: Sync dependencies
         run: uv sync --extra dev --python ${{ matrix.python-version }}
-      - name: Ruff (lint + format check)
-        run: |
-          uv run ruff check .
-          uv run ruff format --check .
-      - name: Mypy
-        run: uv run mypy
-      - name: Tests
-        run: uv run pytest -q
+      # One script for CI and for local use, so the two cannot drift into disagreeing
+      # about what "green" means. It runs every gate even after one fails, prints each
+      # exit code, and never pipes a result through a command that would mask it.
+      - name: Gates
+        shell: bash
+        run: bash scripts/gates.sh

@@ -5,9 +5,15 @@ name: Publish to PyPI
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version already on PyPI to verify (e.g. 0.7.1). Does not publish."
+        required: true
 
 jobs:
   publish:
+    if: github.event_name == 'release'
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -20,3 +26,90 @@ jobs:
         run: uv build
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  # Test what was shipped, not what was committed.
+  #
+  # 0.7.1 exists because 0.7.0 passed 392 tests and still crashed on the first command
+  # the project page tells people to run. Every one of those tests ran against the source
+  # tree on Linux; the failure needed a real Windows stdout on a legacy codepage. No
+  # amount of testing the repository would have found it. So this installs from PyPI, on
+  # both platforms, and runs the documented command exactly as a stranger would.
+  verify-published:
+    needs: [publish]
+    if: always() && (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Resolve the version under test
+        id: v
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            version="${{ inputs.version }}"
+          else
+            version="${{ github.event.release.tag_name }}"
+          fi
+          version="${version#v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Verifying mcp-gauntlet==$version"
+
+      - name: Wait for PyPI to serve it
+        run: |
+          # The simple index and uv's cache both trail a publish by a minute or two.
+          for i in $(seq 1 30); do
+            if uvx --refresh "mcp-gauntlet@${{ steps.v.outputs.version }}" --version >/dev/null 2>&1; then
+              echo "installable after $(( i * 20 ))s"
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "::error::mcp-gauntlet==${{ steps.v.outputs.version }} never became installable"
+          exit 1
+
+      - name: The command on the project page must work
+        run: |
+          # `|| rc=$?` because Actions runs bash with -e: an unguarded failure would abort
+          # the step before we could report which check failed, or show the log at all.
+          rc=0
+          uvx "mcp-gauntlet@${{ steps.v.outputs.version }}" run \
+            "python -m mcp_gauntlet.fixtures.malicious_server" --no-agentic > demo.log 2>&1 || rc=$?
+          cat demo.log
+          if [ $rc -ne 0 ]; then
+            echo "::error::the documented demo command exited $rc"
+            exit 1
+          fi
+          # Exit 0 is not enough: a wheel that runs but finds nothing is the failure this
+          # project is actually about. The demo server is deliberately malicious, so a
+          # clean bill of health means the checks silently stopped working.
+          if ! grep -q "Critical security finding" demo.log; then
+            echo "::error::demo ran but reported no critical finding on the malicious server"
+            exit 1
+          fi
+
+      - name: ...including on a console that cannot encode its own output
+        run: |
+          # cp1252 is what Windows hands a process in most of the world. It cannot encode
+          # the warning sign, nor the Cyrillic and Greek letters a homoglyph finding is
+          # made of — so before 0.7.1 the confusable check crashed the run at the moment
+          # it caught an attack. Forcing the encoding reproduces that on any platform.
+          rc=0
+          PYTHONIOENCODING=cp1252 uvx "mcp-gauntlet@${{ steps.v.outputs.version }}" run \
+            "python -m mcp_gauntlet.fixtures.malicious_server" --no-agentic > cp1252.log 2>&1 || rc=$?
+          if grep -q "UnicodeEncodeError" cp1252.log; then
+            tail -30 cp1252.log
+            echo "::error::UnicodeEncodeError on a legacy codepage (regression of the 0.7.1 fix)"
+            exit 1
+          fi
+          if [ $rc -ne 0 ]; then
+            tail -30 cp1252.log
+            echo "::error::demo exited $rc under cp1252"
+            exit 1
+          fi

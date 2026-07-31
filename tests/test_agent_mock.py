@@ -1227,3 +1227,49 @@ def test_mrtr_detection_reads_both_field_spellings() -> None:
     ]
     for shape in negatives:
         assert not _asks_for_input(shape), shape
+
+
+class _RaisingInteractingSession:
+    """A server whose interactive request is refused by the CLIENT, so the call raises.
+
+    This is mcp 2.0's shape and it is not the 1.x one. On 1.x the harness answers the
+    server's elicitation with an error and the tool call returns `isError`; on 2.0 the
+    client refuses the request outright and `call_tool` raises. The counter is bumped
+    either way — that part is the recording session's job — but the attribution has to
+    survive an exception, not just an error result.
+    """
+
+    def __init__(self, log: InteractionLog) -> None:
+        self._log = log
+
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
+        self._log.elicitation += 1
+        # A plain exception on purpose: the agent loop catches `Exception`, so the
+        # attribution must not depend on the SDK's error class, which differs by era.
+        raise RuntimeError("Elicitation not supported")
+
+
+async def test_a_raised_interaction_refusal_is_still_the_harness_s_fault() -> None:
+    log = InteractionLog()
+    bridge = build_tool_bridge([_ADD])
+    fn = bridge.tools[0]["function"]["name"]
+    responses = [
+        _completion(_msg(tool_calls=[_tool_call("c1", fn, '{"a": 1, "b": 2}')])),
+        _completion(_msg(content="could not confirm")),
+    ]
+    trace = await run_agent_task(
+        session=cast(ClientSession, _RaisingInteractingSession(log)),
+        bridge=bridge,
+        client=_client(responses),
+        model="m",
+        task="do it",
+        interactions=log,
+    )
+    call = trace.tool_calls[0]
+    assert not call.ok
+    # The whole point: the raise must not become a mark against the server, because the
+    # refusal was ours. The counter delta is checked after the except block precisely so
+    # this path reaches it.
+    assert call.needed_interaction is True
+    assert not call.counts_for_reliability
+    assert trace.had_tool_error is False

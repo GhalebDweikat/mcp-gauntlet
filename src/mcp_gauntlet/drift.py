@@ -132,9 +132,10 @@ def era_changed(baseline: Baseline) -> bool:
     at once.
 
     A baseline with no recorded era is treated as legacy rather than as a mismatch. That is
-    not a guess: every published version has pinned `mcp<2`, so no baseline in existence can
-    have been recorded under a modern SDK, and treating them as unknown would reset every
-    user's baseline for nothing.
+    not a guess: every version published before this stamp existed pinned `mcp<2`, so an
+    unstamped baseline cannot have been recorded under a modern SDK. Treating them as
+    unknown would reset every existing user's baseline — switching the drift check off for a
+    run — for nothing.
     """
     return (baseline.era or "legacy") != adapter().era
 

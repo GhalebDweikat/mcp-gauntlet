@@ -64,11 +64,11 @@ def _is_modern() -> bool:
 
     Same rule as `adapters.sdk_version()` — by package version, never by probing for an
     attribute, because 2.0 still exports ClientSession and mcp.types so hasattr cannot tell
-    the eras apart. Deliberately NOT importing that function: a fixture must be runnable
-    under an SDK the harness itself cannot be installed alongside, since the harness pins
-    `mcp<2`. Reaching into `mcp_gauntlet.adapters` here would make the modern branch
-    permanently untestable — the fixture could only ever run in an environment that, by
-    construction, has the wrong SDK for it.
+    the eras apart. Deliberately NOT importing that function: `scripts/era_fixture_probe.py`
+    copies this module alone into a bare environment holding one SDK and nothing else, which
+    is the only way to run a fixture under both eras — 1.x and 2.x cannot share an
+    interpreter, since 2.0 moves to httpx2. Reaching into `mcp_gauntlet.adapters` would make
+    that impossible and the modern branch unverifiable.
     """
     import importlib.metadata
 

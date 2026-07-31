@@ -22,13 +22,14 @@ from pathlib import Path
 import anyio
 from mcp import types
 
+from mcp_gauntlet.adapters import sdk_version
 from mcp_gauntlet.client import discover
 from mcp_gauntlet.config import ServerSpec
 
 SERVER = Path(__file__).with_name("era_probe_server.py")
 SPEC = f"uv run --isolated --no-project --with mcp>=2,<3 python {SERVER}"
 
-print(f"client requests : MCP {types.LATEST_PROTOCOL_VERSION}  (mcp<2)")
+print(f"client requests : MCP {types.LATEST_PROTOCOL_VERSION}  (mcp {sdk_version()})")
 print("server speaks   : MCP 2026-07-28  (mcp 2.0.0)")
 print(f"spec            : {SPEC}\n")
 

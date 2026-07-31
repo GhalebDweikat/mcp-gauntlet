@@ -11,8 +11,8 @@ moves to httpx2), so no single interpreter can import both. Each era therefore r
 own throwaway environment via `uv`, and only the JSON crosses between them.
 
 `fixtures/_serve.py` deliberately imports nothing from `mcp_gauntlet`, which is what makes
-this possible — the harness pins `mcp<2`, so a fixture that reached into the harness could
-never be run under the SDK this probe exists to test.
+this possible: the module is copied alone into an environment holding one SDK and nothing
+else, so a fixture that reached back into the harness could not run here at all.
 
 Two fixtures are checked, because they exercise the two halves of the shim:
 

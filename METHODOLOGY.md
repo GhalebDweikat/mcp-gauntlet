@@ -10,16 +10,31 @@ about the server.
 
 ## Which protocol this targets
 
-mcp-gauntlet evaluates servers against MCP revision **2025-11-25**, the current finalized
-spec, and records the revision each server negotiated on its report. A server that requires
-a revision this harness does not support is reported as unevaluable *by the harness* — that
-is a limitation here, not a defect in the server, and it is never scored as a failure.
+mcp-gauntlet runs on either MCP SDK era and records both the revision each server negotiated
+**and** the SDK that measured it (`mcp_sdk_version` on every report). Those are two different
+facts: one is what the *server* agreed to speak, the other is what the *harness* read. A
+server requiring a revision this harness cannot speak is reported as unevaluable *by the
+harness* — a limitation here, not a defect in the server, and never scored as a failure.
 
-Revision **2026-07-28 finalized on schedule**, and `mcp` SDK 2.0.0 shipped the same day. This
-harness does **not** speak it yet: it pins `mcp>=1.9,<2`, so nothing breaks for anyone using
-it, but the spec's own compatibility matrix rates a legacy client against a modern-only server
-as failing. Such a server is reported as unevaluable *by the harness*, never as a defect in
-the server.
+Revision **2026-07-28 finalized on schedule**, and `mcp` SDK 2.0.0 shipped the same day. The
+pin is now `mcp>=1.9,<3`, so a resolver may pick either. Every SDK field is read through one
+adapter per era, and CI runs the full suite against both, plus a probe that builds the same
+fixture server on each SDK and fails if the two eras disagree about it. Still upper-bounded:
+2.0 renamed every field to snake_case, and the old reads did not raise — they returned their
+defaults, so the checks built on them would have measured nothing and called every server
+clean. A major bump is exactly when that recurs.
+
+One thing worth stating plainly, because it bounds what the dual support means: a 2.0-built
+server **negotiates down** to 2025-11-25 rather than refusing a legacy client — measured, not
+assumed (`scripts/era_probe.py`). So the two eras are mostly a question of which field names
+the harness reads, not which servers it can reach.
+
+Three checks come from the newer revision: an argument mapped into an `Mcp-Param-*` request
+header via `x-mcp-header` (reported when the argument is secret-named, or when the annotation
+is invalid — in which case compliant clients must drop the tool entirely), a `$ref` pointing
+off the document, and a `logging` capability advertised on a connection that deprecates it.
+The last is gated on the negotiated revision: advertising `logging` under 2025-11-25 is
+correct behaviour and is never reported.
 
 Two corrections to what was written here before it landed, since both were repeated widely:
 `server/discover` does **not** replace the `initialize` handshake — it is optional for clients,

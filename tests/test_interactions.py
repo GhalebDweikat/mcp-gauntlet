@@ -11,7 +11,7 @@ import sys
 import pytest
 
 from mcp_gauntlet.adapters import adapter
-from mcp_gauntlet.client import open_session
+from mcp_gauntlet.client import InteractionLog, open_session
 from mcp_gauntlet.config import ServerSpec
 from mcp_gauntlet.htmlreport import to_html
 from mcp_gauntlet.models import ServerInfo
@@ -24,35 +24,28 @@ from mcp_gauntlet.report import (
 )
 
 
-@pytest.mark.xfail(
-    adapter().era == "modern",
-    strict=True,
-    reason=(
-        "KNOWN BROKEN on mcp 2.0, recorded rather than skipped. `_RecordingSession` counts "
-        "by overriding the private `ClientSession._received_request`, and 2.0 removed that "
-        "method — MEASURED: `hasattr(ClientSession, '_received_request')` is True on 1.29.0 "
-        "and False on 2.0.0. So the override is simply never called: no error, no warning, "
-        "the counter stays at zero, and every declined elicitation is charged to the "
-        "server's Tool Reliability. That is the exact misattribution this counter exists to "
-        "prevent, arriving as a method that silently stopped being called.\n\n"
-        "The request does still reach the client — 2.0's default elicitation callback "
-        "declines it with INVALID_REQUEST/'Elicitation not supported' and the server then "
-        "raises — so this is observable, just not where we are looking. `message_handler` "
-        "was tried and counts nothing in EITHER era, so it is not the replacement hook.\n\n"
-        "strict=True on purpose: when the hook is fixed this test must fail for passing "
-        "unexpectedly, so the xfail cannot outlive the bug. Widening the `mcp` pin should "
-        "wait on this — shipping it would ship the misattribution."
-    ),
-)
 async def test_recording_session_counts_a_real_elicitation() -> None:
-    # The interactive fixture's `confirm_and_run` asks the client to elicit a confirmation.
-    # The harness declines (it drives no user), so the tool fails — but the request must be
-    # counted, which is what lets the evaluation attribute that failure to the harness.
+    """The count is what lets the evaluation blame the harness instead of the server.
+
+    The interactive fixture's `confirm_and_run` asks the client to elicit a confirmation.
+    The harness declines — it drives no user — so the tool cannot complete. The failure is
+    ours, and only the count says so.
+
+    How that failure SURFACES differs by era and is deliberately not asserted the same way:
+    1.x answers the server's request with an error and the tool returns `isError`, while 2.0
+    refuses at the client and the *call itself* raises. What must not differ, and is what
+    this test is actually for, is that the request was seen and counted.
+    """
     spec = ServerSpec.parse(f"{sys.executable} -m mcp_gauntlet.fixtures.interactive_server")
     async with open_session(spec) as (session, _init, interactions):
-        result = await session.call_tool("confirm_and_run", {"item": "x"})
-        # can't proceed without the confirmation we declined
-        assert adapter().result_is_error(result) is True
+        try:
+            result = await session.call_tool("confirm_and_run", {"item": "x"})
+        except Exception as exc:  # noqa: BLE001 - the modern client's own refusal
+            assert adapter().era == "modern", f"unexpected raise on the legacy SDK: {exc!r}"
+        else:
+            # can't proceed without the confirmation we declined
+            assert adapter().result_is_error(result) is True
+
         assert interactions.elicitation == 1
         assert interactions.total == 1
         # A tool that needs no interaction leaves the count untouched.
@@ -129,3 +122,37 @@ async def test_env_not_passed_stays_unset_in_the_child() -> None:
         result = await session.call_tool("whoami", {})
         text = "".join(getattr(b, "text", "") for b in (result.content or []))
         assert text == "<unset>"
+
+
+def test_the_counting_hook_refuses_to_run_blind() -> None:
+    """The counter must not be allowed to read zero because its hook vanished.
+
+    This is the bug that shipped: `_RecordingSession` counted by overriding the private
+    `ClientSession._received_request`, `mcp` 2.0 deleted that method, and overriding a
+    method the base class no longer has raises nothing and warns about nothing. The
+    override was simply never called — so the count read 0, and every elicitation the
+    harness itself declined was charged to the server's Tool Reliability.
+
+    A zero from "nothing happened" and a zero from "we stopped looking" are the same
+    number, so the construction refuses rather than producing one of them.
+    """
+    import mcp_gauntlet.client as client_module
+
+    original = client_module._ERA_HOOKS
+    try:
+        client_module._ERA_HOOKS = ("_a_hook_no_sdk_has", "_nor_this_one")
+        with pytest.raises(RuntimeError, match="cannot be counted"):
+            client_module._RecordingSession(None, None, interactions=InteractionLog())
+    finally:
+        client_module._ERA_HOOKS = original
+
+
+def test_the_hook_this_era_actually_needs_is_present() -> None:
+    # The positive half: whichever era is installed, one of the two hooks must exist, or
+    # every session would refuse to construct.
+    from mcp import ClientSession
+
+    from mcp_gauntlet.client import _ERA_HOOKS
+
+    present = [hook for hook in _ERA_HOOKS if hasattr(ClientSession, hook)]
+    assert present, f"no receive hook on this SDK; tried {_ERA_HOOKS}"

@@ -73,21 +73,58 @@ class InteractionLog:
         return ", ".join(parts)
 
 
+# The one hook each era delivers a server-initiated request through. 1.x calls
+# `_received_request` with a responder; 2.0 removed that entirely and calls `_on_request`
+# with the method string. Both are private, which is the price of observing a request
+# without answering it — see the class docstring.
+_ERA_HOOKS = ("_received_request", "_on_request")
+
+# Method strings, read off the SDK's own request models rather than written from memory.
+_SAMPLING_METHOD = "sampling/createMessage"
+_ELICITATION_METHOD = "elicitation/create"
+_ROOTS_METHOD = "roots/list"
+
+
 class _RecordingSession(ClientSession):
     """A ClientSession that tallies incoming elicitation/sampling/roots requests.
 
-    Counting happens by overriding ``_received_request`` rather than by passing custom
+    Counting happens by overriding a private receive hook rather than by passing custom
     callbacks *on purpose*: the SDK advertises a client capability whenever its callback
     differs from the default, so a custom callback would tell the server "I support
     sampling" and invite the very requests we then decline. Leaving the callbacks at
     their defaults keeps the honest "not supported" signal in ``initialize`` while still
     letting us observe the requests a non-compliant (or optimistic) server sends anyway.
+
+    Both eras' hooks are defined below, because they are not the same method and only one
+    exists at a time. `mcp` 2.0 deleted `_received_request`; overriding a method the base
+    class no longer has raises nothing and warns about nothing — the override is simply
+    never called, the counter stays at zero, and every declined elicitation is charged to
+    the server's Tool Reliability. That is the misattribution this class exists to prevent,
+    so `__init__` refuses to construct a session whose hook is missing rather than let it
+    count silently to zero.
     """
 
     def __init__(self, *args: object, interactions: InteractionLog, **kwargs: object) -> None:
+        # Before super().__init__, so the refusal is about the missing hook rather than
+        # whatever the base constructor happens to complain about first.
+        if not any(hasattr(ClientSession, hook) for hook in _ERA_HOOKS):
+            raise RuntimeError(
+                f"this mcp SDK exposes none of {_ERA_HOOKS}, so server-initiated requests "
+                f"cannot be counted and the harness would charge its own declines to the "
+                f"server. Add this SDK's receive hook rather than letting the count read 0."
+            )
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
         self._interactions = interactions
 
+    def _note(self, method: str | None) -> None:
+        if method == _SAMPLING_METHOD:
+            self._interactions.sampling += 1
+        elif method == _ELICITATION_METHOD:
+            self._interactions.elicitation += 1
+        elif method == _ROOTS_METHOD:
+            self._interactions.roots += 1
+
+    # --- mcp 1.x. Keyed on type, which is what the responder carries.
     async def _received_request(self, responder: object) -> None:
         root = getattr(getattr(responder, "request", None), "root", None)
         if isinstance(root, types.CreateMessageRequest):
@@ -97,6 +134,11 @@ class _RecordingSession(ClientSession):
         elif isinstance(root, types.ListRootsRequest):
             self._interactions.roots += 1
         await super()._received_request(responder)  # type: ignore[arg-type]
+
+    # --- mcp 2.0. The request arrives as a method string, before it is parsed into a type.
+    async def _on_request(self, dctx: object, method: str, params: object) -> object:
+        self._note(method)
+        return await super()._on_request(dctx, method, params)  # type: ignore[misc]
 
 
 async def _initialize(session: ClientSession) -> InitializeResult:

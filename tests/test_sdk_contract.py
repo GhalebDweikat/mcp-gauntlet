@@ -5,56 +5,91 @@ defensive against an *older* SDK, and dangerous against a newer one: `mcp` 2.0 r
 to snake_case, and a defaulting getattr does not raise — it returns the default. The check
 built on it then measures nothing and reports every server as clean.
 
-The consequences are not uniform, so they are spelled out per field below. The worst is
-`destructiveHint`: losing it does not just skew a score, it means the read-only filter stops
+The consequences are not uniform, so they are spelled out per field below. The worst is the
+destructive hint: losing it does not just skew a score, it means the read-only filter stops
 honouring a server's own "this tool is destructive" declaration and the harness executes it.
 
-This test exists to fail on the day the SDK renames them, which is the entire point.
+Every assertion carries **both** spellings and picks by the installed era, so this test is
+meaningful on either SDK rather than failing by construction on one of them. It also asserts
+the *other* era's spelling is absent — which is what makes it a contract rather than a
+tautology: if both names were present the adapters' whole premise would be wrong, and if the
+wrong one were present the era detection would be picking the wrong adapter.
 """
 
 from mcp import types
+
+from mcp_gauntlet.adapters import adapter
+
+ERA = adapter().era
 
 
 def _fields(model: type) -> set[str]:
     return set(getattr(model, "model_fields", {}))
 
 
-def test_tool_fields_the_scanner_depends_on() -> None:
-    fields = _fields(types.Tool)
-    # inputSchema  -> Schema Health, Robustness probes, and the x-mcp-header check later
-    # outputSchema -> the output-schema poisoning scan (Batch E's entire subject)
-    # annotations  -> the read-only filter's most trustworthy signal
-    for name in ("name", "description", "inputSchema", "outputSchema", "annotations"):
-        assert name in fields, (
-            f"types.Tool no longer has {name!r} — a check reading it is now blind"
+def _expect(model: type, legacy: str, modern: str, why: str) -> None:
+    fields = _fields(model)
+    wanted, other = (modern, legacy) if ERA == "modern" else (legacy, modern)
+    assert wanted in fields, (
+        f"types.{model.__name__} no longer has {wanted!r} on the {ERA} SDK — {why}"
+    )
+    if other != wanted:
+        assert other not in fields, (
+            f"types.{model.__name__} has BOTH {wanted!r} and {other!r}. The adapters assume "
+            f"exactly one spelling exists per era; two means the era split is not what the "
+            f"adapters are built on."
         )
 
 
+def test_tool_fields_the_scanner_depends_on() -> None:
+    # input schema  -> Schema Health, Robustness probes, and the x-mcp-header check later
+    # output schema -> the output-schema poisoning scan (Batch E's entire subject)
+    # annotations   -> the read-only filter's most trustworthy signal
+    for legacy, modern in (("name", "name"), ("description", "description")):
+        _expect(types.Tool, legacy, modern, "a check reading it is now blind")
+    _expect(types.Tool, "inputSchema", "input_schema", "Schema Health goes blind")
+    _expect(types.Tool, "outputSchema", "output_schema", "the output-schema scan goes blind")
+    _expect(types.Tool, "annotations", "annotations", "the read-only filter loses its signal")
+
+
 def test_annotation_fields_the_read_only_filter_depends_on() -> None:
-    fields = _fields(types.ToolAnnotations)
     # Losing these is a SAFETY regression, not a scoring one: the filter falls back to
     # guessing from names and executes tools the server itself flagged as destructive.
-    for name in ("readOnlyHint", "destructiveHint", "title"):
-        assert name in fields, f"types.ToolAnnotations no longer has {name!r} — writes may run"
+    _expect(types.ToolAnnotations, "readOnlyHint", "read_only_hint", "writes may run")
+    _expect(types.ToolAnnotations, "destructiveHint", "destructive_hint", "writes may run")
+    _expect(types.ToolAnnotations, "title", "title", "the poisoned-title surface goes unscanned")
 
 
 def test_result_fields_the_agent_and_response_scan_depend_on() -> None:
-    fields = _fields(types.CallToolResult)
-    # isError -> Tool Reliability; structuredContent -> Response Safety's second surface
-    for name in ("content", "isError", "structuredContent"):
-        assert name in fields, f"types.CallToolResult no longer has {name!r}"
+    _expect(types.CallToolResult, "content", "content", "every response scan goes blind")
+    _expect(types.CallToolResult, "isError", "is_error", "Tool Reliability miscounts")
+    _expect(
+        types.CallToolResult,
+        "structuredContent",
+        "structured_content",
+        "Response Safety loses its second surface",
+    )
 
 
 def test_pagination_and_handshake_fields() -> None:
-    # nextCursor: losing it stops pagination after page one, so tools on page two are
-    # never discovered and never scanned — silently, and the server looks small.
-    assert "nextCursor" in _fields(types.ListToolsResult)
-    # protocolVersion: the report records which revision a score was measured against.
-    assert "protocolVersion" in _fields(types.InitializeResult)
-    assert "serverInfo" in _fields(types.InitializeResult)
+    # Losing the cursor stops pagination after page one, so tools on page two are never
+    # discovered and never scanned — silently, and the server merely looks small.
+    _expect(types.ListToolsResult, "nextCursor", "next_cursor", "pagination stops at page one")
+    _expect(
+        types.InitializeResult,
+        "protocolVersion",
+        "protocol_version",
+        "the report cannot say which revision a score was measured against",
+    )
+    _expect(types.InitializeResult, "serverInfo", "server_info", "the server loses its identity")
 
 
 def test_resource_and_prompt_fields() -> None:
-    assert "mimeType" in _fields(types.Resource)
-    assert "resourceTemplates" in _fields(types.ListResourceTemplatesResult)
-    assert "messages" in _fields(types.GetPromptResult)
+    _expect(types.Resource, "mimeType", "mime_type", "resource scanning loses its type")
+    _expect(
+        types.ListResourceTemplatesResult,
+        "resourceTemplates",
+        "resource_templates",
+        "templates are never scanned",
+    )
+    _expect(types.GetPromptResult, "messages", "messages", "the poisoned-prompt scan goes blind")

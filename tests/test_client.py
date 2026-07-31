@@ -5,17 +5,16 @@ from typing import Any, cast
 
 from mcp import ClientSession
 from mcp.types import InitializeResult
+from sdk_shapes import shape
 
 from mcp_gauntlet.client import discover_in_session
 
 
 def _tool(name: str) -> Any:
-    return SimpleNamespace(
-        name=name, description="d", inputSchema={"type": "object"}, annotations=None
-    )
+    return shape(name=name, description="d", input_schema={"type": "object"}, annotations=None)
 
 
-_INIT = cast(InitializeResult, SimpleNamespace(serverInfo=SimpleNamespace(name="s", version="1")))
+_INIT = cast(InitializeResult, shape(server_info=SimpleNamespace(name="s", version="1")))
 
 
 class _PaginatedSession:
@@ -29,7 +28,7 @@ class _PaginatedSession:
     async def list_tools(self, *, params: Any = None) -> Any:
         self.cursors.append(params.cursor if params is not None else None)
         tools, next_cursor = self._pages[len(self.cursors) - 1]
-        return SimpleNamespace(tools=tools, nextCursor=next_cursor)
+        return shape(tools=tools, next_cursor=next_cursor)
 
 
 async def test_discover_follows_pagination() -> None:
@@ -53,7 +52,7 @@ class _LoopingSession:
 
     async def list_tools(self, *, params: Any = None) -> Any:
         self.calls += 1
-        return SimpleNamespace(tools=[_tool(f"t{self.calls}")], nextCursor="same")
+        return shape(tools=[_tool(f"t{self.calls}")], next_cursor="same")
 
 
 async def test_discover_stops_on_repeated_cursor() -> None:
@@ -67,13 +66,13 @@ async def test_discover_stops_on_repeated_cursor() -> None:
 async def test_discover_captures_every_model_visible_string() -> None:
     # Display titles and the output schema are server-authored text that reaches the model.
     # Dropping them at discovery put them out of reach of the injection scan entirely.
-    rich = SimpleNamespace(
+    rich = shape(
         name="lookup",
         title="Lookup Records",
         description="d",
-        inputSchema={"type": "object"},
-        outputSchema={"type": "object", "properties": {"row": {"description": "a row"}}},
-        annotations=SimpleNamespace(title="Row Lookup", readOnlyHint=True, destructiveHint=None),
+        input_schema={"type": "object"},
+        output_schema={"type": "object", "properties": {"row": {"description": "a row"}}},
+        annotations=shape(title="Row Lookup", read_only_hint=True, destructive_hint=None),
     )
     session = _PaginatedSession([([rich], None)])
     tool = (await discover_in_session(cast(ClientSession, session), _INIT)).tools[0]
@@ -88,9 +87,7 @@ async def test_discover_records_the_negotiated_protocol_version() -> None:
     # protocol is changing — this is the field that will say which servers moved.
     init = cast(
         InitializeResult,
-        SimpleNamespace(
-            serverInfo=SimpleNamespace(name="s", version="1"), protocolVersion="2025-06-18"
-        ),
+        shape(server_info=SimpleNamespace(name="s", version="1"), protocol_version="2025-06-18"),
     )
     session = _PaginatedSession([([_tool("a")], None)])
     found = await discover_in_session(cast(ClientSession, session), init)

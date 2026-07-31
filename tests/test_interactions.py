@@ -8,6 +8,9 @@ in the rendered reports.
 
 import sys
 
+import pytest
+
+from mcp_gauntlet.adapters import adapter
 from mcp_gauntlet.client import open_session
 from mcp_gauntlet.config import ServerSpec
 from mcp_gauntlet.htmlreport import to_html
@@ -21,6 +24,24 @@ from mcp_gauntlet.report import (
 )
 
 
+@pytest.mark.skipif(
+    adapter().era == "modern",
+    reason=(
+        "The 1.x path does not exist on 2.0. Measured against mcp 2.0.0: the client refuses "
+        "to forward a server-initiated elicitation at all, raising MCPError('Elicitation not "
+        "supported') from send_raw_request rather than delivering a request the harness can "
+        "count and decline. So there is no pushed request to attribute, and asserting the "
+        "count here would be asserting 1.x plumbing against an SDK that removed it. The "
+        "modern replacement is MRTR — the server returns result_type='input_required' inside "
+        "an ordinary result — and that is covered by the adapters' asks_for_input tests. "
+        "NOTE: this leaves a real gap, recorded rather than hidden: on 2.0 a server that "
+        "pushes elicitation makes the CALL RAISE, and a raised protocol error inside the "
+        "agent loop is charged to the server's Tool Reliability — the exact misattribution "
+        "the interaction counter exists to prevent. Closing it needs a way to tell that "
+        "refusal apart from a genuine server error, which the SDK does not currently give a "
+        "distinct exception type for."
+    ),
+)
 async def test_recording_session_counts_a_real_elicitation() -> None:
     # The interactive fixture's `confirm_and_run` asks the client to elicit a confirmation.
     # The harness declines (it drives no user), so the tool fails — but the request must be
@@ -28,12 +49,13 @@ async def test_recording_session_counts_a_real_elicitation() -> None:
     spec = ServerSpec.parse(f"{sys.executable} -m mcp_gauntlet.fixtures.interactive_server")
     async with open_session(spec) as (session, _init, interactions):
         result = await session.call_tool("confirm_and_run", {"item": "x"})
-        assert result.isError is True  # can't proceed without the confirmation we declined
+        # can't proceed without the confirmation we declined
+        assert adapter().result_is_error(result) is True
         assert interactions.elicitation == 1
         assert interactions.total == 1
         # A tool that needs no interaction leaves the count untouched.
         ok = await session.call_tool("echo", {"text": "hi"})
-        assert ok.isError is False
+        assert adapter().result_is_error(ok) is False
         assert interactions.elicitation == 1
 
 

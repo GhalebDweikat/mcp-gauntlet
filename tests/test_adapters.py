@@ -138,9 +138,17 @@ def test_live_result_reads_accept_either_era_spelling() -> None:
 
 
 def test_the_protocol_error_type_resolves_to_a_real_exception() -> None:
-    # Robustness treats it as control flow — a JSON-RPC error is the CORRECT way for a server
-    # to reject malformed input — and the class moved package in mcp 2.0.
-    error_type = LegacyAdapter().protocol_error_type()
+    """Robustness treats this class as control flow, so losing it is not a scoring bug.
+
+    A JSON-RPC error is the CORRECT way for a server to reject malformed input; if the class
+    cannot be resolved, every correct rejection becomes an unhandled crash instead.
+
+    Resolved through `adapter()` rather than a fixed era, because the two eras disagree: 2.0
+    renamed `McpError` to `MCPError` and kept the module name, so the failure is an
+    ImportError on a name rather than a missing module. That is invisible from a 1.x-only
+    environment, and it shipped in the modern adapter until a real 2.0 environment ran this.
+    """
+    error_type = adapter().protocol_error_type()
     assert isinstance(error_type, type)
     assert issubclass(error_type, BaseException)
 

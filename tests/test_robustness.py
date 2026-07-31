@@ -4,14 +4,19 @@ from typing import Any, cast
 
 import anyio
 from mcp import ClientSession
-from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData
 
+from mcp_gauntlet.adapters import adapter
 from mcp_gauntlet.client import open_session
 from mcp_gauntlet.config import ServerSpec
 from mcp_gauntlet.models import ToolInfo
 from mcp_gauntlet.report import Severity
 from mcp_gauntlet.robustness import declares_arguments, malformed_args, run_robustness_probes
+
+# 2.0 renamed `McpError` to `MCPError` and kept the module name, so importing the old name
+# is an ImportError rather than a missing module. Resolved through the adapter, which is the
+# one place that knows which era is installed — and is what robustness.py itself uses.
+McpError = adapter().protocol_error_type()
 
 # --- malformed_args (pure) --------------------------------------------------
 
@@ -150,8 +155,21 @@ async def test_is_error_result_counts_as_rejection() -> None:
     assert dim.score == 100.0
 
 
+def _protocol_error(code: int, message: str) -> BaseException:
+    """One JSON-RPC error, built the way the installed SDK builds them.
+
+    1.x takes a single `ErrorData`; 2.0 takes the fields directly. Constructed rather than
+    faked because Robustness keys on the exception TYPE — a stand-in would assert nothing
+    about the class it actually catches.
+    """
+    error_type = adapter().protocol_error_type()
+    if adapter().era == "modern":
+        return error_type(code=code, message=message)  # type: ignore[call-arg]
+    return error_type(ErrorData(code=code, message=message))
+
+
 async def test_mcp_error_counts_as_rejection() -> None:
-    err = McpError(ErrorData(code=-32602, message="invalid params"))
+    err = _protocol_error(-32602, "invalid params")
     dim = await run_robustness_probes(_session(lambda n, a: err), [_TOOL])
     assert dim is not None
     assert dim.score == 100.0
@@ -419,10 +437,11 @@ async def test_good_fixture_rejects_malformed() -> None:
     spec = ServerSpec.parse(f"{sys.executable} -m mcp_gauntlet.fixtures.good_server")
     async with open_session(spec) as (session, _init, _interactions):
         listed = await session.list_tools()
-        tools = [
-            ToolInfo(name=t.name, description=t.description, input_schema=dict(t.inputSchema or {}))
-            for t in listed.tools
-        ]
+        # Through the adapter, not by hand: building a ToolInfo here meant naming an SDK
+        # field, and the name it chose was the 1.x one — so this test read `inputSchema` off
+        # a 2.0 Tool and died. The guard test greps for `getattr(x, "camelCase"` and cannot
+        # see a plain attribute access like this one.
+        tools = [adapter().tool_info(t) for t in listed.tools]
         dim = await run_robustness_probes(session, tools)
     assert dim is not None
     assert dim.score == 100.0

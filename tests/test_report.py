@@ -123,8 +123,8 @@ def test_na_report_does_not_claim_a_cap_that_never_happened() -> None:
     assert na.security_critical and capped.security_critical
 
     assert "never scored" in to_markdown(na)
-    assert "grade is capped" not in to_markdown(na)
-    assert "grade is capped" in to_markdown(capped)  # the real cap still says so
+    assert "capped" not in to_markdown(na)
+    assert "grade capped at 75" in to_markdown(capped)  # a real cap still says so
 
     assert "never scored" in to_html(na)
     assert "grade capped" not in to_html(na)

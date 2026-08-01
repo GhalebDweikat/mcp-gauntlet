@@ -380,6 +380,22 @@ async def evaluate_server(
                 repeats=repeats,
                 excluded_write_tools=excluded,
             )
+            not_measured.append("agent evaluation (every tool was excluded as possibly-mutating)")
+        else:
+            # No LLM configured — the ordinary keyless run, and the one that most needed
+            # saying. FOUR of the eight advertised dimensions do not run without a key
+            # (Agent Task Success, Tool-Selection Accuracy, Tool Reliability, Response
+            # Safety), and Task Success is the heaviest at weight 3. Their absence does not
+            # lower the score, it removes them from the denominator — so a keyless run
+            # published a confident letter grade built from the checks that happen to be
+            # free. A first-time user comparing a well-documented server against one whose
+            # every description was a single word saw 100.0 A versus 95.8 A, because the
+            # dimension that actually separates them is the LLM-judged one that never ran.
+            not_measured.append(
+                "agent evaluation, tool-selection accuracy, tool reliability and response "
+                "safety (no LLM configured — these are the dimensions that judge whether an "
+                "agent can actually use this server)"
+            )
 
         # Robustness probes run last so a probe-induced hiccup can't disturb the agent run.
         # Skipped for a server that needs credentials: every call returns the same auth error

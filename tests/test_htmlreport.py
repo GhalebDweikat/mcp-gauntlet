@@ -35,16 +35,42 @@ def test_html_escapes_untrusted_text() -> None:
     assert "&lt;b&gt;&amp;bad" in out
 
 
-def test_html_shows_security_cap_banner() -> None:
-    dim = DimensionResult(
+def _poisoned_security_dim(score: float = 50.0) -> DimensionResult:
+    return DimensionResult(
         key="security",
         title="Security Signals",
-        score=50.0,
+        score=score,
         findings=[Finding(severity=Severity.HIGH, message="poisoned")],
     )
-    report = _report([dim])
-    assert report.security_critical is True
-    assert "grade capped" in to_html(report)
+
+
+def test_html_says_capped_only_when_the_cap_actually_bit() -> None:
+    """Two distinct states that the banner used to report identically.
+
+    The original fixture here was a lone security dimension at 50.0 — which puts the overall
+    at 50.0, already *below* the 75 ceiling, so `min(50, 75)` changed nothing. The test still
+    asserted the page said "grade capped", so it encoded the same confusion a first-time user
+    reported: they hand-computed the weighted mean, matched the published number exactly, and
+    asked what it had been capped from. Nothing.
+    """
+    # High-scoring elsewhere, so the cap genuinely pulls it down from 83.3 to 75.
+    capped = _report(
+        [
+            _poisoned_security_dim(50.0),
+            DimensionResult(key="schema_health", title="S", weight=1.0, score=100.0),
+            DimensionResult(key="robustness", title="R", weight=1.0, score=100.0),
+        ]
+    )
+    assert capped.security_critical is True
+    assert capped.grade_capped is True
+    assert "grade capped at 75" in to_html(capped)
+
+    # Poor on its own merits: the finding is real, the cap is not what produced the grade.
+    uncapped = _report([_poisoned_security_dim(50.0)])
+    assert uncapped.security_critical is True
+    assert uncapped.grade_capped is False
+    assert "did not apply" in to_html(uncapped)
+    assert "grade capped at" not in to_html(uncapped)
 
 
 def test_score_bar_color_matches_grade_bands() -> None:

@@ -99,6 +99,7 @@
         }
       ],
       "grade": "C",
+      "grade_capped": true,
       "not_measured": [],
       "overall_score": 75.0,
       "security_critical": true,
@@ -161,6 +162,7 @@
         }
       ],
       "grade": "A",
+      "grade_capped": false,
       "not_measured": [],
       "overall_score": 99.2,
       "security_critical": false,
@@ -235,6 +237,7 @@
         }
       ],
       "grade": "A",
+      "grade_capped": false,
       "not_measured": [],
       "overall_score": 98.3,
       "security_critical": false,
@@ -334,6 +337,7 @@
         }
       ],
       "grade": "C",
+      "grade_capped": true,
       "not_measured": [],
       "overall_score": 75.0,
       "security_critical": true,
@@ -395,6 +399,7 @@
         }
       ],
       "grade": "A",
+      "grade_capped": false,
       "not_measured": [],
       "overall_score": 98.8,
       "security_critical": false,

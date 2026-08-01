@@ -189,6 +189,24 @@ def _sdk_version() -> str:
     return sdk_version()
 
 
+def cap_note(report: GauntletReport) -> str:
+    """What the grade cap actually did to this report — in three distinct states.
+
+    Every renderer used to print "overall grade capped" whenever a HIGH security finding
+    existed, regardless of whether the cap changed anything. A server scoring 60.2 on its own
+    merits is already under the 75 ceiling, so `min(60.2, 75)` does nothing — and a
+    first-time reader who hand-computed the weighted mean, matched the published number
+    exactly, and asked what it had been capped *from* was asking the right question. The
+    answer was "nothing", which is not what the banner said.
+    """
+    if report.grade == "N/A":
+        # Kept its security findings but, exposing no tools, was never scored at all.
+        return "this server exposes no tools, so it was never scored"
+    if report.grade_capped:
+        return f"overall grade capped at {GRADE_CAP_ON_CRITICAL:g}"
+    return f"the {GRADE_CAP_ON_CRITICAL:g} cap did not apply — it already scored below it"
+
+
 def _has_critical_security(dimensions: list[DimensionResult]) -> bool:
     """Whether the (server-authored) security dimension carries a HIGH finding.
 
@@ -236,6 +254,16 @@ class GauntletReport(BaseModel):
     # The agentic dimensions were the only absence the report ever disclosed. Everything else
     # was silent, and silence always moved the score the same direction: up.
     not_measured: list[str] = Field(default_factory=list)
+    # Whether the cap actually LOWERED the score, as opposed to merely being eligible to.
+    #
+    # `security_critical` says a HIGH security finding exists. It does not say the cap did
+    # anything: a server scoring 60.2 on its own merits is already below the 75 ceiling, so
+    # `min(60.2, 75)` changes nothing — and every renderer still announced "overall grade
+    # capped". A first-time user computed the plain weighted mean by hand, got exactly the
+    # published number, and asked what it had been capped *from*. Fair question, and the
+    # honest answer was "nothing". Announcing an intervention that did not occur is the same
+    # failure this codebase keeps finding in itself, pointed at the reader instead of a check.
+    grade_capped: bool = False
 
     @model_validator(mode="after")
     def _enforce_the_cap_from_the_findings(self) -> GauntletReport:
@@ -263,6 +291,7 @@ class GauntletReport(BaseModel):
         if critical and self.grade != "N/A" and self.overall_score > GRADE_CAP_ON_CRITICAL:
             self.overall_score = GRADE_CAP_ON_CRITICAL
             self.grade = grade_for(GRADE_CAP_ON_CRITICAL)
+            self.grade_capped = True
         return self
 
     @classmethod
@@ -318,6 +347,10 @@ class GauntletReport(BaseModel):
         # A tool-poisoning / injection / hidden-character finding is a "do not trust
         # this server" signal that averaging must not wash out — cap the grade.
         security_critical = _has_critical_security(dimensions)
+        # Record whether it BIT, not just whether it was eligible: a server already scoring
+        # below the ceiling on its own merits is not "capped", and saying so invites the
+        # reader to ask what it was capped from.
+        capped = security_critical and overall > GRADE_CAP_ON_CRITICAL
         if security_critical:
             overall = min(overall, GRADE_CAP_ON_CRITICAL)
 
@@ -336,6 +369,7 @@ class GauntletReport(BaseModel):
                 mcp_sdk_version=_sdk_version(),
                 unevaluated_reason=unevaluated_reason,
                 not_measured=list(not_measured or []),
+                grade_capped=capped,
             )
         )
 
@@ -523,12 +557,7 @@ def to_markdown(report: GauntletReport) -> str:
     if report.security_critical:
         # Don't claim a cap on an N/A report: it kept its security findings but, exposing
         # no tools, was never scored in the first place.
-        tail = (
-            "this server exposes no tools, so it was never scored"
-            if report.grade == "N/A"
-            else "overall grade is capped"
-        )
-        lines.append(f"- ⚠️ **Critical security finding(s) present — {tail}.**")
+        lines.append(f"- ⚠️ **Critical security finding(s) present — {cap_note(report)}.**")
     lines += [
         "",
         "## Dimensions",

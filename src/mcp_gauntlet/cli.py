@@ -26,6 +26,7 @@ from mcp_gauntlet.llm import LLMConfig, LLMConfigError, list_models
 from mcp_gauntlet.report import (
     GauntletReport,
     Severity,
+    cap_note,
     interaction_note,
     redact,
     redact_report,
@@ -175,14 +176,9 @@ def _render_report(report: GauntletReport, secrets: frozenset[str] = frozenset()
         )
     )
     if report.security_critical:
-        # An N/A (zero-tool) report keeps its security findings but was never scored, so
-        # don't claim a cap that was never applied.
-        tail = (
-            "this server exposes no tools, so it was never scored"
-            if report.grade == "N/A"
-            else "overall grade capped"
-        )
-        console.print(f"[bold red]⚠ Critical security finding(s) — {tail}.[/bold red]")
+        # `cap_note` because "capped" was being claimed whenever a critical finding existed,
+        # including when the score was already below the ceiling and the cap did nothing.
+        console.print(f"[bold red]⚠ Critical security finding(s) — {cap_note(report)}.[/bold red]")
     # The console is where a `run` is usually read, so the omission belongs here too — the
     # overall is a weighted mean over the dimensions that RAN, and a stage which did not run
     # raises it rather than lowering it.

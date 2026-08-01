@@ -8,6 +8,7 @@ from typing import Any
 from mcp_gauntlet.report import (
     GauntletReport,
     Severity,
+    cap_note,
     grade_for,
     interaction_note,
     sort_findings,
@@ -105,14 +106,10 @@ def _body(report: GauntletReport) -> str:
         )
 
     if report.security_critical:
-        # Only claim a cap when one was actually applied — an N/A (zero-tool) report keeps
-        # its security findings but was never scored, so nothing got capped.
-        tail = (
-            "this server exposes no tools, so it was never scored"
-            if report.grade == "N/A"
-            else "overall grade capped"
+        # Only claim a cap when one was actually applied — see `cap_note`.
+        p.append(
+            f'<div class="banner">⚠ Critical security finding(s) — {_esc(cap_note(report))}.</div>'
         )
-        p.append(f'<div class="banner">⚠ Critical security finding(s) — {tail}.</div>')
 
     p.append("<h2>Dimensions</h2>")
     for dim in report.dimensions:

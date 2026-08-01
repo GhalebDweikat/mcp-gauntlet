@@ -225,6 +225,17 @@ class GauntletReport(BaseModel):
     # a reader deciding whether a missing score is the server's fault or the harness's needs
     # the sentence, not a code.
     unevaluated_reason: str = ""
+    # Measurement stages that did NOT run, and why, in prose a reader can act on.
+    #
+    # The overall is a weighted mean over the dimensions PRESENT, so a stage that did not run
+    # does not lower the score — it removes a row from the denominator and RAISES it. Passing
+    # `--no-probe` alone moved a server that accepts every malformed input from C (75.0) to
+    # A (93.8), and nothing in the report said so: the dimension table simply had one fewer
+    # row, which reads as a shorter report rather than a narrower measurement.
+    #
+    # The agentic dimensions were the only absence the report ever disclosed. Everything else
+    # was silent, and silence always moved the score the same direction: up.
+    not_measured: list[str] = Field(default_factory=list)
 
     @classmethod
     def build(
@@ -236,6 +247,7 @@ class GauntletReport(BaseModel):
         dimensions: list[DimensionResult],
         agentic: AgenticDetail | None = None,
         unevaluated_reason: str = "",
+        not_measured: list[str] | None = None,
     ) -> GauntletReport:
         # A server that exposes no tools can't be evaluated — every dimension is
         # vacuously perfect, which would otherwise average to 100/A. Report it as N/A
@@ -268,6 +280,7 @@ class GauntletReport(BaseModel):
                     gauntlet_version=_version(),
                     mcp_sdk_version=_sdk_version(),
                     unevaluated_reason=unevaluated_reason,
+                    not_measured=list(not_measured or []),
                 )
             )
 
@@ -294,6 +307,7 @@ class GauntletReport(BaseModel):
                 gauntlet_version=_version(),
                 mcp_sdk_version=_sdk_version(),
                 unevaluated_reason=unevaluated_reason,
+                not_measured=list(not_measured or []),
             )
         )
 
@@ -464,6 +478,20 @@ def to_markdown(report: GauntletReport) -> str:
         f"- **Overall:** **{report.grade}** ({report.overall_score:.1f}/100)",
         f"- **Generated:** {report.generated_at}",
     ]
+    # Say what was NOT measured, next to the score, because the score cannot show it: the
+    # overall is a weighted mean over the dimensions present, so a stage that did not run
+    # raises it rather than lowering it. `unevaluated_reason` in particular was set by the
+    # engine, stored in the JSON, printed by the leaderboard — and never rendered here, so a
+    # credential-gated server that failed every call shipped a report headed "A (98.8)".
+    if report.unevaluated_reason:
+        lines.append(f"- **Not scored:** {_md(report.unevaluated_reason)}")
+    if report.not_measured:
+        lines.append(
+            "- **Not measured:** "
+            + "; ".join(_md(item) for item in report.not_measured)
+            + " — the overall is a weighted mean over the dimensions that ran, so these "
+            "raise it rather than lower it"
+        )
     if report.security_critical:
         # Don't claim a cap on an N/A report: it kept its security findings but, exposing
         # no tools, was never scored in the first place.

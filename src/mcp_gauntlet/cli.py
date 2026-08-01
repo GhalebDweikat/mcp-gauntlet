@@ -183,6 +183,13 @@ def _render_report(report: GauntletReport, secrets: frozenset[str] = frozenset()
             else "overall grade capped"
         )
         console.print(f"[bold red]⚠ Critical security finding(s) — {tail}.[/bold red]")
+    # The console is where a `run` is usually read, so the omission belongs here too — the
+    # overall is a weighted mean over the dimensions that RAN, and a stage which did not run
+    # raises it rather than lowering it.
+    if report.unevaluated_reason:
+        console.print(f"[yellow]Not scored:[/yellow] {escape(r(report.unevaluated_reason))}")
+    for omitted in report.not_measured:
+        console.print(f"[yellow]Not measured:[/yellow] {escape(omitted)}")
 
     table = Table(title="Dimensions")
     table.add_column("Dimension", style="cyan")

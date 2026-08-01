@@ -91,6 +91,19 @@ def _body(report: GauntletReport) -> str:
     )
     p.append("</div>")
 
+    # Next to the grade, because the grade is what the omission distorts: the overall is a
+    # weighted mean over the dimensions that ran, so a stage which did not run raises it.
+    # `unevaluated_reason` was stored in the JSON and printed by the leaderboard but rendered
+    # by no report renderer, so a credential-gated server shipped an HTML page headed "A".
+    if report.unevaluated_reason:
+        p.append(f'<div class="banner">Not scored: {_esc(report.unevaluated_reason)}</div>')
+    if report.not_measured:
+        omitted = "; ".join(_esc(item) for item in report.not_measured)
+        p.append(
+            f'<div class="banner">Not measured: {omitted} — the overall is a weighted mean '
+            "over the dimensions that ran, so these raise it rather than lower it.</div>"
+        )
+
     if report.security_critical:
         # Only claim a cap when one was actually applied — an N/A (zero-tool) report keeps
         # its security findings but was never scored, so nothing got capped.

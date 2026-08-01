@@ -295,6 +295,7 @@ async def evaluate_server(
     track_drift: bool = True,
 ) -> GauntletReport:
     agentic_detail: AgenticDetail | None = None
+    not_measured: list[str] = []
     async with open_session(spec) as (session, init, interactions):
         # Prompts are fetched only when probing is on: rendering one is a call to the
         # server, and `--no-probe` means "inspect, don't execute". The messages it returns
@@ -327,6 +328,7 @@ async def evaluate_server(
 
         if needs_credentials:
             _log.info("skipping agent evaluation: %s", needs_credentials)
+            not_measured.append("agent evaluation (server needs credentials nobody supplied)")
         elif llm_config is not None and exec_tools:
             client = make_async_client(llm_config)
             tasks = await _resolve_tasks(
@@ -376,6 +378,15 @@ async def evaluate_server(
             robustness = await run_robustness_probes(session, exec_tools)
             if robustness is not None:
                 dimensions.append(robustness)
+        elif not probe:
+            # The one a flag turns off, and the one that moved a score furthest: a server
+            # accepting every malformed input goes from C (75.0) to A (93.8) on --no-probe
+            # alone, because its Robustness row leaves the mean instead of scoring 0.
+            not_measured.append("robustness probes (--no-probe)")
+        elif needs_credentials:
+            not_measured.append("robustness probes (every call would hit the same auth wall)")
+        elif not exec_tools:
+            not_measured.append("robustness probes (no read-only tools to probe)")
 
     return GauntletReport.build(
         spec=spec.label(),
@@ -384,4 +395,5 @@ async def evaluate_server(
         dimensions=dimensions,
         agentic=agentic_detail,
         unevaluated_reason=needs_credentials,
+        not_measured=not_measured,
     )

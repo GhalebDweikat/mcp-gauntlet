@@ -99,6 +99,7 @@
         }
       ],
       "grade": "C",
+      "not_measured": [],
       "overall_score": 75.0,
       "security_critical": true,
       "server": {
@@ -160,6 +161,7 @@
         }
       ],
       "grade": "A",
+      "not_measured": [],
       "overall_score": 99.2,
       "security_critical": false,
       "server": {
@@ -233,6 +235,7 @@
         }
       ],
       "grade": "A",
+      "not_measured": [],
       "overall_score": 98.3,
       "security_critical": false,
       "server": {
@@ -331,6 +334,7 @@
         }
       ],
       "grade": "C",
+      "not_measured": [],
       "overall_score": 75.0,
       "security_critical": true,
       "server": {
@@ -391,6 +395,7 @@
         }
       ],
       "grade": "A",
+      "not_measured": [],
       "overall_score": 98.8,
       "security_critical": false,
       "server": {

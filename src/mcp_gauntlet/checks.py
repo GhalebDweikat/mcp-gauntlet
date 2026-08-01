@@ -504,7 +504,32 @@ _CONFUSABLE_FOLD = str.maketrans(
     }
 )  # fmt: skip
 
-_CONFUSABLE_CHARS = frozenset(chr(code) for code in _CONFUSABLE_FOLD)
+# Scripts whose letters are drawn like Latin ones, by SCRIPT rather than by character.
+#
+# This check used to test membership in `_CONFUSABLE_CHARS`, which is derived from the fold
+# table — so the "independent" second signal had exactly the first one's coverage, and a
+# lookalike missing from those ~50 entries defeated both at once. Measured: Armenian U+0578
+# (drawn like `n`) and Cherokee U+13AA (drawn like `a`) produced NO FINDINGS AT ALL.
+#
+# A script list is the right granularity. It is short enough to read, and it covers every
+# character in those scripts including ones nobody has enumerated yet, which is the property
+# a character list cannot have.
+#
+# Deliberately NOT here: CJK, Hiragana, Katakana, Hangul, Arabic, Hebrew, Devanagari, Thai.
+# Those are not letterform-confusable with ASCII, and they appear beside ASCII inside a
+# single token in ordinary text — a Japanese description writing `MCPサーバー` is one "word"
+# to the regex below. Flagging them would penalise honest non-Latin servers for writing in
+# their own language, which is the mistake that produced twenty-five false positives once
+# already.
+_CONFUSABLE_SCRIPTS = frozenset({"CYRILLIC", "GREEK", "ARMENIAN", "CHEROKEE", "COPTIC"})
+
+
+def _script_of(ch: str) -> str:
+    """The script family of one letter, from its Unicode name ("CYRILLIC SMALL LETTER A")."""
+    try:
+        return unicodedata.name(ch).split()[0]
+    except ValueError:  # unnamed (private use, unassigned) — no script to attribute
+        return ""
 
 
 def _mixed_script_words(text: str) -> list[str]:
@@ -512,11 +537,16 @@ def _mixed_script_words(text: str) -> list[str]:
 
     Splitting a word across two alphabets is not something ordinary text does — genuine
     Russian or Greek prose is written in one script per word — so it is a signal in its own
-    right, independent of whether the folded text happens to match a known phrase.
+    right, genuinely independent of whether the folded text matches a known phrase.
+
+    Accented Latin is unaffected: `é` is LATIN, the same family as ASCII, so `Créer` is one
+    script and never flagged.
     """
     found: list[str] = []
     for word in re.findall(r"[^\W\d_]+", text, flags=re.UNICODE):
-        if any(ch in _CONFUSABLE_CHARS for ch in word) and any(ch.isascii() for ch in word):
+        if not any(ch.isascii() and ch.isalpha() for ch in word):
+            continue  # written wholly in another script: ordinary text, not a hybrid
+        if any(_script_of(ch) in _CONFUSABLE_SCRIPTS for ch in word if not ch.isascii()):
             found.append(word)
     return found
 

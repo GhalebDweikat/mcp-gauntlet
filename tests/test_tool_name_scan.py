@@ -11,7 +11,9 @@ are not phrasing — a zero-width or bidi character in a name is tool shadowing,
 rendering identically so the client displays one and the model is handed the other.
 """
 
-from mcp_gauntlet.checks import scan_tool
+import pytest
+
+from mcp_gauntlet.checks import _mixed_script_words, scan_tool
 from mcp_gauntlet.models import ToolInfo
 from mcp_gauntlet.report import Severity
 
@@ -57,3 +59,50 @@ def test_ordinary_names_stay_clean() -> None:
     # shapes real servers actually use are pinned.
     for name in ("read_file", "fetchUserProfile", "list-resources", "s3.getObject", "add"):
         assert not scan_tool(_tool(name)), f"{name!r} produced a finding"
+
+
+# --------------------------------- the homoglyph backstop must not share the fold's coverage
+
+_SUBSTITUTIONS = [
+    ("Cyrillic a U+0430", "p\u0430ssword"),
+    ("Armenian o U+0578", "i\u0578structions"),
+    ("Cherokee a U+13AA", "p\u13aassword"),
+    ("Greek o U+03BF", "passw\u03bfrd"),
+    ("Coptic a U+2C81", "p\u2c81ssword"),
+]
+
+_ORDINARY = [
+    ("accented Latin", "Créer un fichier"),
+    ("pure Cyrillic", "Прочитать файл"),
+    ("Japanese beside ASCII", "MCPサーバーを起動"),
+    ("Chinese beside ASCII", "读取API文件"),
+    ("Korean beside ASCII", "MCP서버"),
+    ("Arabic beside ASCII", "قراءةAPI"),
+    ("pure Greek", "Ανάγνωση αρχείου"),
+    ("plain ascii", "read the file"),
+]
+
+
+@pytest.mark.parametrize(("label", "text"), _SUBSTITUTIONS, ids=[s[0] for s in _SUBSTITUTIONS])
+def test_a_lookalike_from_any_confusable_script_is_flagged(label: str, text: str) -> None:
+    """The backstop used to share the fold table's coverage, so both failed together.
+
+    It tested membership in `_CONFUSABLE_CHARS`, which is derived from `_CONFUSABLE_FOLD` —
+    making the "independent" second signal exactly as complete as the first. Any lookalike
+    outside those ~50 entries defeated both at once: Armenian U+0578 (drawn like `n`) and
+    Cherokee U+13AA (drawn like `a`) produced no findings at all. Keyed on SCRIPT now, which
+    covers characters nobody has enumerated.
+    """
+    assert _mixed_script_words(text), f"{label} slipped through"
+
+
+@pytest.mark.parametrize(("label", "text"), _ORDINARY, ids=[s[0] for s in _ORDINARY])
+def test_ordinary_multilingual_text_is_not_flagged(label: str, text: str) -> None:
+    """The cost side, and the reason this is a script list rather than "any non-ASCII".
+
+    CJK, Hangul and Arabic sit beside ASCII inside a single token in ordinary text —
+    `MCPサーバー` is one word to the tokenizer — and none of them is letterform-confusable
+    with Latin. Flagging them would penalise honest servers for writing in their own
+    language, which is the mistake that produced twenty-five false positives once already.
+    """
+    assert not _mixed_script_words(text), f"{label} was wrongly flagged"

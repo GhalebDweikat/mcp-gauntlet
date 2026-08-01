@@ -94,5 +94,42 @@ async def test_resolve_tasks_redacts_secrets_before_caching(
     )
     assert secret not in tasks[0].description
     assert secret not in tasks[0].rubric
-    cached = cache_file(tmp_path, server_key(discovery.server, tools))
+    # Same key the engine used, which now includes the grounding context — recomputed here
+    # from the same spec rather than hardcoded, so this cannot drift from the real one.
+    spec = ServerSpec.parse("python -m srv")
+    context = engine._grounding_context(spec, discovery, tools)
+    cached = cache_file(tmp_path, server_key(discovery.server, tools, context))
     assert secret not in cached.read_text(encoding="utf-8")
+
+
+def test_the_key_changes_with_the_grounding_context() -> None:
+    """Two launches of one package, pointed at different data, must not share tasks.
+
+    `_grounding_context` feeds the server's launch arguments and URL into the generation
+    prompt as ground truth ("paths among them are real"). Before this was in the key,
+    `server-filesystem /data/alpha` and `server-filesystem /data/beta` produced the same
+    digest: same name, same version, same tool names. The second run was served the first
+    run's tasks, every call failed on a path that did not exist, and the SERVER was scored
+    for it — the original misattribution incident, arriving through the cache.
+    """
+    server = ServerInfo(name="fs", version="1.0")
+    tools = [ToolInfo(name="read_file")]
+    alpha = server_key(server, tools, "- started with these arguments: /data/alpha")
+    beta = server_key(server, tools, "- started with these arguments: /data/beta")
+    assert alpha != beta
+
+
+def test_the_key_is_stable_for_the_same_context() -> None:
+    # The other direction: identical invocations must still hit the cache, or every run
+    # regenerates and the cache stops existing.
+    server = ServerInfo(name="fs", version="1.0")
+    tools = [ToolInfo(name="read_file")]
+    context = "- started with these arguments: /data/alpha"
+    assert server_key(server, tools, context) == server_key(server, tools, context)
+
+
+def test_an_absent_context_still_produces_a_key() -> None:
+    # A server launched with no arguments and no resources has an empty context; that is a
+    # legitimate state, not a missing value.
+    server = ServerInfo(name="fs", version="1.0")
+    assert server_key(server, [ToolInfo(name="a")], "")

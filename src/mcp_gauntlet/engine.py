@@ -133,14 +133,16 @@ async def _resolve_tasks(
     secrets: frozenset[str] = frozenset(),
 ) -> list[EvalTask]:
     """Load a pinned/cached task set if present, otherwise generate and save one."""
-    path = tasks_file or cache_file(cache_dir, server_key(discovery.server, tools))
+    # Computed once and used for BOTH the cache key and the prompt. Deriving them separately
+    # is how they would drift apart again — the key has to cover exactly what shaped the
+    # tasks, and this string is that.
+    context = _grounding_context(spec, discovery, tools)
+    path = tasks_file or cache_file(cache_dir, server_key(discovery.server, tools, context))
     if not refresh_tasks:
         cached = load_tasks(path)
         if cached:  # non-empty hit; an empty/failed set is a miss, not a cached "no tasks"
             return cached
-    tasks = await generate_tasks(
-        client, model, tools, n_tasks, context=_grounding_context(spec, discovery, tools)
-    )
+    tasks = await generate_tasks(client, model, tools, n_tasks, context=context)
     if secrets and tasks:
         # A task is LLM-generated from server-controlled tool descriptions, and the cache
         # (or a committed --tasks-file) is persisted to disk. If a server echoed a credential

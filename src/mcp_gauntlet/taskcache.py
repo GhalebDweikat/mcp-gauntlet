@@ -19,19 +19,37 @@ from mcp_gauntlet.tasks import PROMPT_VERSION, EvalTask
 DEFAULT_CACHE_DIR = Path(".gauntlet") / "tasks"
 
 
-def server_key(server: ServerInfo, tools: list[ToolInfo]) -> str:
-    """A stable id from the server name/version, the exposed tool set, and the prompt.
+def server_key(server: ServerInfo, tools: list[ToolInfo], context: str = "") -> str:
+    """A stable id from the server name/version, the exposed tool set, the prompt, and the
+    grounding context.
 
     The generator's prompt is part of the key because a cached set is only interchangeable
     with a freshly generated one if the same prompt would have produced it. Without this a
     prompt fix looks like a no-op on every server already in the cache — it keeps serving
     the tasks the old prompt wrote.
+
+    The grounding context is part of the key for exactly the same reason, and it was missing.
+    It carries the server's launch arguments and URL into the prompt as ground truth ("paths
+    among them are real"), so two invocations of one package —
+
+        server-filesystem /data/alpha        and        server-filesystem /data/beta
+
+    — share a name, a version and a tool set, and therefore shared a cache key. The second
+    run was handed tasks naming the first run's paths, every call failed, and the SERVER wore
+    it: Tool Reliability toward 0, Task Success toward 0, a published D or F earned entirely
+    by this cache. That is the original "invented paths, blamed the server" incident coming
+    back through a different door. Hashed rather than stored, since it can run to kilobytes
+    of resource URIs.
+
+    Note the drift baseline already keys on the full spec label, which is why this reads as
+    an oversight rather than a decision.
     """
     name = server.name or "server"
     version = server.version or "0"
     tool_names = ",".join(sorted(tool.name for tool in tools))
+    grounding = hashlib.sha256(context.encode()).hexdigest()[:12]
     digest = hashlib.sha256(
-        f"{name}|{version}|{tool_names}|p{PROMPT_VERSION}".encode()
+        f"{name}|{version}|{tool_names}|p{PROMPT_VERSION}|g{grounding}".encode()
     ).hexdigest()[:12]
     slug = slugify(name)
     return f"{slug}-{digest}"

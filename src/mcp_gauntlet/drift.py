@@ -258,9 +258,18 @@ def changed_within_session(first: list[ToolInfo], second: list[ToolInfo]) -> lis
     a reviewer unable to tell a typo fix from an instruction to exfiltrate SSH keys, and
     lets a payload that appears only in the second listing escape the injection scan
     entirely — the first listing is the one everything else is built from.
+
+    A tool that is **new** in the second listing counts as differing. It used to be excluded:
+    the filter read ``before.get(name) not in (None, fingerprint(tool))``, and for a new tool
+    ``before.get`` is ``None``, so ``None in (None, …)`` dropped exactly the case this
+    function exists to catch. Nothing else scanned it either — every other consumer works
+    from the first listing — so a server could serve three clean tools, then add a poisoned
+    fourth, and draw no injection finding and no grade cap at all. Worse, if it declared
+    ``tools.listChanged`` (the reference servers all do; an attacker declares it for free)
+    the appearance itself was only INFO, which carries no penalty.
     """
     before = fingerprint_all(first)
-    return [tool for tool in second if before.get(tool.name) not in (None, fingerprint(tool))]
+    return [tool for tool in second if before.get(tool.name) != fingerprint(tool)]
 
 
 def compare_within_session(

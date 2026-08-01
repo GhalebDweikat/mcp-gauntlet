@@ -178,6 +178,9 @@ a payload written in a language the patterns do not cover, or an instruction enc
 than written. Adversarial testing has demonstrated all three. Treat a clean report as "the
 known classes were not found", never as "this server is safe".
 
+The specific version of that sentence — what has actually been demonstrated to slip past,
+by class — is kept in [Known gaps](docs/known-gaps.md) and updated as they are found.
+
 **Absence is reported, not implied.** When a stage does not run — no API key, `--no-probe`,
 a credential-gated server, a listing that failed — the report says so under *Not measured*,
 because a skipped dimension does not lower the score, it leaves the denominator and raises

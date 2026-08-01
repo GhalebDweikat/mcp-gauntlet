@@ -232,12 +232,26 @@ async def open_session(
                 raise MCPConnectionError(f"{describe(exc)} — the server said: {reason}") from exc
     else:
         # Imported lazily so the stdio path doesn't pay for the HTTP stack.
-        from mcp.client.streamable_http import streamablehttp_client
+        #
+        # `streamable_http_client`, NOT `streamablehttp_client`. The un-underscored spelling
+        # is a 1.x alias that 2.0 removed, so widening the pin to `mcp<3` made EVERY remote
+        # server fail before touching the network — `ImportError: cannot import name
+        # 'streamablehttp_client'` on a fresh install. Nothing caught it: the cross-era probe
+        # exercises stdio fixtures, and no test imported this module's HTTP branch, so a code
+        # path outside the adapter seam went unexercised by the very CI leg built to find
+        # exactly this.
+        #
+        # The replacement takes an `http_client` rather than `headers`, so a straight rename
+        # would have silently dropped `--header` — which is the only way a credentialed
+        # remote server authenticates. `create_mcp_http_client` carries them, and both names
+        # exist with identical signatures in 1.29.0 and 2.0.0 (verified by execution).
+        from mcp.client.streamable_http import create_mcp_http_client, streamable_http_client
 
         if spec.url is None:  # pragma: no cover - guarded by ServerSpec.parse
             raise MCPConnectionError("http server spec has no url")
         async with (
-            streamablehttp_client(spec.url, headers=spec.headers or None) as (read, write, _),
+            create_mcp_http_client(headers=spec.headers or None) as http_client,
+            streamable_http_client(spec.url, http_client=http_client) as (read, write, _),
             _RecordingSession(read, write, interactions=interactions) as session,
         ):
             init = await _initialize(session)

@@ -504,6 +504,44 @@ _CONFUSABLE_FOLD = str.maketrans(
     }
 )  # fmt: skip
 
+
+def _name_derived_folds() -> dict[int, str]:
+    """Confusables the hand-written table above does not list, derived from Unicode names.
+
+    A hand-enumerated table covers only what someone thought of, and the gap was exploitable:
+    substituting the two ASCII ``I``s in ``<IMPORTANT>Ignore all previous instructions`` for
+    Cyrillic ``І`` (U+0406) took a server from **C 75.0, grade-capped** to **A 97.6,
+    uncapped**. Visually identical, and identical to any model reading it. U+0406 was simply
+    missing from the list — its lowercase neighbours were there.
+
+    The rule: a letter from a Latin-confusable script whose Unicode name ends in a single
+    ASCII letter is drawn as that letter — "CYRILLIC CAPITAL LETTER BYELORUSSIAN-UKRAINIAN
+    **I**", "CHEROKEE LETTER **A**". That covers characters nobody enumerated, which is the
+    property the table cannot have.
+
+    It SUPPLEMENTS rather than replaces: the rule finds ~30 characters, the table has ~51,
+    and neither is a superset. Greek omicron is confusable with ``o`` and its name ends in
+    "OMICRON", so the rule misses it; the table has it. Explicit entries win on conflict.
+    """
+    derived: dict[int, str] = {}
+    for code in range(0x0370, 0x2C80):  # Greek/Cyrillic/Armenian through Coptic
+        char = chr(code)
+        try:
+            name = unicodedata.name(char)
+        except ValueError:  # unassigned
+            continue
+        if not name.startswith(("CYRILLIC", "GREEK", "ARMENIAN", "CHEROKEE", "COPTIC")):
+            continue
+        last = name.split()[-1]
+        if len(last) == 1 and last.isascii() and last.isalpha():
+            derived[code] = last.lower() if "SMALL" in name else last
+    return derived
+
+
+# Explicit entries win: they were chosen deliberately, including cases the name rule cannot
+# reach.
+_CONFUSABLE_FOLD = {**_name_derived_folds(), **_CONFUSABLE_FOLD}
+
 # Scripts whose letters are drawn like Latin ones, by SCRIPT rather than by character.
 #
 # This check used to test membership in `_CONFUSABLE_CHARS`, which is derived from the fold

@@ -93,3 +93,41 @@ def test_resource_and_prompt_fields() -> None:
         "templates are never scanned",
     )
     _expect(types.GetPromptResult, "messages", "messages", "the poisoned-prompt scan goes blind")
+
+
+def test_the_http_transport_resolves_in_this_era() -> None:
+    """The remote-server path, which no test imported until it shipped broken.
+
+    `streamablehttp_client` is a 1.x alias that `mcp` 2.0 removed. Widening the pin to
+    `mcp<3` therefore made every http/https spec fail before touching the network, with an
+    ImportError, on a fresh install. The cross-era fixture probe exercises stdio servers and
+    the dual-SDK suite runs the tests — so a transport import sitting outside the adapter
+    seam, referenced by no test, was invisible to both.
+
+    Asserted by importing rather than by name-matching: the point is that the symbols this
+    module actually uses resolve on the installed SDK.
+    """
+    from mcp.client.streamable_http import create_mcp_http_client, streamable_http_client
+
+    assert callable(streamable_http_client)
+    # Headers are how a credentialed remote server authenticates, and the 2.0 transport
+    # takes an http_client rather than `headers=` — so losing this helper would silently
+    # drop `--header` rather than fail loudly.
+    assert callable(create_mcp_http_client)
+
+
+def test_the_client_module_imports_no_removed_transport_alias() -> None:
+    # A direct check on the source, because the import above only proves the NEW names work;
+    # it would still pass if client.py went on using the removed one.
+    import re
+    from pathlib import Path
+
+    source = (
+        Path(__file__).resolve().parent.parent / "src" / "mcp_gauntlet" / "client.py"
+    ).read_text(encoding="utf-8")
+    offenders = [
+        n
+        for n, line in enumerate(source.splitlines(), 1)
+        if re.search(r"\bstreamablehttp_client\b", line) and not line.strip().startswith("#")
+    ]
+    assert not offenders, f"client.py uses the 1.x-only transport alias at line(s) {offenders}"

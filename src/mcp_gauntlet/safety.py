@@ -39,7 +39,13 @@ _MUTATING_VERBS = (  # noqa: SIM905 - one whitespace-delimited string reads bett
     "refund withdraw deposit pay place mint burn suspend ban void redeem unsubscribe "
     "subscribe expire invalidate rotate decommission deprovision checkout abort reboot "
     "encrypt decrypt empty flush lock unlock disconnect deactivate activate notify "
-    "issue revoke release apply"
+    "issue revoke release apply "
+    # Moved here from the qualifier-gated list, which required a name of 2+ tokens. That
+    # requirement is sound for `add` — bare `add` really is arithmetic — but these have no
+    # benign bare reading, and a zero-argument tool named exactly `sync` or `restore` is a
+    # "do it all now" button. Measured before the move: `sync`, `restore`, `init`, `attach`
+    # and `assign` all passed the filter as read-only and would have been executed.
+    "sync restore attach assign init import"
 ).split()
 
 
@@ -78,10 +84,21 @@ _WRITE_HINTS = re.compile(
 def _normalize(text: str) -> str:
     """Split snake_case / kebab-case / camelCase so verbs in tool names are matchable
     (``\\b`` treats ``_`` as a word char, so ``delete_file`` never matches ``delete``)."""
-    text = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", text)  # camelCase -> camel Case
+    # Two boundaries, not one. The first alternative needs a lowercase-or-digit before the
+    # capital, so an ACRONYM prefix was never split: `S3DeleteObject` worked only because
+    # the `3` satisfied it, while `DBDeleteRow` came through as one token and was executed.
+    # Half-present is worse than absent, because it reads as covered.
+    text = re.sub(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", " ", text)
     return re.sub(r"[-_./]+", " ", text)
 
 
+# Known limit, left deliberately: a RUN-TOGETHER name with no separator (`sendmail`) is one
+# token, so `\b` cannot isolate the verb. A prefix rule would catch it and would also exclude
+# `settings` (starts with `set`) and `startup_info` (starts with `start`) — both read-only —
+# which costs evaluation coverage to chase a name shape whose ordinary description ("Sends an
+# email…") the description hint already catches. Only a name AND description that both hide
+# the write get through, and at that point the annotation hints and the injection scan are
+# the defences that apply.
 def _hint_says_mutating(tool: ToolInfo) -> bool:
     """True when the server *self-declares* non-read-only behavior. Trusted only in
     this (conservative) direction: a self-incriminating hint is safe to believe; a
@@ -96,11 +113,7 @@ def _hint_says_mutating(tool: ToolInfo) -> bool:
 # fail-open trade-off this filter deliberately makes. Requiring a following word separates
 # them: `add_note` mutates, bare `add` does not. `_normalize` has already split snake_case and
 # camelCase by the time this runs, so `addNote` reads as `add Note`.
-_QUALIFIED_WRITE_VERBS = frozenset(
-    f
-    for v in ("add", "init", "attach", "assign", "import", "restore", "sync")
-    for f in _inflections(v)
-)
+_QUALIFIED_WRITE_VERBS = frozenset(f for v in ("add",) for f in _inflections(v))
 
 
 def _compound_write_name(tool: ToolInfo) -> bool:

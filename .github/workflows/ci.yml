@@ -33,6 +33,73 @@ jobs:
         shell: bash
         run: bash scripts/gates.sh
 
+  cold-start:
+    # What a stranger does, on a machine that is not the maintainer's.
+    #
+    # Every other job runs inside the project: `uv sync` then `uv run`, with the source tree
+    # on the path and the dev environment already built. That is the CONTRIBUTOR path, and
+    # it hid a real defect — the README's Quickstart opened with `uv sync --extra dev` and
+    # `uv run mcp-gauntlet`, which is the contributor path presented as the first thing a new
+    # user runs. Someone who found the project on PyPI, ran `pip install mcp-gauntlet` and
+    # followed the README got `No pyproject.toml found` on line one, then
+    # `Failed to spawn: mcp-gauntlet: program not found` on line two.
+    #
+    # So this job installs the built wheel with plain pip into a bare venv — no uv, no
+    # checkout on the path, no dev extras — and runs the commands the README actually tells
+    # people to run. Both platforms, because the console-script shim differs.
+    name: cold start (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"   # the floor in requires-python, not the maintainer's 3.14
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Build the wheel
+        # Into a guaranteed-empty directory. `dist/*.whl` globs every wheel ever built
+        # there, which is exactly how this step failed the first time I ran it locally
+        # against a dist/ still holding an old 0.4.0.
+        run: uv build --wheel --out-dir "$RUNNER_TEMP/wheel"
+      - name: Install it the way a user would, into a bare environment
+        run: |
+          python -m venv "$RUNNER_TEMP/coldstart"
+          # bin on POSIX, Scripts on Windows — resolved explicitly rather than globbed.
+          BIN="$RUNNER_TEMP/coldstart/bin"
+          [ -d "$BIN" ] || BIN="$RUNNER_TEMP/coldstart/Scripts"
+          # $RUNNER_TEMP is a WINDOWS path on the Windows runner, and bash will not resolve
+          # a `D:\...` entry placed on PATH — the console script would be installed
+          # correctly and still report "command not found". Found locally, where the same
+          # thing happened with a C:/ path.
+          BIN="$(cygpath -u "$BIN" 2>/dev/null || echo "$BIN")"
+          echo "COLDSTART_BIN=$BIN" >> "$GITHUB_ENV"
+          # Deliberately plain pip, not uv: a user who has never heard of uv is the case
+          # this job exists for.
+          "$BIN/python" -m pip install --disable-pip-version-check "$RUNNER_TEMP"/wheel/*.whl
+      - name: Run the commands the README documents
+        run: |
+          export PATH="$COLDSTART_BIN:$PATH"
+          # The console script must be on PATH by name — `uv run` is not available here.
+          mcp-gauntlet --version
+          mcp-gauntlet run "python -m mcp_gauntlet.fixtures.good_server" --no-agentic
+          # And the headline demo must still catch the malicious server, from the wheel,
+          # with no API key and no repository present.
+          cd "$RUNNER_TEMP"
+          mcp-gauntlet run "python -m mcp_gauntlet.fixtures.malicious_server" \
+            --no-agentic > demo.log 2>&1 || true
+          cat demo.log
+          grep -q "Critical security finding" demo.log || {
+            echo "::error::the demo ran from a clean install but reported no critical finding"
+            exit 1
+          }
+
   suite-modern:
     # The `check` matrix runs whatever uv.lock pins, which is deliberately still a 1.x SDK:
     # that is what nearly every user has today, so it stays the primary leg. This one runs

@@ -92,7 +92,7 @@ never got.
 Generate your own across any set of servers listed in a JSON file — locally, published nowhere:
 
 ```bash
-uv run mcp-gauntlet leaderboard --servers leaderboard.servers.json --out board
+mcp-gauntlet leaderboard --servers leaderboard.servers.json --out board
 ```
 
 Each server's raw result is saved to `board/servers/<name>.json` alongside its page, so the
@@ -101,16 +101,27 @@ LLM provider. `--render-only` does exactly that.
 
 ## Quickstart
 
+No install, no API key, no clone — this runs the bundled deliberately-malicious demo
+server and shows what a description scanner cannot see:
+
 ```bash
-uv sync --extra dev
+uvx mcp-gauntlet run "python -m mcp_gauntlet.fixtures.malicious_server" --no-agentic
+```
+
+Or install it properly:
+
+```bash
+pip install mcp-gauntlet     # or: uv tool install mcp-gauntlet
 
 # Static + robustness checks only — no API key required
-uv run mcp-gauntlet run "python -m mcp_gauntlet.fixtures.good_server" --no-agentic
+mcp-gauntlet run "python -m mcp_gauntlet.fixtures.good_server" --no-agentic
 
 # Full gauntlet, including the live agent (Groq's free tier works)
-echo "GROQ_API_KEY=gsk_..." > .env
-uv run mcp-gauntlet run "npx -y @modelcontextprotocol/server-everything"
+export GROQ_API_KEY=gsk_...
+mcp-gauntlet run "npx -y @modelcontextprotocol/server-everything"
 ```
+
+A `.env` file in the working directory is read too, if you prefer that to an export.
 
 The LLM backend is provider-agnostic — any OpenAI-compatible endpoint (Groq by
 default; also OpenRouter, Together, or a local Ollama / vLLM). Transient 429/5xx
@@ -126,8 +137,8 @@ are reproducible across runs.
 Bundled `good` / `bad` fixture servers make it easy to see the difference:
 
 ```bash
-uv run mcp-gauntlet run "python -m mcp_gauntlet.fixtures.bad_server"   # capped C — tool poisoning
-uv run mcp-gauntlet run "python -m mcp_gauntlet.fixtures.good_server"  # A
+mcp-gauntlet run "python -m mcp_gauntlet.fixtures.bad_server"   # capped C — tool poisoning
+mcp-gauntlet run "python -m mcp_gauntlet.fixtures.good_server"  # A
 ```
 
 With an LLM key, the bad fixture also trips **Response Safety**: its `status_report`
@@ -143,7 +154,7 @@ in one tool that is completely clean on the first `tools/list` and poisoned on t
 and in a prompt whose metadata is spotless and whose rendered messages carry the payload:
 
 ```bash
-uv run mcp-gauntlet run "python -m mcp_gauntlet.fixtures.malicious_server" --no-agentic
+mcp-gauntlet run "python -m mcp_gauntlet.fixtures.malicious_server" --no-agentic
 ```
 
 Four of the five are caught with no API key at all; the call-time one needs the live agent.
@@ -180,7 +191,7 @@ A keyless local endpoint needs no key configured at all; if your endpoint or
 gateway does want one, pass `--api-key` (or the provider's env var):
 
 ```bash
-uv run mcp-gauntlet run "npx -y @scope/pkg" --base-url http://localhost:11434/v1 --model llama3.1
+mcp-gauntlet run "npx -y @scope/pkg" --base-url http://localhost:11434/v1 --model llama3.1
 ```
 
 ### Servers that need credentials
@@ -191,10 +202,10 @@ without putting it in the report or your shell history:
 ```bash
 # stdio server: forward an allow-listed env var (value pulled from your environment)
 export GITHUB_TOKEN=ghp_...
-uv run mcp-gauntlet run "npx -y @modelcontextprotocol/server-github" --env GITHUB_TOKEN
+mcp-gauntlet run "npx -y @modelcontextprotocol/server-github" --env GITHUB_TOKEN
 
 # remote server: send an auth header
-uv run mcp-gauntlet run "https://mcp.example.com" --header "Authorization: Bearer $TOKEN"
+mcp-gauntlet run "https://mcp.example.com" --header "Authorization: Bearer $TOKEN"
 ```
 
 `--env`/`--header` are repeatable. Only the variables you name are forwarded — the child
@@ -212,7 +223,7 @@ with no key configured reports a **static grade** from the LLM-free checks —
 schema health, description quality, security signals, and robustness probes:
 
 ```bash
-uv run mcp-gauntlet run "npx -y @modelcontextprotocol/server-everything" --no-agentic
+mcp-gauntlet run "npx -y @modelcontextprotocol/server-everything" --no-agentic
 ```
 
 Add `--no-probe` for a pure inspection that never executes any of the server's
@@ -237,6 +248,22 @@ your gate without a commit.
 The static + robustness checks need no API key. To include the live agent
 evaluation, add an LLM key (e.g. `GROQ_API_KEY`) as a repository secret and drop
 `--no-agentic`. The report is uploaded as a build artifact.
+
+## Development
+
+The commands above are for *using* the tool. To work on it, clone the repo and use the
+project environment instead:
+
+```bash
+git clone https://github.com/GhalebDweikat/mcp-gauntlet && cd mcp-gauntlet
+uv sync --extra dev
+uv run mcp-gauntlet run "python -m mcp_gauntlet.fixtures.good_server" --no-agentic
+
+./scripts/gates.sh      # ruff, format, mypy, the fixture-score snapshot, and pytest
+```
+
+`scripts/era_fixture_probe.py` builds the same fixture server on `mcp` 1.x and 2.x in
+separate environments and fails if the two eras disagree about it.
 
 ## License
 

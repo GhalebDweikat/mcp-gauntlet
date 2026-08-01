@@ -1,11 +1,9 @@
 # Methodology
 
-How mcp-gauntlet produces a score, what that score does and doesn't mean, and the policies
-it follows when publishing results about other people's servers.
+How mcp-gauntlet produces its findings and its score, and what each does and does not mean.
 
-This document is versioned with the tool. Every report and every leaderboard row records
-the gauntlet version that produced it, because **scores are only comparable within a
-version** — adding or reweighting a dimension changes the number without anything changing
+This document is versioned with the tool. Every report records the gauntlet version that
+produced it, because **scores are only comparable within a version** — adding or reweighting a dimension changes the number without anything changing
 about the server.
 
 ## Which protocol this targets
@@ -96,7 +94,7 @@ author sets one, so "did the server admit the change?" is a weaker signal than i
 
 **Response Safety deliberately does not cap.** It scans content a server *returned*, and a
 fetch or filesystem server may faithfully relay untrusted text it did not author. A HIGH
-finding there lowers the score and is shown with a ⚡ on the board, but the judgment of
+finding there lowers the score, but the judgment of
 whether the server is at fault is left to the reader.
 
 ## What the score is not
@@ -115,7 +113,7 @@ whether the server is at fault is left to the reader.
   averaged, but two runs of the same server can differ by a few points. Treat small gaps as
   noise.
 - **Partly a measure of the agent.** A weaker model fails tasks a stronger one completes.
-  The model is held constant across a leaderboard and stamped into every report, so rows
+  The model is stamped into every report, so runs
   are comparable with each other — not with a run on a different model.
 - **Not a measure of what the server does when it's used properly.** Runs are read-only by
   default and tasks are generated, not real workloads.
@@ -144,7 +142,7 @@ Response Safety score is then largely a property of **the target, not the server
 filesystem server rooted at a directory containing credentials will faithfully relay them
 and be flagged for it, having done nothing wrong.
 
-This is not hypothetical. An early run of this leaderboard rooted the filesystem server at
+This is not hypothetical. An early run rooted the filesystem server at
 the working checkout and pointed the git server at this repository, which produced two
 findings that were purely artifacts of one machine: the filesystem row was flagged for a
 sentence in a README that mentioned a credential filename, and the git row diffed the
@@ -152,21 +150,38 @@ board's own generated HTML and read the previous run's findings back to itself. 
 result was reproducible by anyone else, and both risked publishing fragments of a private
 working tree.
 
-The board therefore points those servers at fixed, committed scan targets
-(`leaderboard-sandbox/`, and a scratch repository built by
-`scripts/make_leaderboard_fixtures.py`). Every operator scans the same bytes, and a score
-means the same thing twice. If you run one of these servers against your own data, read its
-Response Safety findings as being about that data.
+So point such a server at a fixed, committed scan target rather than at your working tree,
+and the same bytes are scanned every run. If you point one at live data instead, read its
+Response Safety findings as being about *that data* rather than about the server.
 
-## Comparability rules
+## What this does and does not claim
 
-The overall is a weighted mean over the dimensions **present**, so a server the agent never
-scored skips Agent Task Success — the heaviest dimension — and is averaged over a smaller
-denominator, scoring systematically higher. The leaderboard therefore ranks only servers
-that were fully agent-scored. Everything else is listed separately under **Partially
-evaluated**, each row stating why, so an untested server can never outrank a tested one. A
-run cut short by a hung tool is segregated too: its score rests on however many runs
-finished, a sample size the server itself controls.
+mcp-gauntlet is a regression suite for a server **you maintain**. Every claim below is
+scoped to that.
+
+**A finding is the product.** Each one names a tool, a field and what is wrong with it, and
+is meant to be acted on. That is the part that has held up under adversarial testing: on a
+hand-written server it found every real defect and produced no false positives. Gate your
+build on findings — `--fail-on high` — not on a number.
+
+**The score is a trend line for one server, not a ranking.** The overall is a weighted mean
+over the dimensions that *ran*, so it moves when a stage is skipped, when a server needs
+credentials, when `--no-probe` is passed, and between releases as checks are added. Watching
+it fall on your own server across two commits is meaningful. Comparing it to somebody else's
+server is not, and the tool no longer offers a way to do that.
+
+**It is not a security audit, and a clean report is not a clearance.** The security checks
+are pattern-based. They catch payloads placed where a scanner is not usually looking — a
+display title, an output schema behind a `$ref`, a prompt's rendered messages, a definition
+that changes between two listings — and they will not catch plain-prose social engineering,
+a payload written in a language the patterns do not cover, or an instruction encoded rather
+than written. Adversarial testing has demonstrated all three. Treat a clean report as "the
+known classes were not found", never as "this server is safe".
+
+**Absence is reported, not implied.** When a stage does not run — no API key, `--no-probe`,
+a credential-gated server, a listing that failed — the report says so under *Not measured*,
+because a skipped dimension does not lower the score, it leaves the denominator and raises
+it.
 
 ## Safety when evaluating
 
@@ -184,34 +199,6 @@ finished, a sample size the server itself controls.
   server-side LLM (sampling). It advertises neither, and a server that requests one is
   declined cleanly. A tool call that failed *only* for that reason is not counted against
   the server's Tool Reliability, and the report says so.
-
-## Publishing results about other people's servers
-
-**Nothing is published right now.** Two leaderboards naming third-party servers were taken
-down in July 2026, because the harness had been caught grading servers on its own defects
-three separate times in three days — invented filesystem paths that made A-grade servers look
-like D, twenty-five credential-vocabulary findings that were all false positives, and package
-versions pinned from registry metadata that lagged the real releases badly. Each was fixed and
-written up. But rule 2 below promises advance notice to anyone appearing with a low score, and
-that notice was never sent, so the boards were withheld rather than left up in breach of it.
-
-The rules stand as the conditions for publishing again — not as a description of something
-currently happening. They apply from the next published board onward:
-
-1. **Coordinated disclosure.** A HIGH-severity *security* finding on a named third-party
-   server is reported privately to its maintainers first, with a **14-day** window before
-   that server is named in connection with it. Aggregate figures ("N of M servers returned
-   injectable content") may be published immediately, without naming.
-2. **Notice before publication.** Any server appearing in a published survey with a low
-   score gets advance notice and a link to dispute it.
-3. **Disputes are free.** Anyone can contest a score by opening an issue. Re-runs cost
-   nothing to request. A finding shown to be a false positive is corrected, and the
-   correction is noted rather than quietly swapped in.
-4. **Every score carries its provenance** — scan date, gauntlet version, model, and repeat
-   count — and every row that could not be evaluated says so, with the reason. Servers are
-   never silently dropped.
-5. **No pay-to-play.** Placement cannot be bought, and no one is charged for a scan, a
-   re-scan, or a badge.
 
 ## Reproducing a score
 

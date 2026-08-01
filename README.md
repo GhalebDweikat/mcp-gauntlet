@@ -2,102 +2,13 @@
 
 [![CI](https://github.com/GhalebDweikat/mcp-gauntlet/actions/workflows/ci.yml/badge.svg)](https://github.com/GhalebDweikat/mcp-gauntlet/actions/workflows/ci.yml)
 
-**An agentic evaluation harness for MCP servers.** Point it at any
-[Model Context Protocol](https://modelcontextprotocol.io) server and it answers
-the question the static analyzers don't: **can an AI agent actually accomplish
-real tasks using this server's tools?**
+**A regression suite for your MCP server.** Run it in CI and it catches what you cannot
+catch by reading your own code: a payload that only appears when a tool is *called*, a
+definition that changes between two `tools/list` calls, a tool that silently accepts
+malformed input, a description no agent can act on.
 
-## Why
-
-Plenty of tools already inspect MCP servers **statically**: registry quality
-scores (Glama, Smithery), security scanners (Snyk Agent Scan, Cisco's
-mcp-scanner), and interactive testers (the official MCP Inspector, MCPJam).
-Academic benchmarks (MCP-Universe, MCPMark, MCP-Bench) do run live agents — but
-over fixed, hand-picked server sets, not as something you can point at *your*
-server.
-
-mcp-gauntlet fills the gap between the two: a pip-installable CLI that runs a
-live LLM agent against **any** MCP server and measures a real **task-success
-rate**, then folds it — together with static checks, robustness probes, and a
-runtime scan of what the tools actually **return** — into one graded score you
-can gate CI on. To our knowledge, no other *evaluator* scores runtime output
-injection: runtime guardrails (MCP gateways, Trail of Bits' context-protector)
-protect a session after you've adopted a server, while mcp-gauntlet grades the
-server *before* you adopt it — catching a server that looks clean at list-time
-but poisons at call-time.
-
-> Google Lighthouse tells you your web page is *well-formed*.
-> mcp-gauntlet tells you your MCP server is *usable by an agent* — with a
-> task-success rate to prove it.
-
-## What it scores
-
-Each run produces a graded report card (JSON + Markdown) across:
-
-- **Schema Health** — valid JSON schemas, typed and described parameters.
-- **Description Quality** — can an agent tell when and how to use each tool?
-- **Security Signals** — a *static* scan for tool-poisoning / prompt-injection markers
-  and hidden characters across **every server-authored string a client can put in front of
-  the model**, in all three MCP primitives: the server's name, title and init instructions;
-  each tool's description, display titles, `_meta`, and **both its input and output
-  schemas** (nested titles, enums, defaults, examples, `$defs` entries and unknown extension
-  keywords included); **prompt** metadata, arguments and the messages `prompts/get` actually
-  returns; and **resource** and template metadata. Anything in that set can carry a payload,
-  so scanning only top-level `description` fields is trivially evaded by nesting one behind
-  a `$ref`, parking it in a display title, or putting it in a prompt — whose messages reach
-  the model verbatim. Text is folded to a compatibility skeleton before matching, so
-  smuggled invisibles, combining marks, and lookalike alphabets (fullwidth, math-bold) don't
-  break a keyword. A critical finding caps the overall grade.
-- **Agent Task Success** — a live LLM agent attempts generated tasks using only
-  the server's tools; LLM-judged and repeated for a success rate.
-- **Tool-Selection Accuracy** — did the agent call the tools it was expected to?
-- **Tool Reliability** — did the server's tools execute without error?
-- **Response Safety** — a *dynamic* scan of the tools' live **outputs** for the
-  same injection / poisoning markers, catching a server that looks clean at
-  list-time but poisons at call-time. Reported (and it lowers the score) but
-  doesn't cap on its own, since a fetch/filesystem server may faithfully pass
-  through untrusted content.
-- **Robustness** — does the server reject malformed input gracefully? A tool that
-  publishes no argument schema at all scores zero here rather than being skipped:
-  a server that declares no contract can't reject anything, and skipping it would
-  make omitting schemas a way to score higher.
-- **Definition drift** — did the server change what its tools say *after* you approved
-  them? `tools/list` is asked twice per session and the answers compared, and the surface is
-  fingerprinted and compared against the previous run. This is the failure registry signing
-  can't address: the package is unchanged and correctly signed, only the text served at
-  runtime differs. Crucially, a definition that *changed* is then scanned in its own right,
-  so a payload that appears only in the second listing raises its own finding rather than a
-  bare "something moved". The change itself is reported but never caps on its own — honest
-  servers register tools lazily, gate them on auth (MCP has a `tools.listChanged` capability
-  for exactly that), and edit descriptions without bumping a static version.
-
-## Leaderboard — withheld for now
-
-There is no live leaderboard. Two boards were published and have been taken down until the
-scoring model stops moving; the reasoning is at
-**[ghalebdweikat.github.io/mcp-gauntlet](https://ghalebdweikat.github.io/mcp-gauntlet/)** and
-the data is kept in `boards-withheld/` rather than deleted, so the corrections stay auditable.
-
-The long version is written up as
-**[Eight times my evaluator measured something other than the server](docs/eight-times-i-measured-something-else.md)**
-— three families of failure, and they generalise to any eval system.
-
-The short version: inside three days the harness was found to have graded servers on its own
-defects three separate times — invented filesystem paths, credential-vocabulary false
-positives, and pinning to a registry version that lagged the published package by 23 minor
-releases. Each was fixed. But publishing scores about named third parties is the highest-stakes
-thing this tool does, and `METHODOLOGY.md` promises those servers advance notice, which they
-never got.
-
-Generate your own across any set of servers listed in a JSON file — locally, published nowhere:
-
-```bash
-mcp-gauntlet leaderboard --servers leaderboard.servers.json --out board
-```
-
-Each server's raw result is saved to `board/servers/<name>.json` alongside its page, so the
-site can be rebuilt for free after a presentation change — no re-running, and no re-paying an
-LLM provider. `--render-only` does exactly that.
+It fails your build on what it **found** — a finding with a name and a location — not on a
+score.
 
 ## Quickstart
 
@@ -174,6 +85,74 @@ so a server that hangs during connect or `tools/list` still can't wedge the CLI.
 `--tool-timeout` if a server is legitimately slow rather than stuck — the report says so
 when the limit is what stopped it.
 
+## Why
+
+Plenty of tools already inspect MCP servers **statically**: registry quality
+scores (Glama, Smithery), security scanners (Snyk Agent Scan, Cisco's
+mcp-scanner), and interactive testers (the official MCP Inspector, MCPJam).
+Academic benchmarks (MCP-Universe, MCPMark, MCP-Bench) do run live agents — but
+over fixed, hand-picked server sets, not as something you can point at *your*
+server.
+
+mcp-gauntlet is for the person who **maintains** the server, and its distinguishing
+checks are the *dynamic* ones — the things you cannot learn by reading a file:
+
+- it **calls** your tools and scans what came back, so a server that is clean at list-time
+  and poisons at call-time is caught;
+- it asks `tools/list` **twice** and re-scans anything that changed, so a definition that
+  differs between the two answers raises its own finding;
+- it feeds each tool **malformed input** and checks that the tool rejects it;
+- with an API key it drives a **live agent** through generated tasks, which is the only way
+  to find out whether your descriptions are good enough to act on.
+
+Static scanners read your code. This runs your server.
+
+**What it is not:** a ranking. It does not tell you whether someone else's server is better
+than yours, and it deliberately publishes no leaderboard — scores move when a stage is
+skipped or between releases, which is fine for watching one server over time and is not fine
+for a sorted table. See [What the score is not](METHODOLOGY.md).
+
+## What it scores
+
+Each run produces a graded report card (JSON + Markdown) across:
+
+- **Schema Health** — valid JSON schemas, typed and described parameters.
+- **Description Quality** — can an agent tell when and how to use each tool?
+- **Security Signals** — a *static* scan for tool-poisoning / prompt-injection markers
+  and hidden characters across **every server-authored string a client can put in front of
+  the model**, in all three MCP primitives: the server's name, title and init instructions;
+  each tool's description, display titles, `_meta`, and **both its input and output
+  schemas** (nested titles, enums, defaults, examples, `$defs` entries and unknown extension
+  keywords included); **prompt** metadata, arguments and the messages `prompts/get` actually
+  returns; and **resource** and template metadata. Anything in that set can carry a payload,
+  so scanning only top-level `description` fields is trivially evaded by nesting one behind
+  a `$ref`, parking it in a display title, or putting it in a prompt — whose messages reach
+  the model verbatim. Text is folded to a compatibility skeleton before matching, so
+  smuggled invisibles, combining marks, and lookalike alphabets (fullwidth, math-bold) don't
+  break a keyword. A critical finding caps the overall grade.
+- **Agent Task Success** — a live LLM agent attempts generated tasks using only
+  the server's tools; LLM-judged and repeated for a success rate.
+- **Tool-Selection Accuracy** — did the agent call the tools it was expected to?
+- **Tool Reliability** — did the server's tools execute without error?
+- **Response Safety** — a *dynamic* scan of the tools' live **outputs** for the
+  same injection / poisoning markers, catching a server that looks clean at
+  list-time but poisons at call-time. Reported (and it lowers the score) but
+  doesn't cap on its own, since a fetch/filesystem server may faithfully pass
+  through untrusted content.
+- **Robustness** — does the server reject malformed input gracefully? A tool that
+  publishes no argument schema at all scores zero here rather than being skipped:
+  a server that declares no contract can't reject anything, and skipping it would
+  make omitting schemas a way to score higher.
+- **Definition drift** — did the server change what its tools say *after* you approved
+  them? `tools/list` is asked twice per session and the answers compared, and the surface is
+  fingerprinted and compared against the previous run. This is the failure registry signing
+  can't address: the package is unchanged and correctly signed, only the text served at
+  runtime differs. Crucially, a definition that *changed* is then scanned in its own right,
+  so a payload that appears only in the second listing raises its own finding rather than a
+  bare "something moved". The change itself is reported but never caps on its own — honest
+  servers register tools lazily, gate them on auth (MCP has a `tools.listChanged` capability
+  for exactly that), and edit descriptions without bumping a static version.
+
 ## Configuration
 
 Configure via a `.env` file (copy [`.env.example`](.env.example) and fill it in)
@@ -226,9 +205,27 @@ schema health, description quality, security signals, and robustness probes:
 mcp-gauntlet run "npx -y @modelcontextprotocol/server-everything" --no-agentic
 ```
 
-Add `--no-probe` for a pure inspection that never executes any of the server's
-tools. The leaderboard behaves the same way — with no key it ranks servers on the
-static + robustness checks alone.
+Add `--no-probe` for a pure inspection that never executes any of the server's tools.
+
+### Several servers at once
+
+If you maintain more than one, `scan` runs them all and gates on the worst finding across
+the set. An unreachable server is reported but does **not** fail the gate — that exits 3, not
+1, because "could not evaluate this" is a different fact from "this one is bad".
+
+```bash
+mcp-gauntlet scan --servers my-servers.json --no-agentic --fail-on high
+```
+
+```json
+{"servers": [
+  {"name": "notes",   "spec": "python -m notes_server"},
+  {"name": "billing", "spec": "node dist/billing.js"}
+]}
+```
+
+Each server gets its own report directory. Nothing is ranked and no grades are compared side
+by side — see [What this does and does not claim](METHODOLOGY.md).
 
 ## Use it in CI
 

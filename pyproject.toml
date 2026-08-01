@@ -1,7 +1,7 @@
 [project]
 name = "mcp-gauntlet"
 version = "0.8.1"
-description = "An agentic evaluation harness for MCP servers — can an AI agent actually accomplish real tasks with this server's tools?"
+description = "A regression suite for your MCP server — catches tool poisoning, definition drift and schema rot in CI, including things a static scan cannot see."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -10,7 +10,9 @@ keywords = [
     "mcp",
     "model-context-protocol",
     "mcp-server",
-    "evaluation",
+    "ci",
+    "testing",
+    "static-analysis",
     "evals",
     "llm",
     "agents",

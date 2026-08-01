@@ -94,3 +94,9 @@ class DiscoveryResult(BaseModel):
     tools: list[ToolInfo] = Field(default_factory=list)
     prompts: list[PromptInfo] = Field(default_factory=list)
     resources: list[ResourceInfo] = Field(default_factory=list)
+    # Surfaces that could not be listed, and why. An empty `prompts` list means "this server
+    # has none" — but it also used to mean "the call failed and we logged it at debug", and
+    # the two were indistinguishable. That is the same shape as the `resourceTemplates` bug:
+    # a scan that never ran reading exactly like a scan that found nothing. A server erroring
+    # on `prompts/list` skipped the prompt-injection scan entirely, at no cost to its score.
+    undiscovered: list[str] = Field(default_factory=list)

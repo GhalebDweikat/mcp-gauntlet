@@ -16,7 +16,7 @@ from typing import Any
 
 from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
-from mcp.types import InitializeResult
+from mcp.types import METHOD_NOT_FOUND, InitializeResult
 
 from mcp_gauntlet.adapters import adapter
 from mcp_gauntlet.config import ServerSpec, TransportKind
@@ -275,9 +275,32 @@ async def discover_in_session(
     sdk = adapter()
     tools = [sdk.tool_info(tool) for tool in raw_tools]
     server = sdk.server_info(init)
-    prompts = await _discover_prompts(session, fetch_prompts)
-    resources = await _discover_resources(session)
-    return DiscoveryResult(server=server, tools=tools, prompts=prompts, resources=resources)
+    prompts, prompt_gaps = await _discover_prompts(session, fetch_prompts)
+    resources, resource_gaps = await _discover_resources(session)
+    return DiscoveryResult(
+        server=server,
+        tools=tools,
+        prompts=prompts,
+        resources=resources,
+        undiscovered=[*prompt_gaps, *resource_gaps],
+    )
+
+
+def _is_absent_primitive(exc: BaseException) -> bool:
+    """Whether a listing failed because the server simply does not implement it.
+
+    JSON-RPC -32601 is a server saying "I have no prompts/resources endpoint", which is the
+    ordinary case and not worth reporting. Anything else — a transport error, a malformed
+    page, a rename the adapter raised on — is the check failing to run, and that has to be
+    said rather than returned as an empty list. Keyed on the code, not the message, for the
+    same reason the stdout check keys on the exception type: wording is the first thing to
+    change upstream.
+    """
+    for error in (getattr(exc, "error", None), exc):
+        code = getattr(error, "code", None)
+        if isinstance(code, int) and code == METHOD_NOT_FOUND:
+            return True
+    return False
 
 
 def _meta_of(obj: object) -> dict[str, Any]:
@@ -325,7 +348,9 @@ def _dedup_by_name(items: list[Any]) -> list[Any]:
     return out
 
 
-async def _discover_prompts(session: ClientSession, fetch: bool) -> list[PromptInfo]:
+async def _discover_prompts(
+    session: ClientSession, fetch: bool
+) -> tuple[list[PromptInfo], list[str]]:
     """List the server's prompts, and render the ones that take no required arguments.
 
     A ``prompts/get`` response is placed in the model's context verbatim, so the messages
@@ -343,9 +368,14 @@ async def _discover_prompts(session: ClientSession, fetch: bool) -> list[PromptI
                 lambda c: session.list_prompts(**_page_params(c)), lambda p: list(p.prompts)
             )
         )
-    except Exception as exc:  # noqa: BLE001 - "method not found" is the normal no-prompts case
+    except Exception as exc:  # noqa: BLE001 - a listing must not cost the run
         _log.debug("prompts/list unavailable: %s", exc)
-        return []
+        if _is_absent_primitive(exc):
+            return [], []
+        # The scan did not run. Saying so is the whole point: an empty list otherwise
+        # reads as 'this server has no prompts', and a server that errors here skips the
+        # prompt-injection scan entirely at no cost to its score.
+        return [], [f"prompts could not be listed ({describe(exc, 120)})"]
 
     sdk = adapter()
     prompts: list[PromptInfo] = []
@@ -364,10 +394,10 @@ async def _discover_prompts(session: ClientSession, fetch: bool) -> list[PromptI
                 _log.debug("prompts/get %s failed: %s", info.name, exc)
                 info.unrendered_reason = f"rendering it failed ({str(exc)[:120]})"
         prompts.append(info)
-    return prompts
+    return prompts, []
 
 
-async def _discover_resources(session: ClientSession) -> list[ResourceInfo]:
+async def _discover_resources(session: ClientSession) -> tuple[list[ResourceInfo], list[str]]:
     """List resources and resource templates, metadata only.
 
     The contents are deliberately not read: they are unbounded in size and are passthrough
@@ -375,6 +405,7 @@ async def _discover_resources(session: ClientSession) -> list[ResourceInfo]:
     what a user or model reads when deciding what to attach.
     """
     found: list[ResourceInfo] = []
+    undiscovered: list[str] = []
     try:
         listed_resources = _dedup_by_name(
             await _paginate(
@@ -384,8 +415,10 @@ async def _discover_resources(session: ClientSession) -> list[ResourceInfo]:
         found.extend(
             adapter().resource_info(resource, is_template=False) for resource in listed_resources
         )
-    except Exception as exc:  # noqa: BLE001 - "method not found" is the no-resources case
+    except Exception as exc:  # noqa: BLE001 - a listing must not cost the run
         _log.debug("resources/list unavailable: %s", exc)
+        if not _is_absent_primitive(exc):
+            undiscovered.append(f"resources could not be listed ({describe(exc, 120)})")
     try:
         templates = _dedup_by_name(
             await _paginate(
@@ -394,9 +427,11 @@ async def _discover_resources(session: ClientSession) -> list[ResourceInfo]:
             )
         )
         found.extend(adapter().resource_info(template, is_template=True) for template in templates)
-    except Exception as exc:  # noqa: BLE001 - same: absent is the common case
+    except Exception as exc:  # noqa: BLE001 - same
         _log.debug("resources/templates/list unavailable: %s", exc)
-    return found
+        if not _is_absent_primitive(exc):
+            undiscovered.append(f"resource templates could not be listed ({describe(exc, 120)})")
+    return found, undiscovered
 
 
 async def discover(spec: ServerSpec) -> DiscoveryResult:

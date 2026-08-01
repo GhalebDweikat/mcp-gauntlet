@@ -307,6 +307,17 @@ async def evaluate_server(
         session_findings = (
             drift_findings
             + _protocol_findings(interactions.transport)
+            # A surface that could not be listed is a scan that did not run. Reported at LOW
+            # so the reader sees it, rather than left as an empty list indistinguishable from
+            # a server that genuinely has no prompts — which is how a server erroring on
+            # prompts/list skipped the prompt-injection scan for free.
+            + [
+                Finding(
+                    severity=Severity.LOW,
+                    message=f"{gap}, so that surface was not scanned",
+                )
+                for gap in discovery.undiscovered
+            ]
             + _deprecated_capability_findings(init, discovery.server.protocol_version)
         )
         dimensions = run_static_checks(discovery, session_findings)

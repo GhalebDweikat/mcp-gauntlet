@@ -182,6 +182,25 @@ def malformed_args(schema: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def _unprobed_after(tools: list[ToolInfo], index: int) -> int:
+    """How many tools AFTER ``index`` would have been scored had probing continued.
+
+    Every early exit has to add these as zeros. Scoring only the tool it stopped on is not
+    the same thing, and the difference runs the wrong way: the tools never reached are the
+    ones that would have scored 0, so dropping them RAISES the mean. Measured on ten tools
+    where the second hangs and the rest silently accept malformed input — 50.0 reported
+    against an honest 10.0.
+
+    That matters because both inputs are the server's to choose. It picks the order its
+    tools are listed in and how slow each one is, so "hang on the second tool" is a
+    controllable way to buy a score. Counts only tools that would actually have been scored,
+    for the same reason the budget path does: a zero-argument tool contributes nothing on
+    the normal path, so counting it here would swing the mean by the same accident of
+    ordering these zeros exist to prevent.
+    """
+    return sum(1 for later in tools[index + 1 :] if is_scored(later.input_schema))
+
+
 def is_scored(schema: Any) -> bool:
     """Whether this tool contributes a score to the Robustness dimension at all.
 
@@ -251,9 +270,15 @@ async def run_robustness_probes(
             # Score the unprobed tools 0 rather than dropping them. Both latency and tool
             # ORDER are server-controlled, so leaving them out would let a server put one
             # slow-but-correct tool first and have the budget cut the probe short before
-            # its broken tools were ever reached — turning a 5.0 into a 100.0. Every other
-            # early exit in this loop scores the tool it stopped on for the same reason:
-            # stopping early must only ever lower the score, never raise it.
+            # its broken tools were ever reached — turning a 5.0 into a 100.0. Every early
+            # exit now adds the same zeros via `_unprobed_after`: stopping early must only
+            # ever lower the score, never raise it.
+            #
+            # This comment used to claim the other exits achieved that by "scoring the tool
+            # they stopped on", which is true of the action and false of the effect — the
+            # tools never reached are precisely the ones that would have scored 0, so
+            # omitting them raised the mean. An audit agent read this comment, called the
+            # function sound, and did not read the ten lines below it.
             scores.extend([0.0] * remaining)
             break
         payload = malformed_args(tool.input_schema)
@@ -304,8 +329,14 @@ async def run_robustness_probes(
                 )
             )
             scores.append(0.0)
+            unprobed = _unprobed_after(tools, index)
+            scores.extend([0.0] * unprobed)
             findings.append(
-                Finding(severity=Severity.INFO, message="stopped probing after a timeout")
+                Finding(
+                    severity=Severity.INFO,
+                    message=f"stopped probing after a timeout; {unprobed} later tool(s) went "
+                    "unprobed and count as failures",
+                )
             )
             break
         except _protocol_error():
@@ -324,8 +355,14 @@ async def run_robustness_probes(
                 )
             )
             scores.append(0.0)
+            unprobed = _unprobed_after(tools, index)
+            scores.extend([0.0] * unprobed)
             findings.append(
-                Finding(severity=Severity.INFO, message="stopped probing after an unexpected error")
+                Finding(
+                    severity=Severity.INFO,
+                    message=f"stopped probing after an unexpected error; {unprobed} later "
+                    "tool(s) went unprobed and count as failures",
+                )
             )
             break
 

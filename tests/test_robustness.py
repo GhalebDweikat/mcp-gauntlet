@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import anyio
+import pytest
 from mcp import ClientSession
 from mcp.types import ErrorData
 
@@ -537,3 +538,60 @@ async def test_probe_budget_always_probes_at_least_one_tool() -> None:
     dim = await run_robustness_probes(cast(ClientSession, session), tools, budget_s=0.0)
     assert dim is not None
     assert session.calls == 1
+
+
+# ---------------------------------------------- stopping early must never raise the score
+
+
+def _probeable(count: int) -> list[ToolInfo]:
+    schema = {"type": "object", "properties": {"q": {"type": "string"}}, "required": ["q"]}
+    return [ToolInfo(name=f"t{i}", description="d", input_schema=schema) for i in range(count)]
+
+
+class _StopsAtSecondTool:
+    """One correct rejection, then a stall, then eight tools that would have scored 0."""
+
+    def __init__(self, failure: BaseException) -> None:
+        self.n = 0
+        self._failure = failure
+
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
+        index, self.n = self.n, self.n + 1
+        if index == 0:
+            return SimpleNamespace(isError=True)  # correct rejection -> 100
+        if index == 1:
+            raise self._failure
+        return SimpleNamespace(isError=False)  # silently ACCEPTS malformed input -> 0
+
+
+@pytest.mark.parametrize(
+    "failure", [TimeoutError(), RuntimeError("transport blew up")], ids=["timeout", "error"]
+)
+async def test_an_early_exit_scores_the_tools_it_never_reached(failure: BaseException) -> None:
+    """The budget path always did this; the timeout and error paths did not.
+
+    They appended a single 0.0 and broke, dropping every later tool from the mean — and the
+    dropped tools are exactly the ones that would have scored 0, so the score went UP.
+    Measured before the fix: 50.0 where the honest score is 10.0.
+
+    It is a controllable exchange, not a rounding error: the server chooses both the order
+    its tools are listed in and how slow each one is, so "stall on the second tool" was a
+    way to buy a 5x score improvement over being probed honestly.
+    """
+    dim = await run_robustness_probes(
+        cast(ClientSession, _StopsAtSecondTool(failure)), _probeable(10)
+    )
+    assert dim is not None
+    assert dim.score == 10.0, f"early exit inflated the score to {dim.score}"
+    # And the reader is told how much went unmeasured, not just that it stopped.
+    assert any("went unprobed" in f.message for f in dim.findings)
+
+
+async def test_an_early_exit_on_the_last_tool_adds_nothing() -> None:
+    # The off-by-one guard: with nothing after it, the count is 0 and the score is just the
+    # tools actually probed.
+    dim = await run_robustness_probes(
+        cast(ClientSession, _StopsAtSecondTool(TimeoutError())), _probeable(2)
+    )
+    assert dim is not None
+    assert dim.score == 50.0  # [100, 0], and no phantom zeros appended

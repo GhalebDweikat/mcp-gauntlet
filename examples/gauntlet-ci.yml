@@ -55,7 +55,11 @@ jobs:
       # Pass --agentic EXPLICITLY. Without it, a missing, renamed or expired secret — or a
       # fork PR, where secrets are unavailable — silently downgrades to a static run that
       # still exits 0, dropping the heaviest dimension with nothing in the output saying so.
-      # `--agentic` turns that into a hard configuration error (exit 4) instead.
+      # `--agentic` turns that into a hard failure instead: exit 4 when no key is configured
+      # at all (caught before the run starts), exit 3 when a key IS present but the backend
+      # rejects it or errors on every call — a revoked key, an exhausted quota, a bad
+      # base-url. Both are non-zero and neither is 1, so a broken key can never be mistaken
+      # for your server regressing.
       #
       #   - name: Run the gauntlet (with agent)
       #     env:
@@ -76,11 +80,12 @@ jobs:
 #   1  GATE FAILED — a real verdict about your server. The only one that should fail a build
 #      on quality grounds.
 #   2  usage error (a bad flag)
-#   3  could not evaluate — the server did not start, timed out, or the transport failed.
+#   3  could not evaluate — the server did not start, timed out, the transport failed, or
+#      --agentic was requested and the LLM backend errored on every attempt.
 #      Infrastructure, not quality. Treating this as a regression is how a gate earns a
 #      reputation for flaking and gets switched off.
 #   4  configuration error — the invocation asked for something impossible, e.g. --agentic
-#      with no API key.
+#      with no API key configured at all.
 #
 # To retry infrastructure failures without ever masking a real one, branch on the code rather
 # than on pass/fail.

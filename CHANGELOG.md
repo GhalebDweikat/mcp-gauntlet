@@ -52,6 +52,21 @@ dropped, and dropping it dissolved the problem rather than deferring it.
 
 ### Fixed
 
+- **A revoked API key passed the gate.** `--agentic` with a key that exists but is rejected
+  produced **A 98.7, "No high/medium-severity findings", exit 0** — a green check on a run
+  whose four heaviest dimensions never happened, with `not_measured` empty in `report.json`
+  so nothing downstream could tell either. The no-key case was caught before the run
+  started, which is what made this look covered; a *revoked* key is not discoverable until
+  the first API call, and at that point it arrives as an ordinary backend error
+  indistinguishable from a rate limit. An explicitly requested stage that produced no
+  evidence now exits **3**, and the report says what went unmeasured. Without `--agentic`,
+  degrading to a static run remains exit 0 — the user did not ask for the stage.
+- **`--fail-on` was validated after the run, not before it.** A typo (`--fail-on hgih`)
+  connected to the server, generated tasks, paid for a full agentic evaluation and only then
+  reported the mistake — as exit 4, while an unknown flag gave typer's 2. It now fails
+  immediately with **exit 2**, having spent nothing.
+- **`--help` still described the old product.** The first line a user reads said "an agentic
+  evaluation harness for MCP servers" — the tagline this release exists to replace.
 - **The documented CI gate could not fail the project's own malicious fixture.** A HIGH
   security finding caps the overall at 75, and the example gated at `--fail-under 60` — so
   `75 > 60` meant no poisoned server could ever fail it. Eight HIGH tool-poisoning findings,

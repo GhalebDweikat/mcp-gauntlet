@@ -392,6 +392,17 @@ async def evaluate_server(
                 interactions=interactions,
             )
             dimensions.extend(agentic_dims)
+            if agentic_detail.inconclusive:
+                # The stage was configured, attempted, and produced nothing usable — the LLM
+                # backend errored on every repeat. Without this the console printed a warning
+                # while `not_measured` stayed empty, so `report.json` — the file CI actually
+                # parses — asserted full coverage of a run whose four heaviest dimensions
+                # never happened. An expired key looks exactly like a healthy static run.
+                not_measured.append(
+                    "agent evaluation, tool-selection accuracy, tool reliability and response "
+                    "safety (the LLM backend errored on every attempt — bad or expired API "
+                    "key, rate limit, or an unreachable endpoint)"
+                )
         elif llm_config is not None:
             # An LLM was configured but every tool was filtered out as possibly-mutating, so
             # the agent had nothing safe to run. Record that explicitly: otherwise this looks

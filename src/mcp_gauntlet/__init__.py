@@ -1,4 +1,4 @@
-"""mcp-gauntlet: an agentic evaluation harness for MCP servers."""
+"""mcp-gauntlet: a regression suite for your MCP server."""
 
 from importlib.metadata import PackageNotFoundError, version
 

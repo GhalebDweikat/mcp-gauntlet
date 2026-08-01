@@ -61,7 +61,10 @@ _use_utf8_stdio()
 
 app = typer.Typer(
     add_completion=False,
-    help="An agentic evaluation harness for MCP servers.",
+    help=(
+        "A regression suite for your MCP server. "
+        "Catches tool poisoning, definition drift and schema rot in CI."
+    ),
     no_args_is_help=True,
 )
 console = Console()
@@ -94,7 +97,10 @@ def main(
         help="Show the installed mcp-gauntlet version and exit.",
     ),
 ) -> None:
-    """An agentic evaluation harness for MCP servers."""
+    """A regression suite for your MCP server.
+
+    Catches tool poisoning, definition drift and schema rot in CI.
+    """
     load_env()
 
 
@@ -164,6 +170,27 @@ def write_report(
     md_path.write_text(to_markdown(report), encoding="utf-8")
     html_path.write_text(to_html(report), encoding="utf-8")
     return json_path, md_path, html_path
+
+
+def _parse_fail_on(fail_on: str | None) -> Severity | None:
+    """Validate ``--fail-on`` BEFORE any work happens.
+
+    This used to be parsed after the evaluation, so `--fail-on hgih` connected to the
+    server, generated tasks, paid for a full agentic run and only then reported the typo —
+    and reported it as exit 4 (configuration), while an unknown flag gave typer's 2. A
+    misspelled value of a known flag is the same kind of mistake as a misspelled flag, so
+    it now exits 2, immediately, having spent nothing.
+    """
+    if fail_on is None:
+        return None
+    try:
+        return Severity(fail_on.strip().lower())
+    except ValueError:
+        console.print(
+            f"[red]--fail-on {fail_on!r} is not a severity.[/red] "
+            f"Use one of: {', '.join(s.value for s in Severity)}."
+        )
+        raise typer.Exit(code=Exit.USAGE) from None
 
 
 def _render_report(report: GauntletReport, secrets: frozenset[str] = frozenset()) -> None:
@@ -358,6 +385,7 @@ def run(
     ),
 ) -> None:
     """Connect to an MCP server, run the gauntlet, and write a scored report."""
+    threshold = _parse_fail_on(fail_on)
     spec = ServerSpec.parse(server)
     try:
         spec.env = parse_env_args(env, dict(os.environ))
@@ -460,17 +488,25 @@ def run(
         )
     console.print(f"\n[dim]Reports written:[/dim] {json_path} | {md_path} | {html_path}")
 
+    # An agentic run that was ASKED for and could not happen is not a pass. `--agentic` is
+    # the explicit form, and the CI example recommends it precisely so that a broken LLM
+    # backend fails loudly; without this the run exited 0 with a green check while the four
+    # heaviest dimensions never ran. A missing key was already caught up front — an expired
+    # or revoked one is not discovered until the first API call, and that is the case a
+    # long-lived pipeline actually hits. Checked BEFORE the gates: passing a gate on
+    # evidence that was never collected is the failure mode, so it cannot be reported first.
+    if agentic and report.agentic is not None and report.agentic.inconclusive:
+        console.print(
+            "[red]--agentic was requested but the agent evaluation could not run[/red] — "
+            "the LLM backend errored on every attempt (bad or expired API key, rate limit, "
+            "or an unreachable endpoint). The static checks above are real; the agentic "
+            "dimensions are missing, so this run is not a pass."
+        )
+        raise typer.Exit(code=Exit.UNEVALUABLE)
+
     # Both gates are checked, and either can fail the build. `--fail-on` first, because it is
     # the one that says WHAT was wrong rather than only that a number moved.
-    if fail_on is not None:
-        try:
-            threshold = Severity(fail_on.strip().lower())
-        except ValueError:
-            console.print(
-                f"[red]--fail-on {fail_on!r} is not a severity.[/red] "
-                f"Use one of: {', '.join(s.value for s in Severity)}."
-            )
-            raise typer.Exit(code=Exit.CONFIG) from None
+    if threshold is not None:
         triggering = findings_at_or_above(report, threshold)
         if triggering:
             worst = sort_findings(triggering)[0]  # already orders severity-first
@@ -526,16 +562,7 @@ def scan(
     and between releases, which is survivable when watching one server over time and is not
     survivable in a sorted public table.
     """
-    threshold: Severity | None = None
-    if fail_on is not None:
-        try:
-            threshold = Severity(fail_on.strip().lower())
-        except ValueError:
-            console.print(
-                f"[red]--fail-on {fail_on!r} is not a severity.[/red] "
-                f"Use one of: {', '.join(s.value for s in Severity)}."
-            )
-            raise typer.Exit(code=Exit.CONFIG) from None
+    threshold = _parse_fail_on(fail_on)
 
     try:
         entries = load_servers(servers)

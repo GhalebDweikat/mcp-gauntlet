@@ -13,10 +13,18 @@ found goes with it. So the distinction is now in the exit code itself:
     0   the run completed and the gate passed
     1   the run completed and the GATE FAILED — a real verdict about the server
     2   command-line usage error (typer's own, unchanged)
-    3   the evaluation could not run: the server did not start, timed out, or the
-        transport failed. NOT a verdict about quality; retry or fix the environment
+    3   the evaluation could not run: the server did not start, timed out, the transport
+        failed, or `--agentic` was asked for and the LLM backend errored on every attempt.
+        NOT a verdict about quality; retry or fix the environment
     4   configuration error: something the invocation asked for is impossible, e.g.
-        `--agentic` with no API key, or an `--out` directory that cannot be written
+        `--agentic` with no API key configured at all, or an `--out` directory that cannot
+        be written
+
+The split between 3 and 4 for a broken LLM key is about WHEN it is discoverable, not about
+whose fault it is: no key at all is caught before the run starts, so it is configuration; a
+key that exists but is revoked, exhausted or pointed at the wrong endpoint is not discovered
+until the first API call, so it lands with the other mid-run failures. Both are non-zero and
+neither is 1, which is the property a gate actually needs.
 
 Only 1 should ever fail a build on quality grounds. A CI job that treats 3 as a failing
 gate is reporting infrastructure noise as a regression, which is the specific way these

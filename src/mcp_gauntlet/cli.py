@@ -20,6 +20,7 @@ from mcp_gauntlet.config import ServerSpec, TransportKind, parse_env_args, parse
 from mcp_gauntlet.engine import evaluate_server
 from mcp_gauntlet.env import load_env
 from mcp_gauntlet.errors import describe
+from mcp_gauntlet.exits import EXIT_CODE_HELP, Exit
 from mcp_gauntlet.htmlreport import to_html
 from mcp_gauntlet.leaderboard import ServerListError, load_servers, rerender, run_leaderboard
 from mcp_gauntlet.llm import LLMConfig, LLMConfigError, list_models
@@ -27,6 +28,7 @@ from mcp_gauntlet.report import (
     GauntletReport,
     Severity,
     cap_note,
+    findings_at_or_above,
     interaction_note,
     redact,
     redact_report,
@@ -329,7 +331,16 @@ def run(
     fail_under: float | None = typer.Option(
         None,
         "--fail-under",
-        help="Exit non-zero if the overall score is below this value (for CI).",
+        help="Fail if the overall score is below this value. Prefer --fail-on: a score "
+        "threshold has to be re-baselined whenever scoring changes, and the security cap "
+        "puts a poisoned server ABOVE a low threshold. " + EXIT_CODE_HELP,
+    ),
+    fail_on: str | None = typer.Option(
+        None,
+        "--fail-on",
+        help="Fail if any finding is at or above this severity: high, medium, low, or info. "
+        "This is the gate to use in CI — it keys on what was actually found rather than on "
+        "a number, so it does not drift when scoring changes.",
     ),
     timeout: float = typer.Option(
         900.0,
@@ -350,7 +361,7 @@ def run(
         spec.headers = parse_header_args(header)
     except ValueError as exc:
         console.print(f"[red]Invalid credential option:[/red] {escape(str(exc))}")
-        raise typer.Exit(code=1) from exc
+        raise typer.Exit(code=Exit.CONFIG) from exc
     if spec.env and spec.kind is not TransportKind.STDIO:
         console.print("[yellow]⚠ --env applies to stdio servers only; ignored for a URL.[/yellow]")
     if spec.headers and spec.kind is TransportKind.STDIO:
@@ -372,7 +383,7 @@ def run(
             )
         except LLMConfigError as exc:
             console.print(f"[red]--agentic requested but no LLM is configured:[/red] {exc}")
-            raise typer.Exit(code=1) from exc
+            raise typer.Exit(code=Exit.CONFIG) from exc
 
     console.print(f"[bold]Evaluating[/bold] {spec.label()} ([cyan]{spec.kind.value}[/cyan]) ...")
     if llm_config is not None:
@@ -418,14 +429,18 @@ def run(
             f"[red]Evaluation timed out[/red] after {timeout:.0f}s "
             "(raise or disable it with --timeout)."
         )
-        raise typer.Exit(code=1) from exc
+        # Exit 3, not 1: a wall-clock timeout says nothing about the server's quality,
+        # and a gate that reads it as a regression gets switched off after one flake.
+        raise typer.Exit(code=Exit.UNEVALUABLE) from exc
     except Exception as exc:  # noqa: BLE001 - surface any connection/eval failure
         # A connection/DSN error can echo a credential (e.g. a Postgres URI with the
         # password); redact before it reaches the terminal or a CI log.
         console.print(
             f"[red]Evaluation failed:[/red] {escape(redact(describe(exc, 400), secrets))}"
         )
-        raise typer.Exit(code=1) from exc
+        # The server did not start, the transport broke, the URL was wrong. Infra, not
+        # quality — and no report.json is written, which used to be the only way to tell.
+        raise typer.Exit(code=Exit.UNEVALUABLE) from exc
 
     # Persist BEFORE rendering: a console-rendering glitch (unencodable glyph on a legacy
     # code page, stray markup from a hostile server name) must never discard the report of
@@ -442,11 +457,31 @@ def run(
         )
     console.print(f"\n[dim]Reports written:[/dim] {json_path} | {md_path} | {html_path}")
 
+    # Both gates are checked, and either can fail the build. `--fail-on` first, because it is
+    # the one that says WHAT was wrong rather than only that a number moved.
+    if fail_on is not None:
+        try:
+            threshold = Severity(fail_on.strip().lower())
+        except ValueError:
+            console.print(
+                f"[red]--fail-on {fail_on!r} is not a severity.[/red] "
+                f"Use one of: {', '.join(s.value for s in Severity)}."
+            )
+            raise typer.Exit(code=Exit.CONFIG) from None
+        triggering = findings_at_or_above(report, threshold)
+        if triggering:
+            worst = sort_findings(triggering)[0]  # already orders severity-first
+            console.print(
+                f"[red]{len(triggering)} finding(s) at or above {threshold.value}[/red] — "
+                f"worst: {escape(redact(worst.message, secrets))}"
+            )
+            raise typer.Exit(code=Exit.GATE_FAILED)
+
     if fail_under is not None and report.overall_score < fail_under:
         console.print(
             f"[red]Overall score {report.overall_score:.1f} is below threshold {fail_under}.[/red]"
         )
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=Exit.GATE_FAILED)
 
 
 @app.command()

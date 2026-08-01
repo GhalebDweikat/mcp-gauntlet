@@ -1,8 +1,18 @@
-# Example: gate your MCP server's pull requests on its mcp-gauntlet score.
+# Example: run mcp-gauntlet against YOUR MCP server on every pull request.
 #
-# Copy this file into YOUR MCP server's repository as
-# `.github/workflows/gauntlet.yml`, then change the `run:` command below to
-# launch your server. The build fails when the score drops below --fail-under.
+# Copy this into your server's repository as `.github/workflows/gauntlet.yml` and change the
+# `run:` command to launch your server.
+#
+# This is a regression suite, not a grader. It fails the build on what it FOUND — a severity
+# — rather than on a score. That distinction was learned the hard way:
+#
+#   * The previous version of this file gated on `--fail-under 60`. A HIGH security finding
+#     caps the overall score at 75, and 75 > 60, so NO server with a tool-poisoning finding
+#     could ever fail this gate. A platform engineer testing it found the bundled malicious
+#     fixture — eight HIGH findings — returning exit 0.
+#   * A score threshold also has to be re-baselined whenever scoring changes. One release
+#     moved a fixture 14.8 points, so a pinned number quietly meant something different after
+#     an upgrade. A severity gate does not drift that way.
 name: mcp-gauntlet
 
 on:
@@ -19,31 +29,58 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v3
 
-      # Static + robustness checks — no API key required. Replace the server
-      # command with however your server launches (e.g. "python -m your_server",
-      # "node dist/index.js", "npx -y your-package"). The gauntlet version is pinned
-      # (mcp-gauntlet@x.y.z) so a new release can't silently change your gate — bump it
-      # deliberately.
+      # Unpinned, so you track the latest release and pick up new checks as they land. That
+      # is the right default for a severity gate: what fails is a finding you can read, not a
+      # number that moved. If you need a frozen verdict — an audit trail, a release gate —
+      # pin it (`mcp-gauntlet@1.2.3`) and bump deliberately.
+      #
+      # Replace the server command with however yours launches. NOTE on the interpreter:
+      # `uvx` puts its own environment first on PATH, so a bare `python -m your_server` runs
+      # under the GAUNTLET's interpreter, which does not have your server's dependencies. Use
+      # an absolute path to your venv's python, or a launcher that does not rely on PATH.
+      #
+      # --fail-on high     tool poisoning, injection markers, hidden characters
+      # --fail-on medium   also stdout pollution, weak descriptions, definition drift
+      # --fail-on low      also undescribed parameters — a strict hygiene gate
       - name: Run the gauntlet
         run: >
-          uvx mcp-gauntlet@0.7.0 run "npx -y @modelcontextprotocol/server-everything"
-          --no-agentic --fail-under 60 --out gauntlet-report
+          uvx mcp-gauntlet run "npx -y @modelcontextprotocol/server-everything"
+          --no-agentic --fail-on high --out gauntlet-report
 
       # ── Optional: the full agentic evaluation ────────────────────────────────
       # Add a repository secret with an LLM key (a free Groq key works:
-      # https://console.groq.com/keys), then use this step instead of the one
-      # above — drop --no-agentic so a live agent attempts real tasks:
+      # https://console.groq.com/keys) and drop --no-agentic so a live agent attempts real
+      # tasks against your server.
+      #
+      # Pass --agentic EXPLICITLY. Without it, a missing, renamed or expired secret — or a
+      # fork PR, where secrets are unavailable — silently downgrades to a static run that
+      # still exits 0, dropping the heaviest dimension with nothing in the output saying so.
+      # `--agentic` turns that into a hard configuration error (exit 4) instead.
       #
       #   - name: Run the gauntlet (with agent)
       #     env:
       #       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       #     run: >
-      #       uvx mcp-gauntlet@0.7.0 run "npx -y your-package"
-      #       --fail-under 70 --repeats 3 --out gauntlet-report
+      #       uvx mcp-gauntlet run "npx -y your-package"
+      #       --agentic --fail-on high --repeats 3 --out gauntlet-report
 
       - name: Upload report
-        if: always() # keep the report even when the gate fails
+        if: always() # keep the report even when the gate fails — it says WHAT failed
         uses: actions/upload-artifact@v4
         with:
           name: gauntlet-report
           path: gauntlet-report/
+# Exit codes, so your pipeline can tell a regression from a bad day:
+#
+#   0  passed
+#   1  GATE FAILED — a real verdict about your server. The only one that should fail a build
+#      on quality grounds.
+#   2  usage error (a bad flag)
+#   3  could not evaluate — the server did not start, timed out, or the transport failed.
+#      Infrastructure, not quality. Treating this as a regression is how a gate earns a
+#      reputation for flaking and gets switched off.
+#   4  configuration error — the invocation asked for something impossible, e.g. --agentic
+#      with no API key.
+#
+# To retry infrastructure failures without ever masking a real one, branch on the code rather
+# than on pass/fail.

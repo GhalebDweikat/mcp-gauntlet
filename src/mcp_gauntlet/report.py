@@ -626,3 +626,25 @@ def to_markdown(report: GauntletReport) -> str:
         lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"
+
+
+def findings_at_or_above(report: GauntletReport, threshold: Severity) -> list[Finding]:
+    """Every finding in the report at or above ``threshold``, across all dimensions.
+
+    The basis for `--fail-on`, which exists because gating on a SCORE turned out not to
+    work. Two reasons, both measured. The security cap pins a poisoned server at 75, so a
+    documented `--fail-under 60` gate could never fail one — the cap acted as a floor for the
+    gate rather than a ceiling on the grade. And a threshold has to be re-baselined whenever
+    scoring changes: one release moved a fixture 14.8 points, so a pinned number silently
+    means something different after an upgrade.
+
+    A severity gate has neither problem. It keys on what was actually found, which is the
+    part of this tool that has held up, and it says what was wrong rather than only that a
+    number moved.
+    """
+    return [
+        finding
+        for dimension in report.dimensions
+        for finding in dimension.findings
+        if _SEVERITY_ORDER[finding.severity] <= _SEVERITY_ORDER[threshold]
+    ]

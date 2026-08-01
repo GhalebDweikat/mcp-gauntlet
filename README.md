@@ -232,22 +232,45 @@ static + robustness checks alone.
 
 ## Use it in CI
 
-Gate your MCP server's pull requests on its gauntlet score. Copy
-[`examples/gauntlet-ci.yml`](examples/gauntlet-ci.yml) into your server's repo as
-`.github/workflows/gauntlet.yml`, point it at your server, and the build fails
-when the score drops below your threshold:
+This is where the tool earns its keep: a regression suite for your own MCP server, run on
+every pull request. Copy [`examples/gauntlet-ci.yml`](examples/gauntlet-ci.yml) into your
+repo as `.github/workflows/gauntlet.yml`, point it at your server, and the build fails on
+what it **found**:
 
 ```yaml
 - name: Run the gauntlet
-  run: uvx mcp-gauntlet@0.8.1 run "python -m your_server" --no-agentic --fail-under 60
+  run: uvx mcp-gauntlet run "python -m your_server" --no-agentic --fail-on high
 ```
 
-Pin the version, as above: an unpinned `uvx mcp-gauntlet` would let a new release move
-your gate without a commit.
+**Gate on a severity, not a score.** `--fail-on high` fails the build when a HIGH finding
+exists — tool poisoning, injection markers, hidden characters. `medium` also catches stdout
+pollution, weak descriptions and definition drift; `low` adds undescribed parameters.
 
-The static + robustness checks need no API key. To include the live agent
-evaluation, add an LLM key (e.g. `GROQ_API_KEY`) as a repository secret and drop
-`--no-agentic`. The report is uploaded as a build artifact.
+`--fail-under` still exists, and is the weaker choice. A HIGH security finding caps the
+overall score at 75, so a `--fail-under 60` gate — which this README used to recommend —
+**could never fail a poisoned server**: the cap acted as a floor for the gate. A score
+threshold also needs re-baselining whenever scoring changes. A severity gate has neither
+problem, which is why the example is unpinned: what fails is a finding you can read, not a
+number that moved. Pin it if you need a frozen verdict.
+
+### Exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | Passed |
+| `1` | **Gate failed** — a verdict about your server. The only one that should fail a build on quality grounds. |
+| `2` | Usage error (bad flag) |
+| `3` | **Could not evaluate** — the server didn't start, timed out, or the transport failed. Infrastructure, not quality. |
+| `4` | Configuration error — e.g. `--agentic` with no API key |
+
+`3` is separated deliberately. A gate that reports a flaky runner as a quality regression
+gets switched off within a week, and everything it would have caught goes with it.
+
+The static + robustness checks need no API key. To include the live agent evaluation, add an
+LLM key (e.g. `GROQ_API_KEY`) as a repository secret and pass `--agentic` **explicitly** —
+without it, a missing or expired secret silently downgrades to a static run that still exits
+0, dropping the heaviest dimension with nothing saying so. The report is uploaded as a build
+artifact.
 
 ## Development
 

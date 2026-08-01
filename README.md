@@ -34,6 +34,31 @@ mcp-gauntlet run "npx -y @modelcontextprotocol/server-everything"
 
 A `.env` file in the working directory is read too, if you prefer that to an export.
 
+### Pointing it at your own server
+
+This is the case the tool exists for, so it is worth being explicit. Give the **interpreter**
+that has your server's dependencies, not a bare `python`:
+
+```bash
+# A Python server in a virtualenv — use the venv's interpreter explicitly
+mcp-gauntlet run "/path/to/proj/.venv/bin/python -m my_server" --no-agentic
+mcp-gauntlet run "C:\path\to\proj\.venv\Scripts\python.exe -m my_server" --no-agentic
+
+# Node
+mcp-gauntlet run "node /path/to/proj/dist/index.js" --no-agentic
+
+# A remote server, with auth
+mcp-gauntlet run "https://mcp.example.com" --header "Authorization: Bearer $TOKEN"
+```
+
+Two things that bite people, both worth knowing before they cost you a debugging cycle:
+
+- **A bare `python` is not your `python`.** Under `uvx`, the gauntlet's own environment comes
+  first on `PATH`, so `python -m my_server` runs under *its* interpreter — which does not
+  have your server's dependencies and fails with an import error that looks like your bug.
+- **Relative paths resolve from wherever you ran the command**, not from your server's
+  directory. Absolute paths avoid the whole question.
+
 The LLM backend is provider-agnostic — any OpenAI-compatible endpoint (Groq by
 default; also OpenRouter, Together, or a local Ollama / vLLM). Transient 429/5xx
 responses are retried with bounded backoff, so a free-tier rate limit costs a

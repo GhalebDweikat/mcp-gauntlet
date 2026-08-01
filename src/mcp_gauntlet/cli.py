@@ -317,8 +317,11 @@ def run(
     track_drift: bool = typer.Option(
         True,
         "--track-drift/--no-track-drift",
-        help="Record the server's tool definitions and compare them against the last run, "
-        "to catch a server that redefines its tools after you approved them.",
+        help="Record this run's tool definitions and compare them against the LAST run, "
+        "to catch a server that redefines its tools after you approved them. Needs a "
+        "writable directory and a previous run, so CI often has neither. The "
+        "WITHIN-SESSION check (tools/list asked twice, anything changed re-scanned) "
+        "always runs and is not affected by this flag.",
     ),
     tasks_file: Path | None = typer.Option(
         None,

@@ -202,12 +202,24 @@ async def _check_definition_drift(
 ) -> list[Finding]:
     """Compare the tool surface against itself and against the last run.
 
-    Both halves are best-effort: a server that fails the second ``tools/list`` should not
-    lose its evaluation over a check that is looking for an anomaly, and a baseline that
-    can't be written (read-only checkout, CI sandbox) must not either.
+    Two checks, and only the second one is optional.
+
+    **Within the session** ``tools/list`` is asked twice and anything that changed is
+    re-scanned. That is a LIVE attack detector: a server can serve a clean first listing and
+    a poisoned second one, and nothing else in the run would look at the second. It needs no
+    stored state, so it always runs — ``--no-track-drift`` used to disable it too, which took
+    a server serving exactly that attack from a capped C to **A 100.0 with zero findings**
+    and nothing in the report saying a check had been turned off. The flag's own help only
+    ever described the other half.
+
+    **Across runs** the surface is fingerprinted and compared against a stored baseline.
+    That one needs a writable directory and a previous run, so it is what ``track`` governs
+    — and a CI runner legitimately has neither.
+
+    Both are best-effort: a server that fails the second ``tools/list`` must not lose its
+    evaluation over a check looking for an anomaly, and a baseline that cannot be written
+    (read-only checkout, CI sandbox) must not either.
     """
-    if not track:
-        return []
     findings: list[Finding] = []
     try:
         second = await discover_in_session(session, init)
@@ -240,6 +252,18 @@ async def _check_definition_drift(
                 findings.append(
                     finding.model_copy(update={"message": f"second tools/list: {finding.message}"})
                 )
+
+    if not track:
+        # Say it, rather than returning a shorter list that reads as a clean bill. The
+        # within-session half above still ran; this is only the cross-run comparison.
+        findings.append(
+            Finding(
+                severity=Severity.INFO,
+                message="cross-run definition drift was not checked (--no-track-drift), so a "
+                "change since the last run would not have been reported",
+            )
+        )
+        return findings
 
     path = baseline_file(baseline_dir, spec_key(spec.label()))
     try:

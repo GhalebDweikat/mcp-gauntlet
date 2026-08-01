@@ -12,6 +12,7 @@ import shutil
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from mcp import ClientSession, StdioServerParameters, types
@@ -170,9 +171,28 @@ def _resolve_command(command: str | None) -> str:
     if not command:
         raise MCPConnectionError("stdio server spec has no command")
     resolved = shutil.which(command)
-    if resolved is None:
-        raise MCPConnectionError(f"command not found on PATH: {command!r}")
-    return resolved
+    if resolved is not None:
+        return resolved
+
+    # Say WHICH thing was not found, and where we looked. A user pointing at their own
+    # server in a virtualenv — the commonest way this tool is used — got
+    # `FileNotFoundError: [WinError 2] The system cannot find the file specified`, which
+    # names no file at all: is it the interpreter, the script, something the script imports?
+    # One tester burned a cycle guessing. The distinction below is the one that resolves it,
+    # because the two cases have completely different fixes.
+    looks_like_a_path = any(sep in command for sep in ("/", "\\")) or Path(command).suffix
+    if looks_like_a_path:
+        raise MCPConnectionError(
+            f"no such executable: {command!r} (resolved from {Path.cwd()}). "
+            "A relative path is taken from the directory you ran mcp-gauntlet in, not from "
+            "the server's own directory — an absolute path is usually what you want here."
+        )
+    raise MCPConnectionError(
+        f"command not found on PATH: {command!r}. If this is your own server, give the "
+        "interpreter explicitly — a bare `python` resolves to whichever one is first on "
+        "PATH, which under `uvx` is the gauntlet's own and does not have your server's "
+        "dependencies installed."
+    )
 
 
 @asynccontextmanager

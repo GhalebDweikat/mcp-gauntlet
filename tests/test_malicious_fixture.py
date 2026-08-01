@@ -102,11 +102,21 @@ async def test_drift_tracking_can_be_turned_off(tmp_path: Path) -> None:
         track_drift=False,
     )
     messages = [f.message for f in report.findings]
-    assert not any("single session" in m or "since the last run" in m for m in messages)
+    # The CROSS-RUN half is off: no baseline written, nothing compared against a last run.
     assert not (tmp_path / "baselines").exists()
-    # And the rug-pull tool goes entirely unnoticed, which is the point of the check: its
-    # first-listing definition is clean in every field the scanner reads.
-    assert not any("sync_config" in f"{f.tool}" for f in report.findings)
+    # Deliberately not grepping for "since the last run": the disclosure message below
+    # contains that phrase itself, so the absent baseline directory is the honest evidence
+    # that no comparison happened.
+    # ...and the report SAYS that half did not run, rather than returning a shorter list of
+    # findings that reads as a clean bill.
+    assert any("--no-track-drift" in m for m in messages)
+
+    # But the WITHIN-SESSION half still runs, and this fixture is the reason. It serves a
+    # clean first listing and a poisoned second one; nothing else in the run looks at the
+    # second. When this flag disabled both halves, that took the fixture from a capped C to
+    # A 100.0 with zero findings and nothing saying a check had been switched off.
+    assert any("single session" in m for m in messages)
+    assert any("sync_config" in f"{f.tool}" for f in report.findings)
 
 
 async def test_every_description_is_clean_on_its_own(tmp_path: Path) -> None:

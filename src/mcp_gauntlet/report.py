@@ -13,7 +13,7 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from mcp_gauntlet.models import ServerInfo
 
@@ -236,6 +236,34 @@ class GauntletReport(BaseModel):
     # The agentic dimensions were the only absence the report ever disclosed. Everything else
     # was silent, and silence always moved the score the same direction: up.
     not_measured: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _enforce_the_cap_from_the_findings(self) -> GauntletReport:
+        """Re-derive the critical flag and the cap from the dimensions, on every construction.
+
+        The cap used to be applied once, in `build()`, and then carried as a stored boolean.
+        Every other path trusted it — and `leaderboard.load_results` rebuilds a report
+        straight from saved JSON with `GauntletReport(**raw)`, where `security_critical`
+        simply defaults to False and the score and grade are taken verbatim.
+
+        So a saved report carrying a HIGH security finding without the flag published at
+        **B / 78.8** against a cap of 75, with the board's own linked page listing the
+        tool-poisoning finding underneath. Board and report disagreeing, and the board is the
+        surface people read. Reachable from an older version's saved JSON, a partially
+        restored file, or any future writer that does not go through `build()`.
+
+        Deriving it here instead means the finding is the single source of truth and the flag
+        cannot drift from it. Idempotent, so `build()` applying the cap first changes nothing.
+        """
+        critical = _has_critical_security(self.dimensions)
+        if self.security_critical != critical:
+            self.security_critical = critical
+        # Never touch an N/A report: it kept its security findings but, exposing no tools, was
+        # never scored — clamping a score that does not exist would invent a grade for it.
+        if critical and self.grade != "N/A" and self.overall_score > GRADE_CAP_ON_CRITICAL:
+            self.overall_score = GRADE_CAP_ON_CRITICAL
+            self.grade = grade_for(GRADE_CAP_ON_CRITICAL)
+        return self
 
     @classmethod
     def build(

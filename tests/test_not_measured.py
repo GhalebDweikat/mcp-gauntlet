@@ -16,7 +16,15 @@ Two concrete cases motivated this:
 
 from mcp_gauntlet.htmlreport import to_html
 from mcp_gauntlet.models import ServerInfo
-from mcp_gauntlet.report import DimensionResult, GauntletReport, to_markdown
+from mcp_gauntlet.report import (
+    GRADE_CAP_ON_CRITICAL,
+    Dim,
+    DimensionResult,
+    Finding,
+    GauntletReport,
+    Severity,
+    to_markdown,
+)
 
 
 def _report(**kwargs: object) -> GauntletReport:
@@ -75,3 +83,77 @@ def test_a_fully_measured_report_says_nothing_extra() -> None:
     markdown = to_markdown(_report())
     assert "Not measured" not in markdown
     assert "Not scored" not in markdown
+
+
+# ------------------------------------------------- the cap is a fact, not a stored boolean
+
+
+def _security_dim(severity: Severity) -> DimensionResult:
+    return DimensionResult(
+        key=Dim.SECURITY,
+        title="Security Signals",
+        weight=2.0,
+        score=60.0,
+        findings=[Finding(tool="t", severity=severity, message="tool-poisoning in description")],
+    )
+
+
+def _saved_report(**overrides: object) -> dict[str, object]:
+    """What `leaderboard.load_results` feeds to `GauntletReport(**raw)` from disk."""
+    return {
+        "spec": "stdio: srv",
+        "server": {"name": "srv", "version": "1"},
+        "tool_count": 2,
+        "dimensions": [
+            _security_dim(Severity.HIGH).model_dump(),
+            {"key": "schema_health", "title": "S", "weight": 1.0, "score": 100.0},
+        ],
+        "overall_score": 78.8,
+        "grade": "B",
+        "generated_at": "2026-08-01T00:00:00+00:00",
+        **overrides,
+    }
+
+
+def test_a_saved_report_cannot_publish_above_the_cap() -> None:
+    """The cap was applied once in build() and then carried as a stored boolean.
+
+    `load_results` rebuilds from saved JSON with `GauntletReport(**raw)`, where
+    `security_critical` defaults to False and the score and grade are taken verbatim. A
+    report carrying a HIGH security finding without the flag published at B / 78.8 against a
+    cap of 75 — with the board's own linked page listing the tool-poisoning finding
+    underneath. The board is the surface people read.
+    """
+    report = GauntletReport(**_saved_report())  # type: ignore[arg-type]
+    assert report.security_critical is True
+    assert report.overall_score == GRADE_CAP_ON_CRITICAL
+    assert report.grade == "C"
+
+
+def test_a_clean_report_is_left_alone() -> None:
+    raw = _saved_report(
+        dimensions=[{"key": "schema_health", "title": "S", "weight": 1.0, "score": 98.8}]
+    )
+    report = GauntletReport(**raw)  # type: ignore[arg-type]
+    assert report.security_critical is False
+    assert report.overall_score == 78.8  # untouched
+
+
+def test_a_medium_security_finding_does_not_cap() -> None:
+    # Only near-certain signals cap; the re-derivation must not widen what counts.
+    raw = _saved_report(
+        dimensions=[_security_dim(Severity.MEDIUM).model_dump()],
+    )
+    report = GauntletReport(**raw)  # type: ignore[arg-type]
+    assert report.security_critical is False
+    assert report.overall_score == 78.8
+
+
+def test_an_unscored_report_is_not_given_a_grade_by_the_cap() -> None:
+    # An N/A report keeps its security findings but was never scored. Clamping a score that
+    # does not exist would invent a grade for a server nothing measured.
+    raw = _saved_report(grade="N/A", overall_score=0.0)
+    report = GauntletReport(**raw)  # type: ignore[arg-type]
+    assert report.security_critical is True
+    assert report.grade == "N/A"
+    assert report.overall_score == 0.0

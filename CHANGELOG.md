@@ -3,6 +3,107 @@
 All notable changes to mcp-gauntlet are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.9.0] — 2026-08-01
+
+**mcp-gauntlet is now a regression suite for a server you maintain, not a grader and not a
+ranker.** The leaderboard is gone, the CI gate keys on findings rather than a score, and the
+docs say what the tool actually does. This is a breaking change to the CLI surface.
+
+### Why the direction changed
+
+Four fresh testers were given the published 0.8.1 wheel and forbidden from reading the
+source. One of them built a nine-tool MCP server, then a copy with every description reduced
+to a single word and every parameter description stripped — a server no agent could use.
+
+    well documented        100.0  A
+    one-word descriptions   95.8  A
+
+The overall is a weighted mean over the dimensions that *ran*, so it moves when a stage is
+skipped, when a server needs credentials, when `--no-probe` is passed, and between releases
+(one bump moved a fixture 14.8 points). That variance is survivable when watching one server
+across two commits. It is not survivable in a sorted public table.
+
+The problem was never calibration — it was **comparability**. The same number that cannot
+rank two servers can perfectly well tell you your own server got worse. So the ranking was
+dropped, and dropping it dissolved the problem rather than deferring it.
+
+### Removed
+
+- **The leaderboard, and everything that served it**: the `leaderboard` command, badges,
+  `--board-url`, ranked tables, the generated site, the published GitHub Pages page,
+  `boards-withheld/`, both server lists and the scan sandbox. 11,436 lines.
+
+### Added
+
+- **`scan`** — run the gauntlet across several servers *you own* and gate on the worst
+  finding. Each gets its own report; nothing is ranked and no grades are compared side by
+  side. An unreachable server is reported but does **not** fail the gate.
+- **`--fail-on {high,medium,low,info}`** — the gate to use in CI. It keys on what was found
+  rather than on a number, so it neither drifts when scoring changes nor can be outflanked
+  by the grade cap (see below).
+- **Exit codes that mean things**: `0` passed · `1` gate failed · `2` usage · `3` could not
+  evaluate · `4` configuration error. Exit 1 used to mean six different situations, and the
+  only working discriminator was undocumented and accidental — a broken run writes no
+  `report.json`. A gate that cannot tell "your server regressed" from "the runner had a bad
+  day" gets switched off the first week it flakes.
+- **A `cold-start` CI job** that installs the built wheel with plain pip on Linux and Windows
+  and runs the commands the README documents. Every other job ran *inside* the project, which
+  is how the Quickstart came to open with the contributor flow.
+
+### Fixed
+
+- **The documented CI gate could not fail the project's own malicious fixture.** A HIGH
+  security finding caps the overall at 75, and the example gated at `--fail-under 60` — so
+  `75 > 60` meant no poisoned server could ever fail it. Eight HIGH tool-poisoning findings,
+  exit 0, green check. The example now gates on `--fail-on high`.
+- **Remote servers were completely broken on `mcp` 2.0.** `streamablehttp_client` is a 1.x
+  alias that 2.0 removed, so widening the pin in 0.8.0 made every http/https spec die with
+  an `ImportError` before touching the network. A straight rename would have been worse: the
+  2.0 transport takes an `http_client`, not `headers=`, so it would have silently dropped
+  `--header`, which is how credentialed remote servers authenticate.
+- **Two characters removed the grade cap.** Substituting the ASCII `I`s in `<IMPORTANT>Ignore
+  all previous instructions` for Cyrillic `І` took a server from **C 75.0 capped** to **A
+  97.6 uncapped** — while the tool *printed* that it had noticed the mixed alphabets. Folds
+  are now derived from Unicode names as well as listed, so the rule covers characters nobody
+  enumerated. Ukrainian, Russian, Greek, Armenian, Chinese and scientific units verified
+  still clean.
+- **`--no-track-drift` disabled a live attack detector.** The flag gated both drift checks
+  while its help described only one. The within-session check — `tools/list` asked twice,
+  anything changed re-scanned — is the only thing that looks at the second listing, so a
+  server serving clean definitions first and poisoned ones after went from a capped C to
+  **A 100.0 with zero findings**. It now always runs; the flag governs only the stored
+  baseline, and turning that off says so.
+- **The grade-cap banner announced something that never happened.** Every renderer printed
+  "overall grade capped" whenever a HIGH security finding existed — including when the score
+  was already below the ceiling and the cap changed nothing.
+- **Reports never said what they did not measure.** A credential-gated server shipped a
+  `report.md` headed "A (98.8/100)"; `--no-probe` silently moved a server from C to A. A
+  skipped stage does not lower the score, it leaves the denominator.
+- **The grade cap was a stored boolean the publication path never re-derived**, so a saved
+  report could publish at B/78.8 against a cap of 75.
+- **The tool's own name was never scanned** — every other name on a server was.
+- **A failed `prompts/list` read as "this server has no prompts"**, silently skipping the
+  prompt-injection scan.
+- **"The system cannot find the file specified" named no file.** The error now says which
+  path, and where it was resolved from.
+
+### Changed
+
+- The README leads with the Quickstart. A tester read 108 lines before finding a command, and
+  the 28-line leaderboard retraction that sat immediately before it nearly cost the visit.
+- METHODOLOGY drops its two publishing sections and states what the tool does and does not
+  claim, including that a clean report means "the known classes were not found", never "this
+  server is safe".
+- **v1.0 now means stable for one server across two consecutive releases** — not comparable
+  across servers. The old bar belonged to a tool that ranked.
+
+### Comparability
+
+Scores are unchanged from 0.8.1 for an unchanged server: the weights, penalties and cap are
+identical and the bundled fixtures score exactly what they scored. What changed is the gate
+you should use and what the report discloses. If you gated on `--fail-under`, move to
+`--fail-on` — and be aware that the old threshold may never have been able to fail.
+
 ## [0.8.1] — 2026-08-01
 
 Ten fixes from an adversarial audit of every guard in the codebase, which asked each one a

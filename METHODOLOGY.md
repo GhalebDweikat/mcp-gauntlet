@@ -183,6 +183,29 @@ a credential-gated server, a listing that failed — the report says so under *N
 because a skipped dimension does not lower the score, it leaves the denominator and raises
 it.
 
+## What v1.0 means here
+
+The bar used to be about publishing: scoring comparable across servers, provenance on every
+published row, and a disclosure process exercised before naming anyone. That bar belonged to
+a tool that ranked other people's servers, and it was a hard problem — cross-server
+comparability was never achieved and, on the evidence, was not going to be.
+
+For a regression suite the bar is different, weaker, and actually reachable:
+
+1. **Stable for one server across two consecutive releases.** Upgrading the tool must not
+   change the verdict on an unchanged server. Enforced by a recorded snapshot of every
+   bundled fixture's full report and per-tool drift fingerprints, which fails on any
+   movement rather than on a threshold.
+2. **Every check documented** — what it looks at, what a finding means, and what to do about
+   it. A finding you cannot act on is a false positive with extra steps.
+3. **No new false-positive class** found in that window. Adversarial testing against honest
+   servers, including non-English ones, is part of the release rather than a follow-up.
+4. **The gate is severity-based and its exit codes are a contract.** A quality failure and an
+   infrastructure failure must never share an exit code.
+
+Note what is absent: nothing about ranking, nothing about comparing two servers, nothing
+about publishing. Those were dropped rather than deferred.
+
 ## Safety when evaluating
 
 - **Read-only by default.** Tools that look mutating — by name, description, or a

@@ -262,13 +262,26 @@ instead. Loud in the report, never loud in the process.
 
 ## Where this leaves the tool
 
-The leaderboards are down, deliberately, and the reasoning is
-[published in their place](https://ghalebdweikat.github.io/mcp-gauntlet/). Publishing scores
-about named third parties is the highest-stakes thing this project does, my methodology document
-promises those servers advance notice before they appear with a low score, and that notice was
-never sent. They come back at v1.0: scoring stable across two consecutive releases with no new
-false-positive class found, provenance recorded on every row, and the disclosure process actually
-exercised first.
+**The leaderboards are gone — not withheld, deleted.** They came down first because
+publishing scores about named third parties is the highest-stakes thing this project did, and
+because my own methodology document promised those servers advance notice that was never sent.
+I expected to bring them back once scoring settled.
+
+Then fresh testers measured why scoring would never settle enough. Handed a nine-tool server
+and a copy of it with every description reduced to a single word — genuinely unusable by any
+agent — the tool scored them **100.0** and **95.8**. Both an A. The overall is a weighted mean
+over the dimensions that *ran*, so it moves when a stage is skipped, when a server needs
+credentials, when probing is off, and between releases; one version bump moved a fixture 14.8
+points.
+
+That variance is survivable when you watch one server across two commits. It is not survivable
+in a sorted public table, and no amount of recalibration was going to make it so, because the
+problem was never the calibration — it was **comparability**. The same number that cannot rank
+two servers can perfectly well tell you your own server got worse.
+
+So the tool is now a regression suite for a server you maintain: it fails your build on a
+*finding*, with a name and a location, rather than on a score. The ranking ambition is what had
+to go, and dropping it dissolved the problem rather than deferring it.
 
 One result from the survey is worth stating even so, because it is about a first-party artifact
 rather than anyone's hobby code: **of fifty servers the official registry lists as installable

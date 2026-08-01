@@ -1,6 +1,0 @@
-{
-  "name": "snowsure-mcp-server",
-  "spec": "npx -y snowsure-mcp-server@3.7.0",
-  "error": "timed out after 120s",
-  "report": null
-}

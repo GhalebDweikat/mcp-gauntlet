@@ -1,6 +1,0 @@
-{
-  "name": "trusty-squire-mcp",
-  "spec": "npx -y @trusty-squire/mcp@1.1.5",
-  "error": "MCPConnectionError: McpError: Connection closed \u2014 the server said: ebsockify / cloudflared is not in Debian/Ubuntu repos \u2014 install its package: curl -L https://github.com/cloudflare/cloudflared/releas",
-  "report": null
-}

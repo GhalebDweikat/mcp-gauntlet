@@ -1,6 +1,0 @@
-{
-  "name": "ankimcp-anki-mcp-server",
-  "spec": "npx -y @ankimcp/anki-mcp-server@0.22.5",
-  "error": "MCPConnectionError: McpError: Connection closed \u2014 the server said: \u001b[31m\u2717\u001b[0m Failed to start MCP HTTP server: listen EADDRINUSE: address already in use 127.0.0.1:3000",
-  "report": null
-}

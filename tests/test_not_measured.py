@@ -99,7 +99,7 @@ def _security_dim(severity: Severity) -> DimensionResult:
 
 
 def _saved_report(**overrides: object) -> dict[str, object]:
-    """What `leaderboard.load_results` feeds to `GauntletReport(**raw)` from disk."""
+    """A saved report reloaded from disk with `GauntletReport(**raw)`."""
     return {
         "spec": "stdio: srv",
         "server": {"name": "srv", "version": "1"},

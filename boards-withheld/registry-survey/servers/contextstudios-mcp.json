@@ -1,6 +1,0 @@
-{
-  "name": "contextstudios-mcp",
-  "spec": "npx -y contextstudios-mcp@2.0.0",
-  "error": "MCPConnectionError: McpError: Connection closed \u2014 the server said: npm error could not determine executable to run",
-  "report": null
-}

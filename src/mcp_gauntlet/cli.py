@@ -22,7 +22,6 @@ from mcp_gauntlet.env import load_env
 from mcp_gauntlet.errors import describe
 from mcp_gauntlet.exits import EXIT_CODE_HELP, Exit
 from mcp_gauntlet.htmlreport import to_html
-from mcp_gauntlet.leaderboard import ServerListError, load_servers, rerender, run_leaderboard
 from mcp_gauntlet.llm import LLMConfig, LLMConfigError, list_models
 from mcp_gauntlet.report import (
     GauntletReport,
@@ -36,6 +35,7 @@ from mcp_gauntlet.report import (
     to_markdown,
 )
 from mcp_gauntlet.robustness import run_robustness_probes
+from mcp_gauntlet.scan import ServerListError, load_servers, run_scan
 
 
 def _use_utf8_stdio() -> None:
@@ -485,106 +485,71 @@ def run(
 
 
 @app.command()
-def leaderboard(
-    servers: Path | None = typer.Option(
-        None, "--servers", help='JSON file listing servers ({"servers":[{name,spec}]}).'
+def scan(
+    servers: Path = typer.Option(
+        ...,
+        "--servers",
+        help='JSON file listing the servers you own: {"servers":[{"name","spec"}]}.',
     ),
-    out: Path = typer.Option(
-        Path("docs"), "--out", "-o", help="Output directory for the static site."
-    ),
-    provider: str | None = typer.Option(
-        None, "--provider", help="LLM provider (env MCP_GAUNTLET_PROVIDER; default groq)."
-    ),
-    model: str | None = typer.Option(None, "--model", help="Override the default model."),
-    base_url: str | None = typer.Option(
+    out: Path = typer.Option(Path("gauntlet-scan"), "--out", help="Directory for the reports."),
+    fail_on: str | None = typer.Option(
         None,
-        "--base-url",
-        help="Custom OpenAI-compatible endpoint (overrides the provider default).",
-    ),
-    api_key: str | None = typer.Option(
-        None,
-        "--api-key",
-        help="API key for the endpoint (overrides the provider's env var; a keyless "
-        "--base-url endpoint needs neither).",
-    ),
-    tasks: int = typer.Option(3, "--tasks", help="Tasks generated per server."),
-    repeats: int = typer.Option(2, "--repeats", help="Times each task is run."),
-    max_turns: int = typer.Option(8, "--max-turns", help="Max agent turns per task."),
-    timeout: float = typer.Option(240.0, "--timeout", help="Per-server time budget (seconds)."),
-    tool_timeout: float = typer.Option(
-        60.0,
-        "--tool-timeout",
-        help="Per-tool-call limit for the agent, in seconds; a tool that exceeds it "
-        "is recorded as a failed call.",
+        "--fail-on",
+        help="Fail if ANY server has a finding at or above this severity: high, medium, "
+        "low, info. " + EXIT_CODE_HELP,
     ),
     agentic: bool = typer.Option(
         True,
         "--agentic/--no-agentic",
-        help="Run the live-agent evaluation. --no-agentic scans without driving an agent.",
+        help="Run the live-agent evaluation against each server.",
     ),
     probe: bool = typer.Option(
-        True,
-        "--probe/--no-probe",
-        help="Send malformed input to each tool (Robustness). Pass --no-probe together "
-        "with --no-agentic to scan a server without executing any of its tools.",
+        True, "--probe/--no-probe", help="Send malformed input to each tool (Robustness)."
     ),
-    render_only: bool = typer.Option(
-        False,
-        "--render-only",
-        help="Rebuild the site from previously saved results in --out, without "
-        "re-evaluating anything (no LLM spend).",
-    ),
-    board_url: str | None = typer.Option(
-        None,
-        "--board-url",
-        help="Public URL this site will be published at (e.g. "
-        "https://you.github.io/mcp-gauntlet). Used to build the copy-paste badge snippet; "
-        "without it the snippet carries a placeholder host.",
-    ),
+    tasks: int = typer.Option(3, "--tasks", help="Generated tasks per server."),
+    repeats: int = typer.Option(2, "--repeats", help="Repeats per task."),
+    max_turns: int = typer.Option(8, "--max-turns", help="Agent turns per task."),
+    timeout: float = typer.Option(240.0, "--timeout", help="Per-server budget, in seconds."),
+    tool_timeout: float = typer.Option(60.0, "--tool-timeout", help="Per-tool-call limit."),
+    provider: str | None = typer.Option(None, "--provider", help="LLM provider."),
+    model: str | None = typer.Option(None, "--model", help="Override the default model."),
+    base_url: str | None = typer.Option(None, "--base-url", help="OpenAI-compatible endpoint."),
+    api_key: str | None = typer.Option(None, "--api-key", help="API key for the endpoint."),
 ) -> None:
-    """Evaluate many MCP servers and build a static leaderboard site."""
-    if render_only:
-        had_results_dir = (out / "servers").is_dir()
-        results = rerender(out, board_url)
-        if not results:
-            # Say which of the two happened. "Nothing found" while the board was in fact
-            # emptied — index blanked, every published badge retired — reads as a no-op.
-            if had_results_dir:
-                console.print(
-                    f"[yellow]No saved results left in[/yellow] {out / 'servers'} — the "
-                    "board is now empty and its badges have been retired."
-                )
-            else:
-                console.print(
-                    f"[red]No saved results directory at[/red] {out / 'servers'} — "
-                    "nothing was changed (is --out right?)."
-                )
-            raise typer.Exit(code=1)
-        console.print(
-            f"[green]Re-rendered[/green] {len(results)} saved result(s) — "
-            f"no evaluation run. Site: {out / 'index.html'}"
-        )
-        return
+    """Run the gauntlet across several servers you own and gate on the worst finding.
 
-    if servers is None:
-        console.print("[red]--servers is required[/red] (or use --render-only).")
-        raise typer.Exit(code=1)
+    Deliberately not a leaderboard. Nothing is ranked and no grades are compared side by
+    side: the overall score moves when a stage is skipped, when a server needs credentials,
+    and between releases, which is survivable when watching one server over time and is not
+    survivable in a sorted public table.
+    """
+    threshold: Severity | None = None
+    if fail_on is not None:
+        try:
+            threshold = Severity(fail_on.strip().lower())
+        except ValueError:
+            console.print(
+                f"[red]--fail-on {fail_on!r} is not a severity.[/red] "
+                f"Use one of: {', '.join(s.value for s in Severity)}."
+            )
+            raise typer.Exit(code=Exit.CONFIG) from None
+
     try:
         entries = load_servers(servers)
     except ServerListError as exc:
         console.print(f"[red]Could not load the server list:[/red] {escape(str(exc))}")
-        raise typer.Exit(code=1) from exc
-    # The defaults are checked by a test, but these are user-supplied. The per-server clock
-    # has to cover one permitted agent hang AND a full probe budget; if it can't, the outer
-    # bound fires first and the server loses its report entirely instead of being graded.
+        raise typer.Exit(code=Exit.CONFIG) from exc
+
+    # The per-server clock has to cover one permitted agent hang AND a full probe budget; if
+    # it cannot, the outer bound fires first and the server is recorded as unevaluable rather
+    # than scored.
     probe_budget = inspect.signature(run_robustness_probes).parameters["budget_s"].default
     if tool_timeout + probe_budget >= timeout:
         console.print(
             f"[yellow]⚠ --tool-timeout {tool_timeout:g}s plus the {probe_budget:g}s probe "
-            f"budget does not fit inside the {timeout:g}s per-server budget; a slow server "
-            "may be dropped as 'could not evaluate' rather than scored. "
-            "Raise --timeout.[/yellow]"
+            f"budget does not fit inside the {timeout:g}s per-server budget.[/yellow]"
         )
+
     llm_config: LLMConfig | None = None
     if agentic:
         try:
@@ -592,39 +557,59 @@ def leaderboard(
                 provider, model=model, base_url=base_url, api_key=api_key
             )
         except LLMConfigError:
-            llm_config = None  # static-only leaderboard (no LLM key configured)
+            llm_config = None  # static-only scan
 
-    if llm_config is not None:
-        console.print(
-            f"[bold]Leaderboard[/bold] — {len(entries)} server(s) via "
-            f"{llm_config.redacted()} ({tasks} tasks × {repeats} repeats)"
-        )
-    else:
-        console.print(
-            f"[bold]Leaderboard[/bold] — {len(entries)} server(s), "
-            "static + robustness checks only (no LLM configured)"
-        )
+    how = llm_config.redacted() if llm_config is not None else "static + robustness only"
+    console.print(f"[bold]Scanning[/bold] {len(entries)} server(s) — {how}")
+
     results = anyio.run(
         functools.partial(
-            run_leaderboard,
+            run_scan,
             entries,
             out_dir=out,
             llm_config=llm_config,
+            fail_on=threshold,
             n_tasks=tasks,
             repeats=repeats,
             probe=probe,
             max_turns=max_turns,
             timeout_s=timeout,
             tool_timeout_s=tool_timeout,
-            board_url=board_url,
             log=lambda m: console.print(f"[dim]{m}[/dim]"),
         )
     )
-    ok = sum(1 for r in results if r.report is not None)
-    console.print(
-        f"\n[green]Done[/green] — {ok}/{len(results)} evaluated. Site: {out / 'index.html'}"
-    )
 
+    table = Table(title="Scan")
+    table.add_column("Server", style="cyan")
+    table.add_column("Result", justify="right")
+    table.add_column("Gating findings", justify="right")
+    for result in results:
+        if result.report is None:
+            table.add_row(escape(result.name), "[yellow]not evaluated[/yellow]", "—")
+        else:
+            colour = _GRADE_COLOR.get(result.report.grade, "white")
+            table.add_row(
+                escape(result.name),
+                f"[{colour}]{result.report.grade}[/] {result.report.overall_score:.1f}",
+                str(len(result.triggering)) if threshold else "—",
+            )
+    console.print(table)
+    console.print(f"\n[dim]Reports written under:[/dim] {out}")
 
-if __name__ == "__main__":
-    app()
+    # Unevaluated servers are reported but do NOT fail the gate: "could not reach it" is not
+    # a verdict about quality, and conflating the two is how a gate earns a reputation for
+    # flaking. Exit 3 says it happened.
+    unevaluated = [r for r in results if not r.evaluated]
+    gated = [r for r in results if r.triggering]
+    if gated and threshold is not None:  # `triggering` is only populated when gating
+        console.print(
+            f"[red]{len(gated)} server(s) have findings at or above {threshold.value}[/red]: "
+            + ", ".join(escape(r.name) for r in gated)
+        )
+        raise typer.Exit(code=Exit.GATE_FAILED)
+    if unevaluated:
+        console.print(
+            f"[yellow]{len(unevaluated)} server(s) could not be evaluated[/yellow] — "
+            "infrastructure, not a quality verdict."
+        )
+        raise typer.Exit(code=Exit.UNEVALUABLE)

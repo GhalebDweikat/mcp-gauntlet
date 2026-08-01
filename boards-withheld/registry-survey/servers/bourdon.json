@@ -1,6 +1,0 @@
-{
-  "name": "bourdon",
-  "spec": "uvx bourdon@0.12.5",
-  "error": "McpError: Connection closed",
-  "report": null
-}

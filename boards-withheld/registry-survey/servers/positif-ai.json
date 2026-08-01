@@ -1,6 +1,0 @@
-{
-  "name": "positif-ai",
-  "spec": "uvx positif-ai@0.2.1",
-  "error": "MCPConnectionError: McpError: Connection closed \u2014 the server said: \u2570\u2500\u25b6 Because there is no version of positif-ai==0.2.1 and you require / positif-ai==0.2.1, we can conclude that your requirements are ",
-  "report": null
-}

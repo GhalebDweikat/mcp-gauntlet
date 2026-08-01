@@ -93,8 +93,8 @@ def test_timeout_defaults_are_mutually_coherent() -> None:
     # can burn more than the per-server budget, the outer bound fires first, the report is
     # lost, and the tool timeout never gets to record anything. A hang now ends the agent
     # evaluation after ONE timeout, so that is the figure the budget must cover.
-    tool_timeout = _default("leaderboard", "tool_timeout")
-    per_server = _default("leaderboard", "timeout")
+    tool_timeout = _default("scan", "tool_timeout")
+    per_server = _default("scan", "timeout")
     assert isinstance(tool_timeout, float) and isinstance(per_server, float)
     # Real headroom, not merely `<`: the budget has to absorb the one permitted hang AND
     # the LLM turns of the tasks that already ran. A bare `tool_timeout < per_server` passes

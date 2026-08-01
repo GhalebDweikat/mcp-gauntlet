@@ -1,6 +1,0 @@
-{
-  "name": "engrava-mcp",
-  "spec": "uvx engrava-mcp@0.5.1",
-  "error": "MCPConnectionError: McpError: Connection closed \u2014 the server said:   raise StoreResolutionError(msg) / | engrava_mcp.config.StoreResolutionError: No engrava store configured. Set ENGRAVA_MCP_CONFIG to",
-  "report": null
-}

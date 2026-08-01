@@ -1,6 +1,0 @@
-{
-  "name": "businys-mcp-server",
-  "spec": "npx -y @businys/mcp-server@1.0.1",
-  "error": "MCPConnectionError: McpError: Connection closed \u2014 the server said: npm error code EUNSUPPORTEDPROTOCOL / npm error Unsupported URL Type \"workspace:\": workspace:*",
-  "report": null
-}

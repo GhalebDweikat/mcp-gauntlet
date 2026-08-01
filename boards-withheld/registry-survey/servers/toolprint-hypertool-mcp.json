@@ -1,6 +1,0 @@
-{
-  "name": "toolprint-hypertool-mcp",
-  "spec": "npx -y @toolprint/hypertool-mcp@0.0.42",
-  "error": "McpError: Connection closed",
-  "report": null
-}

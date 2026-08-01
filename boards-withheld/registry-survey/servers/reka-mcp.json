@@ -1,6 +1,0 @@
-{
-  "name": "reka-mcp",
-  "spec": "uvx reka-mcp@0.1.10",
-  "error": "MCPConnectionError: McpError: Connection closed \u2014 the server said: File \"~/.cache/uv/archive-v0/ogNjuR7BrWL7Q2Ed/lib/python3.14/site-packages/reka_mcp/server.py\", line 10, in <module> / from mcp.serve",
-  "report": null
-}

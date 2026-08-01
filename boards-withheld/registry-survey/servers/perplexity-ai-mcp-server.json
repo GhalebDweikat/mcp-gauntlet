@@ -1,6 +1,0 @@
-{
-  "name": "perplexity-ai-mcp-server",
-  "spec": "npx -y @perplexity-ai/mcp-server@1.2.0",
-  "error": "MCPConnectionError: McpError: Connection closed \u2014 the server said: Error: PERPLEXITY_API_KEY environment variable is required",
-  "report": null
-}

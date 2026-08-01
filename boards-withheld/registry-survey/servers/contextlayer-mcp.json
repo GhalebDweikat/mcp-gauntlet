@@ -1,6 +1,0 @@
-{
-  "name": "contextlayer-mcp",
-  "spec": "npx -y @contextlayer/mcp@0.0.3",
-  "error": "MCPConnectionError: McpError: Connection closed \u2014 the server said: npm error could not determine executable to run",
-  "report": null
-}

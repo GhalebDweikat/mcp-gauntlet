@@ -3,7 +3,11 @@
 All notable changes to mcp-gauntlet are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.9.3] — 2026-08-02
+
+One dishonest claim removed and eight papercuts closed. No CLI surface changed and no
+fixture's grade moved: all five bundled fixtures score identically, dimension by dimension,
+to what published 0.9.2 gives them.
 
 ### Changed
 

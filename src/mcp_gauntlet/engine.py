@@ -35,7 +35,14 @@ from mcp_gauntlet.llm import LLMConfig, make_async_client
 from mcp_gauntlet.models import DiscoveryResult, ToolInfo
 from mcp_gauntlet.preflight import probe_credentials
 from mcp_gauntlet.protocol import TransportLog
-from mcp_gauntlet.report import AgenticDetail, Finding, GauntletReport, Severity, redact
+from mcp_gauntlet.report import (
+    AgenticDetail,
+    DimensionResult,
+    Finding,
+    GauntletReport,
+    Severity,
+    redact,
+)
 from mcp_gauntlet.robustness import run_robustness_probes
 from mcp_gauntlet.safety import filter_read_only
 from mcp_gauntlet.taskcache import (
@@ -328,9 +335,8 @@ async def evaluate_server(
         drift_findings = await _check_definition_drift(
             session, init, spec, discovery, cache_dir.parent / "baselines", track_drift
         )
-        session_findings = (
+        discovery_findings = (
             drift_findings
-            + _protocol_findings(interactions.transport)
             # A surface that could not be listed is a scan that did not run. Reported at LOW
             # so the reader sees it, rather than left as an empty list indistinguishable from
             # a server that genuinely has no prompts — which is how a server erroring on
@@ -344,7 +350,11 @@ async def evaluate_server(
             ]
             + _deprecated_capability_findings(init, discovery.server.protocol_version)
         )
-        dimensions = run_static_checks(discovery, session_findings)
+
+        # Dimensions produced by TALKING to the server. Held aside rather than appended to a
+        # single list because the static checks now run last (see the assembly below), and
+        # the report's dimension order has to stay static-then-live.
+        live_dimensions: list[DimensionResult] = []
 
         # The set of tools we'll actually execute (probes + agent) — read-only by default.
         exec_tools = discovery.tools
@@ -391,7 +401,7 @@ async def evaluate_server(
                 tool_timeout_s=tool_timeout_s,
                 interactions=interactions,
             )
-            dimensions.extend(agentic_dims)
+            live_dimensions.extend(agentic_dims)
             if agentic_detail.inconclusive:
                 # The stage was configured, attempted, and produced nothing usable — the LLM
                 # backend errored on every repeat. Without this the console printed a warning
@@ -439,7 +449,7 @@ async def evaluate_server(
         if probe and exec_tools and not needs_credentials:
             robustness = await run_robustness_probes(session, exec_tools)
             if robustness is not None:
-                dimensions.append(robustness)
+                live_dimensions.append(robustness)
         elif not probe:
             # The one a flag turns off, and the one that moved a score furthest: a server
             # accepting every malformed input goes from C (75.0) to A (93.8) on --no-probe
@@ -449,6 +459,20 @@ async def evaluate_server(
             not_measured.append("robustness probes (every call would hit the same auth wall)")
         elif not exec_tools:
             not_measured.append("robustness probes (no read-only tools to probe)")
+
+        # LAST, and inside the session: the transport log only stops filling when the
+        # session closes. Reading it right after discovery — which is where this used to
+        # happen — measured the connect/initialize/list window and nothing else, so a
+        # `print` in a tool's own body, or a logger firing once per request, was recorded
+        # into a log whose findings had already been taken. That is the MORE common shape
+        # of the defect: a stray logger fires per request, not once at boot. A startup
+        # banner was caught, the per-request line was not, and METHODOLOGY singles out
+        # precisely the one that was missed as the dangerous case.
+        session_findings = discovery_findings + _protocol_findings(interactions.transport)
+
+    # Static dimensions first, then the live ones, which is the order the report has always
+    # rendered — the static checks are deferred, not reordered.
+    dimensions = run_static_checks(discovery, session_findings) + live_dimensions
 
     return GauntletReport.build(
         spec=spec.label(),

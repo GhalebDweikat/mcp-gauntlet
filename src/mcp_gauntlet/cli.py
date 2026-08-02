@@ -126,15 +126,19 @@ def doctor(
     try:
         config = LLMConfig.from_env(provider, model=model, base_url=base_url, api_key=api_key)
     except LLMConfigError as exc:
+        # Exit 4, not 1: `doctor` has no gate, so "1" would report a quality verdict about
+        # a server it never contacted. Matches `run --agentic` with no key.
         console.print(f"[red]LLM not configured:[/red] {exc}")
-        raise typer.Exit(code=1) from exc
+        raise typer.Exit(code=Exit.CONFIG) from exc
 
     console.print(f"Backend: [cyan]{config.redacted()}[/cyan]")
     try:
         models = list_models(config)
     except Exception as exc:  # noqa: BLE001 - surface any auth/connectivity failure
+        # The key exists but the backend rejected or could not be reached — the same
+        # distinction `run` draws: discoverable only at call time, so 3, not 4.
         console.print(f"[red]LLM call failed:[/red] {exc}")
-        raise typer.Exit(code=1) from exc
+        raise typer.Exit(code=Exit.UNEVALUABLE) from exc
 
     console.print(f"[green]OK[/green] — backend reachable, {len(models)} models advertised")
     # Some providers (Gemini) list models with a "models/" prefix.
@@ -386,7 +390,17 @@ def run(
 ) -> None:
     """Connect to an MCP server, run the gauntlet, and write a scored report."""
     threshold = _parse_fail_on(fail_on)
-    spec = ServerSpec.parse(server)
+    try:
+        spec = ServerSpec.parse(server)
+    except ValueError as exc:
+        # `run: mcp-gauntlet run "$SERVER_CMD"` with $SERVER_CMD unset is the common case,
+        # and it used to dump a traceback and exit 1 — indistinguishable from the server
+        # failing its gate. It is a malformed command line, so it is a usage error.
+        console.print(
+            f"[red]Invalid server spec:[/red] {escape(str(exc))}. "
+            "Pass an stdio command (e.g. 'npx -y @scope/pkg') or an http(s) URL."
+        )
+        raise typer.Exit(code=Exit.USAGE) from exc
     try:
         spec.env = parse_env_args(env, dict(os.environ))
         spec.headers = parse_header_args(header)
@@ -476,7 +490,16 @@ def run(
     # Persist BEFORE rendering: a console-rendering glitch (unencodable glyph on a legacy
     # code page, stray markup from a hostile server name) must never discard the report of
     # a run the user just paid for. Rendering is best-effort on top of a written artifact.
-    json_path, md_path, html_path = write_report(report, out, secrets)
+    try:
+        json_path, md_path, html_path = write_report(report, out, secrets)
+    except OSError as exc:
+        # A missing volume, a read-only mount, a path too long for Windows. Nothing to do
+        # with the server, so never exit 1 — and say which path, since the traceback that
+        # used to surface here named the drive root rather than the argument.
+        console.print(
+            f"[red]Could not write the report to[/red] {escape(str(out))}: {escape(str(exc))}"
+        )
+        raise typer.Exit(code=Exit.CONFIG) from exc
 
     console.print()
     try:

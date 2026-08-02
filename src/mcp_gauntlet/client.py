@@ -269,13 +269,27 @@ async def open_session(
 
         if spec.url is None:  # pragma: no cover - guarded by ServerSpec.parse
             raise MCPConnectionError("http server spec has no url")
+        # The two eras yield DIFFERENT ARITIES from the same name:
+        #
+        #     1.x  yield (read_stream, write_stream, transport.get_session_id)   # 3-tuple
+        #     2.0  yield read_stream, write_stream                               # 2-tuple
+        #
+        # Unpacking three broke every remote server on 2.0 with `ValueError: not enough
+        # values to unpack (expected 3, got 2)` — raised before any network I/O, so a
+        # refused port, a bad hostname and a healthy live server were indistinguishable.
+        # This is the SECOND time this transport shipped broken on 2.0 and the same reason
+        # both times: the rename was fixed by reading the SDK's signature, and the arity
+        # underneath it was not. Slice instead of unpacking, so a third era adding a
+        # fourth element degrades to working rather than to a traceback — the session only
+        # ever needed the two streams.
         async with (
             create_mcp_http_client(headers=spec.headers or None) as http_client,
-            streamable_http_client(spec.url, http_client=http_client) as (read, write, _),
-            _RecordingSession(read, write, interactions=interactions) as session,
+            streamable_http_client(spec.url, http_client=http_client) as streams,
         ):
-            init = await _initialize(session)
-            yield session, init, interactions
+            read, write = streams[0], streams[1]
+            async with _RecordingSession(read, write, interactions=interactions) as session:
+                init = await _initialize(session)
+                yield session, init, interactions
 
 
 async def discover_in_session(

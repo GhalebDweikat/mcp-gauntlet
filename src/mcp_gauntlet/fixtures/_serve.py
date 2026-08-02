@@ -259,8 +259,17 @@ def serve(
     *,
     version: str | None = None,
     instructions: str | None = None,
+    http: tuple[str, int] | None = None,
 ) -> None:
-    """Build the server and run it on stdio. Does not return."""
+    """Build the server and run it. Does not return.
+
+    Defaults to stdio, which is what every bundled fixture uses. Pass ``http=(host, port)``
+    to serve streamable HTTP instead — that exists so the HTTP client transport can be
+    tested against a REAL server on BOTH eras. It shipped broken on 2.0 twice, and the
+    first test written for it imported `mcp.server.fastmcp` directly, which does not exist
+    on 2.0 — so it skipped on precisely the era carrying the bug and reported success.
+    Going through this shim is what makes the coverage real.
+    """
     modern = _is_modern()
 
     server: Any
@@ -282,7 +291,14 @@ def serve(
         # FastMCP has no `version` parameter; it derives one itself. Nothing scores on it —
         # the fixture snapshot drops the server version precisely because it moves whenever
         # a fixture is edited, and the tool definitions are the subject.
-        server = FastMCP(name, instructions=instructions, log_level="WARNING")
+        # FastMCP takes host/port on the constructor; MCPServer takes them on run(). Passed
+        # positionally-by-keyword rather than via **kwargs so mypy can still check them.
+        if http is None:
+            server = FastMCP(name, instructions=instructions, log_level="WARNING")
+        else:
+            server = FastMCP(
+                name, instructions=instructions, log_level="WARNING", host=http[0], port=http[1]
+            )
 
     for tool in tools:
         server.add_tool(
@@ -294,4 +310,10 @@ def serve(
             meta=dict(tool.meta) if tool.meta else None,
         )
 
-    server.run()
+    if http is None:
+        server.run()
+    elif modern:
+        # 2.0 takes host/port through run()'s **kwargs onto run_streamable_http_async.
+        server.run(transport="streamable-http", host=http[0], port=http[1])
+    else:
+        server.run(transport="streamable-http")

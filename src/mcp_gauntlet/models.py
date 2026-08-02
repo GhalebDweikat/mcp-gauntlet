@@ -100,3 +100,8 @@ class DiscoveryResult(BaseModel):
     # a scan that never ran reading exactly like a scan that found nothing. A server erroring
     # on `prompts/list` skipped the prompt-injection scan entirely, at no cost to its score.
     undiscovered: list[str] = Field(default_factory=list)
+    # `tools/list` returned something the SDK's own model would not parse. Distinct from
+    # `undiscovered`, which is "the call failed": here the server ANSWERED, and its answer
+    # was not a valid tool list. That is a defect in the server, so it belongs in the report
+    # rather than killing the run — see `unparseable_tool_findings`.
+    unparseable_tools: str = ""

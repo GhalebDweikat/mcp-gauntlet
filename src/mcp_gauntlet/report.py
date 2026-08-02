@@ -82,6 +82,10 @@ _SEVERITY_ORDER: dict[Severity, int] = {
 
 # A HIGH-severity security finding caps the overall score here (a "C" ceiling),
 # no matter how strong the other dimensions are.
+UNPARSEABLE_TOOLS_MESSAGE = (
+    "server returned a tool list this MCP SDK cannot parse, so no tool could be evaluated"
+)
+
 GRADE_CAP_ON_CRITICAL = 75.0
 
 
@@ -207,6 +211,15 @@ def cap_note(report: GauntletReport) -> str:
     return f"the {GRADE_CAP_ON_CRITICAL:g} cap did not apply — it already scored below it"
 
 
+def _has_unparseable_tools(dimensions: list[DimensionResult]) -> bool:
+    """Did `tools/list` answer with something the SDK could not parse?
+
+    Read off the finding rather than threaded through as a flag, so the finding stays the
+    single source of truth — the same reason the grade cap is re-derived rather than stored.
+    """
+    return any(f.message == UNPARSEABLE_TOOLS_MESSAGE for d in dimensions for f in d.findings)
+
+
 def _has_critical_security(dimensions: list[DimensionResult]) -> bool:
     """Whether the (server-authored) security dimension carries a HIGH finding.
 
@@ -310,14 +323,37 @@ class GauntletReport(BaseModel):
         # vacuously perfect, which would otherwise average to 100/A. Report it as N/A
         # with an explicit finding instead of a misleading top grade.
         if tool_count == 0:
+            # An UNPARSEABLE tool list also arrives here with zero tools, and the two are
+            # opposite facts. "This server exposes no tools" is true of one and false of the
+            # other: the second answered `tools/list` WITH tools that could not be read, and
+            # reporting the wrong one sends the author looking at their registration code.
+            #
+            # The grade stays N/A either way, and that is the honest answer: nothing could be
+            # scored. Letting it grade normally instead was tried and is worse — with no
+            # tools the other dimensions are vacuously perfect, so a Schema Health 0.0
+            # averaged UP to C 75.0, which is a better grade than most working servers get.
+            # The HIGH finding is what fails the gate; the score is not asked to carry it.
+            unparseable = _has_unparseable_tools(dimensions)
             note = DimensionResult(
                 key=Dim.DISCOVERY,
                 title="Discovery",
                 weight=1.0,
                 score=0.0,
-                summary="The gauntlet scores a server's tools; this server exposes none, "
-                "so there is nothing to evaluate.",
-                findings=[Finding(severity=Severity.MEDIUM, message="server exposes no tools")],
+                summary=(
+                    "The server answered tools/list with a list this SDK could not parse, "
+                    "so no tool could be evaluated."
+                    if unparseable
+                    else "The gauntlet scores a server's tools; this server exposes none, "
+                    "so there is nothing to evaluate."
+                ),
+                # No note of its own when the list was unparseable: Schema Health already
+                # carries a HIGH saying exactly what happened, and a second finding claiming
+                # the server "exposes no tools" would contradict it.
+                findings=(
+                    []
+                    if unparseable
+                    else [Finding(severity=Severity.MEDIUM, message="server exposes no tools")]
+                ),
             )
             # KEEP the real dimensions (appending the note) rather than replacing them: a
             # tool-less server can still ship poisoned `instructions`, and dropping the

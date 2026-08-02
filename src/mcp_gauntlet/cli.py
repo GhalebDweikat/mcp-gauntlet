@@ -24,6 +24,7 @@ from mcp_gauntlet.exits import EXIT_CODE_HELP, Exit
 from mcp_gauntlet.htmlreport import to_html
 from mcp_gauntlet.llm import LLMConfig, LLMConfigError, list_models
 from mcp_gauntlet.report import (
+    UNPARSEABLE_TOOLS_MESSAGE,
     GauntletReport,
     Severity,
     cap_note,
@@ -562,12 +563,25 @@ def run(
     # server that legitimately exposes only resources or prompts is equally outside what
     # this harness can say anything about.
     if report.tool_count == 0:
-        console.print(
-            "[red]This server exposes no tools[/red] — nothing was evaluated, so this is "
-            "neither a pass nor a quality verdict. If it had tools before, tool "
-            "registration is broken; if it only exposes resources or prompts, this harness "
-            "has nothing to measure on it."
-        )
+        # Two different facts reach zero tools, and telling the author the wrong one costs
+        # them an afternoon in the wrong file. Only reachable without `--fail-on`; with a
+        # threshold set, the HIGH finding fails the gate first (exit 1).
+        if any(
+            f.message == UNPARSEABLE_TOOLS_MESSAGE for d in report.dimensions for f in d.findings
+        ):
+            console.print(
+                "[red]This server's tool list could not be parsed[/red] — it answered "
+                "tools/list, and the answer was not a valid tool list, so nothing could be "
+                "evaluated. See the Schema Health finding for the offending field. Gate on "
+                "[cyan]--fail-on high[/cyan] to make this fail your build."
+            )
+        else:
+            console.print(
+                "[red]This server exposes no tools[/red] — nothing was evaluated, so this is "
+                "neither a pass nor a quality verdict. If it had tools before, tool "
+                "registration is broken; if it only exposes resources or prompts, this "
+                "harness has nothing to measure on it."
+            )
         raise typer.Exit(code=Exit.UNEVALUABLE)
 
 

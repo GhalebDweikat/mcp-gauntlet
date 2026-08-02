@@ -40,6 +40,7 @@ from mcp_gauntlet.models import (
 )
 from mcp_gauntlet.report import (
     SEVERITY_PENALTY,
+    UNPARSEABLE_TOOLS_MESSAGE,
     Dim,
     DimensionResult,
     Finding,
@@ -147,14 +148,40 @@ def _check_tool_schema(tool: ToolInfo) -> list[Finding]:
     return findings
 
 
-def check_schema_health(tools: list[ToolInfo]) -> DimensionResult:
-    return _dimension(
+def check_schema_health(tools: list[ToolInfo], unparseable: str = "") -> DimensionResult:
+    result = _dimension(
         Dim.SCHEMA_HEALTH,
         "Schema Health",
         "Structural validity of each tool's JSON input schema: valid schema, typed and "
         "described properties, and a consistent required list.",
         tools,
         _check_tool_schema,
+    )
+    if not unparseable:
+        return result
+    # `tools/list` answered with something the SDK would not parse, so there are no tools to
+    # score and the dimension has nothing else in it. HIGH and 0.0: an unusable tool list is
+    # the most severe schema defect there is — no client can call anything.
+    #
+    # Schema Health rather than Security Signals, deliberately. A HIGH in Security caps the
+    # overall grade at 75, and METHODOLOGY reserves that for near-certain ATTACK signals. A
+    # malformed schema is a bug, not an adversary; it should lower the score, not brand the
+    # server as untrusted.
+    return result.model_copy(
+        update={
+            "score": 0.0,
+            "findings": [
+                Finding(
+                    severity=Severity.HIGH,
+                    message=UNPARSEABLE_TOOLS_MESSAGE,
+                    detail=(
+                        f"{unparseable}. Note the two SDK eras disagree about strictness — "
+                        "`mcp` 2.x rejects schemas 1.x accepts — and this report was "
+                        "produced by the SDK named in its header."
+                    ),
+                )
+            ],
+        }
     )
 
 
@@ -1243,7 +1270,7 @@ def run_static_checks(
 ) -> list[DimensionResult]:
     tools = discovery.tools
     return [
-        check_schema_health(tools),
+        check_schema_health(tools, discovery.unparseable_tools),
         check_description_quality(tools),
         check_security(
             tools,

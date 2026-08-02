@@ -19,6 +19,7 @@ from typing import Any
 from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
 from mcp.types import METHOD_NOT_FOUND, InitializeResult
+from pydantic import ValidationError
 
 from mcp_gauntlet.adapters import adapter
 from mcp_gauntlet.config import ServerSpec, TransportKind
@@ -319,6 +320,22 @@ async def open_session(
                 yield session, init, interactions
 
 
+def _first_validation_error(exc: ValidationError) -> str:
+    """One readable line from a pydantic ValidationError.
+
+    The raw string is multi-line and repeats the model name; a report line wants the field
+    path and the reason. Falls back to `str(exc)` if the shape is not what we expect, since
+    a worse message beats a crash inside the error handler.
+    """
+    try:
+        first = exc.errors()[0]
+        location = ".".join(str(part) for part in first.get("loc", ()))
+        message = first.get("msg", "")
+        return f"{location}: {message}" if location else str(message)
+    except Exception:  # noqa: BLE001 - never let error formatting break the run
+        return str(exc)[:300]
+
+
 async def discover_in_session(
     session: ClientSession, init: InitializeResult, *, fetch_prompts: bool = False
 ) -> DiscoveryResult:
@@ -332,8 +349,29 @@ async def discover_in_session(
     seen_names: set[str] = set()
     cursor: str | None = None
     seen_cursors: set[str] = set()
+    unparseable = ""
     for _ in range(100):
-        listed = await session.list_tools(**_page_params(cursor))
+        try:
+            listed = await session.list_tools(**_page_params(cursor))
+        except ValidationError as exc:
+            # The server answered and its answer is not a valid tool list. This used to
+            # escape as a connection-level failure: exit 3, NO report.json, and an empty CI
+            # artifact — for a defect in the single dimension this tool most exists to
+            # check. Break a schema INSIDE the SDK's model and you got HIGH + exit 1; break
+            # it AT the model boundary and you got "could not evaluate", which the shipped
+            # CI example tells pipelines to RETRY. So a genuine schema regression was
+            # retried until it gave up and then reported as a flaky runner.
+            #
+            # Worse on `mcp` 2.0, which a fresh install resolves: its model is stricter, so
+            # `{"type": "objekt"}` and `{"properties": []}` — both of which 1.x reports as
+            # findings — also became exit 3 there. The dimension was unreachable on the
+            # default SDK for exactly the servers it exists to catch.
+            #
+            # Recorded, not raised. Pagination stops: the result is unusable, and a later
+            # page cannot repair an earlier one.
+            unparseable = _first_validation_error(exc)
+            _log.warning("tools/list returned an unparseable tool list: %s", unparseable)
+            break
         for tool in listed.tools:
             # Dedup by name so a server with overlapping pages can't inflate the tool
             # count or manufacture a phantom "name_2" tool downstream.
@@ -358,6 +396,7 @@ async def discover_in_session(
         prompts=prompts,
         resources=resources,
         undiscovered=[*prompt_gaps, *resource_gaps],
+        unparseable_tools=unparseable,
     )
 
 

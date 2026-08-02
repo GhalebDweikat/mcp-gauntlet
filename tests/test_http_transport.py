@@ -24,17 +24,19 @@ rest of the suite, which is the price of covering a seam that mocks kept missing
 from __future__ import annotations
 
 import socket
+import subprocess
 import sys
-import threading
 import time
 from collections.abc import Iterator
+from pathlib import Path
 
 import anyio
 import pytest
 
 from mcp_gauntlet.client import open_session
 from mcp_gauntlet.config import ServerSpec, TransportKind
-from mcp_gauntlet.fixtures._serve import Tool, serve
+
+FIXTURE = Path(__file__).parent / "data" / "http_fixture_server.py"
 
 
 def _free_port() -> int:
@@ -43,42 +45,47 @@ def _free_port() -> int:
         return int(s.getsockname()[1])
 
 
-def _echo(text: str) -> str:
-    """Return the text it was given."""
-    return text
-
-
 @pytest.fixture(scope="module")
 def http_server() -> Iterator[str]:
-    """A real MCP server over streamable HTTP, in a thread, on a free port.
+    """A real MCP server over streamable HTTP, in a SUBPROCESS, on a free port.
 
-    Built through the fixtures' era shim rather than by importing a server class directly.
-    The first version of this test did `pytest.importorskip("mcp.server.fastmcp")`, which
-    2.0 does not have — so it skipped on the only era where the transport was broken and
-    reported two passes. The shim runs on both.
+    A subprocess rather than a thread, and the reason is worth keeping: the first version
+    ran uvicorn in a module-scoped daemon thread, which outlived this module and kept an
+    event loop running for the rest of the session. `tests/test_llm.py` monkeypatches
+    `anyio.sleep` globally to assert a retry schedule, so the stray server's sleeps landed
+    in its list — `assert len(sleeps) == 3` saw 15340. It passed on re-run, because it
+    depends on ordering and timing. A process can be killed; a daemon thread cannot.
+
+    Built through the fixtures' era shim, so it runs on BOTH SDK eras. An earlier draft did
+    `importorskip("mcp.server.fastmcp")`, which 2.0 does not have — so it skipped on the only
+    era where the transport was broken and reported two passes.
     """
     port = _free_port()
-    thread = threading.Thread(
-        target=lambda: serve(
-            "http-fixture",
-            [Tool(fn=_echo, name="echo", description="Return the text it was given.")],
-            http=("127.0.0.1", port),
-        ),
-        daemon=True,
+    proc = subprocess.Popen(
+        [sys.executable, str(FIXTURE), str(port)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
-    thread.start()
-
-    url = f"http://127.0.0.1:{port}/mcp"
-    deadline = time.monotonic() + 30
-    while time.monotonic() < deadline:  # wait for the listener, not a fixed sleep
-        with socket.socket() as probe:
-            probe.settimeout(0.25)
-            if probe.connect_ex(("127.0.0.1", port)) == 0:
-                break
-        time.sleep(0.1)
-    else:  # pragma: no cover - the server never came up
-        pytest.skip("the HTTP fixture server did not start")
-    yield url
+    try:
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:  # wait for the listener, not a fixed sleep
+            if proc.poll() is not None:  # pragma: no cover - the server died on startup
+                pytest.skip("the HTTP fixture server exited during startup")
+            with socket.socket() as probe:
+                probe.settimeout(0.25)
+                if probe.connect_ex(("127.0.0.1", port)) == 0:
+                    break
+            time.sleep(0.1)
+        else:  # pragma: no cover - the server never came up
+            pytest.skip("the HTTP fixture server did not start")
+        yield f"http://127.0.0.1:{port}/mcp"
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:  # pragma: no cover - stubborn child
+            proc.kill()
+            proc.wait(timeout=10)
 
 
 @pytest.mark.skipif(sys.platform == "emscripten", reason="no sockets")

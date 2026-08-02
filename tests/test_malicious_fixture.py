@@ -10,6 +10,8 @@ mocked runtime-scan tests in test_agent_mock.py.
 import sys
 from pathlib import Path
 
+import pytest
+
 from mcp_gauntlet.config import ServerSpec
 from mcp_gauntlet.engine import evaluate_server
 from mcp_gauntlet.report import Severity
@@ -132,3 +134,48 @@ async def test_every_description_is_clean_on_its_own(tmp_path: Path) -> None:
     assert len(descriptions_only) == 4
     dim = check_security(descriptions_only)
     assert dim.score == 100.0, [f.message for f in dim.findings]
+
+
+def test_raw_served_fixture_validates_arguments_on_both_eras() -> None:
+    """The raw serving path must reject schema-violating input, like the typed one does.
+
+    `mcp` 1.x validates arguments inside `@server.call_tool()`; 2.0's `add_request_handler`
+    is a raw hook and does not. The shim only wired the hook, so the SAME fixture rejected
+    malformed input on 1.x and accepted it on 2.0 — the malicious demo scored **C 75.0** on
+    one era and **D 60.2** on the other, a 15-point swing on an unchanged server.
+
+    That very nearly went into the changelog as "2.0 stopped validating tool arguments",
+    which is false: a server built the ordinary way on 2.0 validates fine (the typed
+    `serve()` path scores identically on both eras). Only this shim's raw branch differed.
+
+    The cross-era probe did not catch it because it compares tool DEFINITIONS, and the
+    definitions were identical — the divergence was in runtime behaviour. This test closes
+    that gap from the other side: it runs on both eras in CI, so the raw path cannot go
+    unvalidated again without a failure.
+    """
+    from types import SimpleNamespace
+
+    from mcp_gauntlet.fixtures._serve import _validate_arguments
+
+    # A stand-in rather than `tool_def`, deliberately. `tool_def` spells the field the way
+    # the INSTALLED era spells it, so a 1.x-built Tool has no `input_schema` at all and this
+    # helper — which only ever runs on the 2.0 branch — would read nothing and vacuously
+    # pass. The stand-in states the contract the caller actually satisfies.
+    tools = [
+        SimpleNamespace(
+            name="lookup",
+            input_schema={
+                "type": "object",
+                "properties": {"id": {"type": "string"}},
+                "required": ["id"],
+            },
+        )
+    ]
+    _validate_arguments("lookup", {"id": "ok"}, tools)  # valid: no raise
+
+    for bad in ({"id": 42}, {}, {"id": None}):
+        with pytest.raises(ValueError, match="invalid arguments"):
+            _validate_arguments("lookup", bad, tools)
+
+    # An unknown tool is the server's problem to report, not this helper's to guess at.
+    _validate_arguments("nope", {"anything": 1}, tools)

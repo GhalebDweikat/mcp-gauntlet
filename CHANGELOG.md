@@ -3,6 +3,94 @@
 All notable changes to mcp-gauntlet are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.9.1] — 2026-08-01
+
+0.9.0 was tagged and never published. Three fresh testers were given its wheel, forbidden
+from reading the source, and asked to adopt it, gate a build on it, and upgrade to it. What
+they found is below; 0.9.1 is 0.9.0 plus these fixes, so read the 0.9.0 notes for the
+direction change and this section for what was wrong with it.
+
+The pattern, stated once because it explains nine of the eleven entries: **a check that
+reports success when it stops running.** Not one of these produced a wrong answer — each
+produced a confident right-looking answer about something it never measured.
+
+### Fixed
+
+- **Remote servers were still completely broken on `mcp` 2.0** — the thing 0.9.0's notes
+  claim to have fixed. That fix corrected the import name and the `headers=`→`http_client=`
+  change; it did not notice that the two eras yield different *arities* from the same name
+  (`(read, write, get_session_id)` on 1.x, `(read, write)` on 2.0). Every http/https spec
+  died with `ValueError: not enough values to unpack (expected 3, got 2)`, raised before any
+  network I/O — so a refused port, a bad hostname and a healthy live server were
+  indistinguishable. The pin is `mcp>=1.9,<3`, so a `pip install` resolved 2.0.0 and every
+  new user got a build where remote servers could not be evaluated at all. All three testers
+  hit it. The transport yield is now sliced rather than unpacked, and there is a test that
+  binds a real port and speaks real streamable HTTP **on both eras** — this branch had never
+  been executed by any test, which is why it shipped broken twice.
+- **A revoked API key passed the gate.** `--agentic` with a key that exists but is rejected
+  produced A 98.7, "No high/medium-severity findings", exit 0 — with `not_measured` empty in
+  `report.json`, so nothing downstream could tell either. A *missing* key was caught before
+  the run started, which is what made this look covered. Now exit 3, with the report saying
+  what went unmeasured. Without `--agentic`, degrading stays exit 0: the user did not ask.
+- **`scan --agentic` with no key exited 0**, while `run --agentic` correctly exited 4. Same
+  flag, same docs, opposite behaviour — and `scan` is the command these docs push you
+  toward. `scan`'s `--agentic` was also a plain bool defaulting True, so it could not tell
+  "asked for" from "unspecified". Now tri-state, matching `run`.
+- **A server exposing no tools passed `--fail-on high`.** "Server exposes no tools" is
+  MEDIUM, and every document names `--fail-on high` as *the* gate — so the migration the
+  docs instruct turned a red build green for tool registration silently breaking, which is a
+  total outage. Now exit 3 (nothing was measured, so neither pass nor fail is honest).
+- **`scan` of an empty server list exited 0.** Every other malformed-list shape already
+  exited 4.
+- **The stdout-pollution check only ever saw the handshake.** Promised in three documents. A
+  startup banner was caught; a per-request logger — the more common shape — scored clean at
+  every severity, because the transport log was read straight after discovery while every
+  tool call happens later. The static checks now run after the session's interactive phase.
+- **Invocation and environment errors exited 1 with raw tracebacks**, i.e. reported a quality
+  verdict about the server. An empty server spec (`run "$SERVER_CMD"` with the variable
+  unset) is now exit 2; an unwritable `--out` is exit 4, naming the path. `doctor` with no
+  key was exit 1 and is now 4.
+- **`--fail-on` was validated after the evaluation**, so a typo paid for a full agentic run
+  before reporting itself — and reported it as 4, while an unknown flag gave typer's 2. Now
+  exit 2, immediately, having spent nothing.
+- **The README's first command failed on the install method the README recommends.**
+  `python -m mcp_gauntlet.fixtures.…` only works when the `python` first on PATH is the one
+  the gauntlet is installed into — true under `uvx`, false under `uv tool install` and false
+  from an unactivated venv. It now resolves to the running interpreter, which is not a guess:
+  that module cannot exist in any other environment. Narrow by design — your own server still
+  gets the explicit-interpreter advice, because for it a bare `python` really is ambiguous.
+- **`--help` still described the old product** — "an agentic evaluation harness for MCP
+  servers", the tagline 0.9.0 exists to replace.
+- **The bundled malicious fixture scored C 75.0 on `mcp` 1.x and D 60.2 on 2.0.** Not an SDK
+  behaviour change, which is what it looked like and very nearly went into these notes as:
+  1.x validates tool arguments inside `@server.call_tool()` and 2.0's raw request-handler
+  hook does not, and the fixtures' own serving shim used the raw hook on 2.0 and the
+  decorator on 1.x. A server built the ordinary way on 2.0 validates fine. The shim now
+  validates on both, and the fixture scores identically on both. The cross-era probe missed
+  it because it compares tool *definitions*, which were identical — the divergence was in
+  runtime behaviour.
+
+### Changed
+
+- Gate ordering: a failing gate (exit 1) is reported before the could-not-evaluate checks
+  (exit 3). A server with HIGH findings *and* a dead LLM backend should hear about the
+  findings. The property those checks exist for is preserved — a pass is never reported
+  while a stage that would have produced findings did not run.
+- The CI example no longer ships a runnable command pointing at
+  `@modelcontextprotocol/server-everything`; copying it in unchanged produced a green build
+  gating on somebody else's server. It is now a placeholder that fails until you replace it.
+- `docs/known-gaps.md` records, by class, what the security scan does **not** catch —
+  including the most commonly reported real-world poisoning shape — and is linked from the
+  README lede rather than two hops away.
+- The malicious fixture emits **seven** HIGH findings, not eight as the notes and CI example
+  both claimed. Two testers measured it.
+
+### Comparability
+
+Scores are unchanged for an unchanged server *on a given SDK*. The one movement is the
+malicious fixture on `mcp` 2.0, which was scoring 60.2 because of the shim defect above and
+now scores 75.0 — the same as it has always scored on 1.x.
+
 ## [0.9.0] — 2026-08-01
 
 **mcp-gauntlet is now a regression suite for a server you maintain, not a grader and not a
@@ -72,12 +160,9 @@ dropped, and dropping it dissolved the problem rather than deferring it.
   `75 > 60` meant no poisoned server could ever fail it. Seven HIGH tool-poisoning findings,
   exit 0, green check. The example now gates on `--fail-on high`.
 
-  Worth stating precisely, because the mechanism differs by SDK: on `mcp` 1.28.1 the fixture
-  scores exactly **75.0 (C), capped** — the cap acting as a floor above the threshold. On
-  `mcp` 2.0.0 the same fixture scores **60.2 (D), uncapped**, because 2.0 does not validate
-  tool arguments against the input schema the way 1.x does, so its Robustness row collapses.
-  Either way `--fail-under 60` returns 0 on a server carrying seven HIGH tool-poisoning
-  findings, which is the point.
+  The fixture scores exactly **75.0 (C), capped** — the cap acting as a floor above the
+  threshold rather than a ceiling on the grade — and `--fail-under 60` returns 0 on a server
+  carrying seven HIGH tool-poisoning findings.
 - **Remote servers were completely broken on `mcp` 2.0.** `streamablehttp_client` is a 1.x
   alias that 2.0 removed, so widening the pin in 0.8.0 made every http/https spec die with
   an `ImportError` before touching the network. A straight rename would have been worse: the

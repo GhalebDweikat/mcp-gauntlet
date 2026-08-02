@@ -155,6 +155,32 @@ def prompt_def(
     return types.Prompt(name=name, title=title, description=description, arguments=list(arguments))
 
 
+def _validate_arguments(name: str, arguments: Mapping[str, Any], tools: Sequence[Any]) -> None:
+    """Reject arguments that violate the named tool's input schema.
+
+    Mirrors what `mcp` 1.x does for you inside `@server.call_tool()`, so a fixture served
+    through the raw path behaves the same on both eras.
+
+    Reads `input_schema` only. This is called from the 2.0 branch and nowhere else, so the
+    1.x camelCase spelling cannot occur here — and reading it anyway would put an SDK field
+    name outside the adapter seam, which `test_no_sdk_shaped_read_survives_outside_the_adapters`
+    correctly refuses (it caught the first draft of this).
+    """
+    import jsonschema
+
+    for tool in tools:
+        if getattr(tool, "name", None) != name:
+            continue
+        schema = getattr(tool, "input_schema", None)
+        if not isinstance(schema, dict):
+            return
+        try:
+            jsonschema.validate(dict(arguments), schema)
+        except jsonschema.ValidationError as exc:
+            raise ValueError(f"invalid arguments for {name!r}: {exc.message}") from exc
+        return
+
+
 def serve_raw(
     name: str,
     *,
@@ -190,7 +216,19 @@ def serve_raw(
             return types.ListToolsResult(tools=list(list_tools()))
 
         async def _call_handler(_ctx: Any, params: Any) -> Any:
-            content, structured = call_tool(params.name, dict(params.arguments or {}))
+            arguments = dict(params.arguments or {})
+            # 1.x's `@server.call_tool()` decorator validates arguments against the tool's
+            # input schema before invoking the handler; 2.0's `add_request_handler` is a raw
+            # hook and does not. Without this, the SAME fixture rejected malformed input on
+            # 1.x and accepted it on 2.0, and the malicious demo scored C 75.0 on one era
+            # and D 60.2 on the other — a 15-point swing that looked like an SDK behaviour
+            # change and was really this shim being unfaithful on one branch.
+            #
+            # Validating here rather than dropping validation from 1.x, because a server
+            # built the ordinary way on 2.0 DOES validate (the typed `serve()` path scores
+            # identically on both eras). The unvalidated branch was the odd one out.
+            _validate_arguments(params.name, arguments, list_tools())
+            content, structured = call_tool(params.name, arguments)
             # snake_case exists only in 2.0; against the pinned SDK this cannot resolve.
             return types.CallToolResult(  # type: ignore[call-arg]
                 content=content, structured_content=structured

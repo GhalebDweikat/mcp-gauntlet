@@ -52,6 +52,40 @@ All notable changes to mcp-gauntlet are documented here. This project adheres to
   was supplied — writes the sentence.
 - **"Every tool call was rejected" was printed after probing one tool**, and after probing
   three when only two were rejected. It now says which, out of how many.
+- **The credential-exfiltration finding did not say where it was.** It reported `tool: null`
+  with no field path — rendered as a bare `server:` — so on a forty-tool server it pointed at
+  server `instructions` that are clean, and on the bundled malicious fixture it produced four
+  byte-identical findings. It now locates itself like every other security check
+  (`read_notes: title`, `list_files: output property 'Entry' description`). Scores are
+  unchanged.
+- **The read-only filter said which tools it dropped and never which word.** `"Use after
+  search_runbooks has told you which runbook applies"` was excluded on **applies**; `"e.g.
+  checkout 5xx"` on **checkout**. The only remedy on offer was `--allow-writes`, which is
+  all-or-nothing and aimed at a disposable target, for what is a one-word edit.
+- **`scan` ignored unknown TOP-LEVEL keys**, so the check applied one level below where
+  people mistype: `{"servers": [...], "failOn": "high"}` ran ungated and exited 0, and
+  `{"servers": [...], "env": ["TOKEN=v1"]}` silently discarded a credential. A credential on
+  the wrong side of the transport — `headers` on a stdio command, `env` on an `https://` URL
+  — was likewise accepted, discarded and scanned as `A 100.0`. Both are errors now.
+- **A server with zero tools exited 3 at `--fail-on high` and 1 at `--fail-on medium`.**
+  "Nothing was measured, so neither pass nor fail is honest" does not stop being true when
+  you tighten the gate. An *unparseable* tool list still fails the gate — that is a defect in
+  the server rather than an absence of one.
+- **`$` could not be escaped in a header value.** `X-Price: cost is $5.00` exited 4 insisting
+  `$5` was an unset variable. A variable name cannot begin with a digit, and `$$` now writes
+  a literal `$`. A `$VAR` in a header *name* was not expanded and went out as text while the
+  value beside it resolved; both sides follow the same rule now.
+- **Two HIGH findings described one wrong token.** Robustness now defers to the Tool
+  Reliability finding at INFO when the caller has already reported it.
+
+### Documentation
+
+- **`docs/known-gaps.md` G5 understated its own gap.** It said near-synonym injection
+  phrasing is "reported at MEDIUM or not at all"; both cited examples produce **zero**
+  findings, together or apart.
+- **The exit-code table promised `130` on Ctrl-C.** That is the POSIX convention; Windows
+  ends the process with `0xC000013A`. The substantive promises — the child server is reaped,
+  no orphan is left, no report is written from a half-finished run — hold on both.
 
 ## [0.9.2] — 2026-08-01
 

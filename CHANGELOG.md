@@ -3,7 +3,16 @@
 All notable changes to mcp-gauntlet are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.9.4] — 2026-08-03
+
+**Upgrade if you are on 0.9.3.** A fourth round of black-box testing found two ways the
+security checks reported a clean bill on a server they had not actually cleared, and both
+shipped in 0.9.3. Everything below was found by testers who could see only the built wheel
+and the public docs.
+
+No fixture's grade moved: all five score identically, dimension by dimension, to what
+published 0.9.3 gives them — the third consecutive release with no movement on an unchanged
+server.
 
 ### Fixed
 

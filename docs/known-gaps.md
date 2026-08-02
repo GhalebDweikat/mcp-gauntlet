@@ -116,6 +116,31 @@ itself is unchanged — reading them is still open.
 
 ---
 
+### G13. A bad credential is detected by matching English error prose
+The check that decides "every call failed authentication" matches the error TEXT against a
+short phrase list. It catches `401`, `Unauthorized`, `Authentication failed`, `Invalid API
+key` and a few others.
+
+**It misses** `token expired` (the word "expired" is not in the vocabulary at all),
+`Bad credentials` — GitHub's own 401 body — `invalid_auth` (Slack), `ExpiredToken` (AWS),
+`Not authenticated`, `Requires authentication`, anything non-English, and any failure
+delivered over the JSON-RPC error channel rather than as a tool result. Three of four
+wrongly-credentialed servers in one adversarial scan came back **A 100.0, exit 0**.
+403/`permission denied` is excluded deliberately — it is what a sandboxed filesystem server
+correctly says about a path outside its root — but a scope-expired OAuth token is a 403 at
+most providers, so that exclusion cuts against you.
+
+**It also false-positives** on honest servers whose ordinary errors carry the vocabulary: a
+JSON linter reporting `invalid token at line 4`, a schema validator reporting `Invalid API
+key format`, a signature verifier reporting `authentication failed for message digest`, a
+test runner reporting `expected 401 Unauthorized, got 200 OK`. There is no allowlist;
+`--no-probe` silences it and the real check with it.
+
+*Direction:* key on the error CHANNEL and status rather than on prose — a JSON-RPC error code,
+an HTTP status where one is available — and treat the phrase list as corroboration rather than
+as the decision. Lexical matching cannot separate "this server rejected my token" from "this
+server is telling me about a token", which is the same shape as [G1](#g1-instructions-to-exfiltrate-via-a-tools-own-parameters).
+
 ## Scoring
 
 ### G9. A dimension where every subject fails still scores 88

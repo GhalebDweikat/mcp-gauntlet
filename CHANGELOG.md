@@ -26,6 +26,22 @@ for you, this is a straight upgrade.
   now take `env` and `headers` in the same forms `run` uses. Unknown keys in `servers.json`
   are rejected by name instead of silently dropped, and credentials resolve *before* the scan
   starts, so a missing one is exit 4 rather than one quietly unevaluable server.
+- **A wrong or expired credential is now *sometimes* caught.** Previously a server given a
+  bad token answered 401 to every call and still scored **A 100.0, exit 0** — a report
+  byte-identical to the same server with a working token, because a 401 read as "correctly
+  rejected the malformed input". That specific shape now produces a HIGH finding and fails
+  the gate, with no LLM key required.
+
+  **Do not rely on it.** The check matches the error TEXT against a short English phrase
+  list, and adversarial testing found it misses far more than it catches: `token expired`,
+  `Bad credentials`, `invalid_auth`, `Not authenticated`, `ExpiredToken`, anything non-English,
+  and failures delivered over the JSON-RPC error channel rather than as a tool result. Three
+  of four wrongly-credentialed servers in one tester's scan still came back A 100.0. It also
+  fires on honest servers whose ordinary errors contain the vocabulary — a JSON linter saying
+  `invalid token`, a signature verifier saying `authentication failed`. Recorded as
+  [G13](docs/known-gaps.md); making it structural (keying on the error channel and status
+  rather than on prose) is its own piece of work.
+
 - **A credential that is set but EMPTY counted as present.** That is what GitHub Actions
   hands a fork PR for a secrets expression, so the server received a blank token, rejected
   it, and the run was filed as infrastructure noise. A bare `NAME` now requires a value;

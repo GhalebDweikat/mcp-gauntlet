@@ -300,7 +300,11 @@ def run(
         help="MCP server: an stdio command (e.g. 'npx -y @scope/pkg') or an http(s) URL.",
     ),
     out: Path = typer.Option(
-        Path("reports"), "--out", "-o", help="Directory for report.json / report.md."
+        Path("reports"),
+        "--out",
+        "-o",
+        help="Directory for report.json, report.md and report.html. NOTE: a fixed default, "
+        "so scanning several servers in turn overwrites one directory — give each its own.",
     ),
     agentic: bool | None = typer.Option(
         None,

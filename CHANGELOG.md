@@ -121,6 +121,20 @@ dropped, and dropping it dissolved the problem rather than deferring it.
   `--board-url`, ranked tables, the generated site, the published GitHub Pages page,
   `boards-withheld/`, both server lists and the scan sandbox. 11,436 lines.
 
+  **If you used `leaderboard`, here is what to change.** `scan` is the closest thing and it
+  is not a drop-in: it evaluates a list of servers and gates on the worst finding, and that
+  is all it does.
+
+  | was | now |
+  |---|---|
+  | `leaderboard --servers list.json` | `scan --servers list.json --fail-on high` |
+  | `--out docs` (default) | `--out gauntlet-scan` (default) |
+  | `--render-only`, `--board-url`, badges | **gone, no replacement** — nothing reads a saved report |
+  | the generated HTML site | **gone** — each server gets its own `report.html`, but there is no index, so a GitHub Pages step will break |
+  | ranked table, grades side by side | deliberately absent |
+
+  The server-list format is unchanged, so an existing `list.json` still loads.
+
 ### Added
 
 - **`scan`** — run the gauntlet across several servers *you own* and gate on the worst

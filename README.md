@@ -52,6 +52,11 @@ mcp-gauntlet run "C:\path\to\proj\.venv\Scripts\python.exe -m my_server" --no-ag
 # Node
 mcp-gauntlet run "node /path/to/proj/dist/index.js" --no-agentic
 
+# A path containing spaces — use SINGLE quotes inside the spec. The spec is parsed
+# POSIX-style, so double quotes are consumed by your shell before the tool sees them and
+# the path silently splits into extra arguments.
+mcp-gauntlet run "C:\Tools\python.exe 'C:\Users\Jane Smith\proj\server.py'" --no-agentic
+
 # A remote server, with auth
 mcp-gauntlet run "https://mcp.example.com" --header "Authorization: Bearer $TOKEN"
 ```
@@ -144,7 +149,7 @@ for a sorted table. See [What the score is not](METHODOLOGY.md).
 
 ## What it scores
 
-Each run produces a graded report card (JSON + Markdown) across:
+Each run writes `report.json`, `report.md` and `report.html` into `--out`, graded across:
 
 - **Schema Health** — valid JSON schemas, typed and described parameters.
 - **Description Quality** — can an agent tell when and how to use each tool?
@@ -182,6 +187,12 @@ Each run produces a graded report card (JSON + Markdown) across:
   bare "something moved". The change itself is reported but never caps on its own — honest
   servers register tools lazily, gate them on auth (MCP has a `tools.listChanged` capability
   for exactly that), and edit descriptions without bumping a static version.
+
+  Note which half runs where. The *within-session* check — `tools/list` twice, one
+  connection — always works. The *across-run* check compares against a fingerprint stored
+  under `.gauntlet/baselines/`, and a fresh CI runner (`actions/checkout` + `uvx`) has no
+  previous run to compare with, so a tool that was silently **deleted** is invisible there.
+  Cache or commit `.gauntlet/baselines/` if you want that check in CI.
 
 ## Configuration
 
@@ -289,6 +300,13 @@ what it **found**:
 exists — tool poisoning, injection markers, hidden characters. `medium` also catches stdout
 pollution, weak descriptions and definition drift; `low` adds undescribed parameters.
 
+**`--fail-on low` is not usable yet on servers built with the official Python SDK.** That SDK
+does not carry a docstring's `Args:` section into the JSON schema, so every parameter comes
+through undescribed and a perfectly good server emits a LOW finding per argument. The bundled
+`good_server` — an A grade — trips it four times. Treat `low` as aspirational until either
+the SDK propagates them or this check learns to tell "undocumented" from "the SDK dropped
+it"; `medium` is the strict gate that actually works today.
+
 `--fail-under` still exists, and is the weaker choice. A HIGH security finding caps the
 overall score at 75, so a `--fail-under 60` gate — which this README used to recommend —
 **could never fail a poisoned server**: the cap acted as a floor for the gate. A score
@@ -303,8 +321,9 @@ number that moved. Pin it if you need a frozen verdict.
 | `0` | Passed |
 | `1` | **Gate failed** — a verdict about your server. The only one that should fail a build on quality grounds. |
 | `2` | Usage error (bad flag) |
-| `3` | **Could not evaluate** — the server didn't start, timed out, or the transport failed. Infrastructure, not quality. |
-| `4` | Configuration error — e.g. `--agentic` with no API key |
+| `3` | **Could not evaluate** — the server didn't start, timed out, the transport failed, the tool list was unreadable, or `--agentic` was asked for and the LLM backend errored on every call. Infrastructure, not quality. |
+| `4` | Configuration error — e.g. `--agentic` with no API key configured at all, or an unwritable `--out` |
+| `130` | Interrupted (Ctrl-C). The child server is reaped; no report is written. |
 
 `3` is separated deliberately. A gate that reports a flaky runner as a quality regression
 gets switched off within a week, and everything it would have caught goes with it.

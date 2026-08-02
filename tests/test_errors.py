@@ -83,3 +83,64 @@ def test_bundled_demo_runs_without_an_activated_venv() -> None:
     assert not _is_own_fixture("python", ["server.py"])
     assert not _is_own_fixture("node", ["-m", "mcp_gauntlet.fixtures.good_server"])
     assert not _is_own_fixture("python", [])
+
+
+def test_stderr_tail_truncates_the_end_not_the_front() -> None:
+    """`[-limit:]` kept the LAST N characters, so it cut the beginning of the first line.
+
+    Real examples handed to a first-time debugger:
+
+        cripts\python.exe: can't open file '...'
+        .exe: can't open file '...'
+
+    Neither path exists anywhere. The front is also where the useful part lives — the
+    program name and what went wrong — while the tail is usually the rest of a path. A
+    visibly truncated string beats a plausible wrong one.
+    """
+    import tempfile
+
+    from mcp_gauntlet.protocol import ChildStderr
+
+    line = r"C:\proj\.venv\Scripts\python.exe: can't open file " + "'" + "x" * 400 + "'"
+    with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as handle:
+        handle.write(line)
+        tail = ChildStderr(handle).tail()  # type: ignore[arg-type]
+    assert tail.startswith(r"C:\proj\.venv\Scripts\python.exe"), tail[:60]
+    assert tail.endswith("…"), tail[-20:]
+    assert "cripts" not in tail[:10]  # the specific fabricated fragment
+
+
+def test_a_short_stderr_tail_is_untouched() -> None:
+    import tempfile
+
+    from mcp_gauntlet.protocol import ChildStderr
+
+    with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as handle:
+        handle.write("Cannot find module 'express'")
+        got = ChildStderr(handle).tail()  # type: ignore[arg-type]
+        assert got == "Cannot find module 'express'"
+
+
+@pytest.mark.parametrize(
+    ("detail", "expected"),
+    [
+        ("ConnectError: [Errno 11001] getaddrinfo failed", "does not resolve"),
+        ("ConnectError: All connection attempts failed", "nothing is listening"),
+        ("ConnectTimeout: timed out", "in time"),
+        ("SSLError: certificate verify failed", "TLS handshake"),
+        ("RuntimeError: something else entirely", "did not come up"),
+    ],
+)
+def test_remote_failures_name_the_url_and_the_cause(detail: str, expected: str) -> None:
+    """A refused port and a nonexistent host produced the SAME message, with no URL in it.
+
+    So a user could not tell whether the server was down, the hostname was wrong, or the
+    harness was broken — and for two releases it WAS the harness, since the transport was
+    dead on `mcp` 2.0 and this message is what people saw.
+    """
+    from mcp_gauntlet.errors import explain_remote_failure
+
+    message = explain_remote_failure("https://mcp.example.com/mcp", RuntimeError(detail))
+    assert "https://mcp.example.com/mcp" in message
+    assert expected in message
+    assert detail.split(":")[0] in message  # the raw cause is kept, not swallowed

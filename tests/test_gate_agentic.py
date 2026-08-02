@@ -278,3 +278,63 @@ def test_a_real_finding_outranks_an_incomplete_run(
     )
     assert result.exit_code == Exit.GATE_FAILED, result.output
     assert "at or above high" in result.output
+
+
+@pytest.mark.parametrize(
+    ("argv", "flag"),
+    [
+        (["run", "python -m srv", "--fail-under", "-10"], "--fail-under"),
+        (["run", "python -m srv", "--fail-under", "200"], "--fail-under"),
+        (["run", "python -m srv", "--tasks", "-5"], "--tasks"),
+        (["run", "python -m srv", "--repeats", "0"], "--repeats"),
+        (["run", "python -m srv", "--max-turns", "0"], "--max-turns"),
+        (["run", "python -m srv", "--tool-timeout", "0"], "--tool-timeout"),
+        (["run", "python -m srv", "--timeout", "-1"], "--timeout"),
+        (["scan", "--servers", "s.json", "--timeout", "0"], "--timeout"),
+        (["scan", "--servers", "s.json", "--tasks", "0"], "--tasks"),
+    ],
+)
+def test_out_of_range_numbers_are_usage_errors(
+    argv: list[str], flag: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A gate is only useful if it can both fire and pass.
+
+    `--fail-under -10` was accepted and exits 0 forever — a typo'd gate that looks configured
+    and silently does nothing, the same shape as everything else found this round.
+    `--fail-under 200` fails forever, which at least announces itself. `--tasks -5` and
+    `--repeats 0` were accepted too.
+
+    Enforced with typer's own `min`/`max` rather than hand-rolled checks, so the failure is a
+    real usage error at parse time — exit 2, before any work, naming the value and the range.
+    """
+
+    async def _never(*_a: object, **_k: object) -> GauntletReport:
+        raise AssertionError("evaluation must not start with an out-of-range option")
+
+    monkeypatch.setattr(cli, "evaluate_server", _never)
+    result = runner.invoke(cli.app, argv)
+    assert result.exit_code == Exit.USAGE, result.output
+    assert flag in result.output
+
+
+def test_zero_timeout_still_means_disabled(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """`run --timeout 0` is documented as disabling the bound, so it must stay legal.
+
+    The range is min=0 for exactly this reason: a negative timeout is not a shorter one, but
+    zero has a meaning the help text promises.
+    """
+    patched_report = GauntletReport.build(
+        spec="stdio: srv",
+        server=ServerInfo(name="srv", version="1"),
+        tool_count=1,
+        dimensions=[DimensionResult(key="schema_health", title="S", weight=1.0, score=99.0)],
+    )
+
+    async def _fake(*_a: object, **_k: object) -> GauntletReport:
+        return patched_report
+
+    monkeypatch.setattr(cli, "evaluate_server", _fake)
+    result = runner.invoke(
+        cli.app, ["run", "python -m srv", "--no-agentic", "--timeout", "0", "--out", str(tmp_path)]
+    )
+    assert result.exit_code == Exit.OK, result.output

@@ -125,7 +125,19 @@ class ChildStderr:
             for line in text.splitlines()
             if line.strip() and not _NOISE.match(line.strip())
         ]
-        return " / ".join(lines[-3:])[-limit:]
+        joined = " / ".join(lines[-3:])
+        if len(joined) <= limit:
+            return joined
+        # Truncate the END, not the front. `[-limit:]` kept the last N characters, which cut
+        # the beginning of the first line and produced paths that exist nowhere:
+        #
+        #     cripts\python.exe: can't open file '...'
+        #     .exe: can't open file '...'
+        #
+        # A first-time debugger was handed a fabricated filename. The front is also where the
+        # useful part lives — the program name and what went wrong — while the tail is
+        # usually the rest of a path. A visibly truncated string beats a plausible wrong one.
+        return joined[: limit - 1].rstrip() + "…"
 
 
 @contextlib.contextmanager

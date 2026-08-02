@@ -19,7 +19,7 @@ from rich.table import Table
 from mcp_gauntlet.config import ServerSpec, TransportKind, parse_env_args, parse_header_args
 from mcp_gauntlet.engine import evaluate_server
 from mcp_gauntlet.env import load_env
-from mcp_gauntlet.errors import describe
+from mcp_gauntlet.errors import describe, explain_remote_failure
 from mcp_gauntlet.exits import EXIT_CODE_HELP, Exit
 from mcp_gauntlet.htmlreport import to_html
 from mcp_gauntlet.llm import LLMConfig, LLMConfigError, list_models
@@ -335,9 +335,11 @@ def run(
         help="Send an HTTP header to a remote server: 'Name: Value' (e.g. "
         "'Authorization: Bearer …'). Repeatable. Redacted from reports.",
     ),
-    tasks: int = typer.Option(3, "--tasks", help="Tasks to generate for the agentic eval."),
-    repeats: int = typer.Option(2, "--repeats", help="Times to run each task (success rate)."),
-    max_turns: int = typer.Option(8, "--max-turns", help="Max agent turns per task."),
+    tasks: int = typer.Option(3, "--tasks", min=1, help="Tasks to generate for the agentic eval."),
+    repeats: int = typer.Option(
+        2, "--repeats", min=1, help="Times to run each task (success rate)."
+    ),
+    max_turns: int = typer.Option(8, "--max-turns", min=1, help="Max agent turns per task."),
     allow_writes: bool = typer.Option(
         False,
         "--allow-writes",
@@ -366,6 +368,12 @@ def run(
     fail_under: float | None = typer.Option(
         None,
         "--fail-under",
+        # A gate is only useful if it CAN fire and CAN pass. `--fail-under -10` was accepted
+        # and exits 0 forever — a typo'd gate that looks configured and silently does
+        # nothing, which is the same shape as every other defect this round. `--fail-under
+        # 200` fails forever, which at least announces itself.
+        min=0,
+        max=100,
         help="Fail if the overall score is below this value. Prefer --fail-on: a score "
         "threshold has to be re-baselined whenever scoring changes, and the security cap "
         "puts a poisoned server ABOVE a low threshold. " + EXIT_CODE_HELP,
@@ -380,11 +388,13 @@ def run(
     timeout: float = typer.Option(
         900.0,
         "--timeout",
+        min=0,  # 0 is documented as "disabled"; a negative one is not a shorter timeout
         help="Hard wall-clock limit for the whole evaluation, in seconds (0 disables).",
     ),
     tool_timeout: float = typer.Option(
         60.0,
         "--tool-timeout",
+        min=1,  # 0 would time out every call and fill the report with false failures
         help="Per-tool-call limit for the agent, in seconds; a tool that exceeds it "
         "is recorded as a failed call.",
     ),
@@ -481,9 +491,12 @@ def run(
     except Exception as exc:  # noqa: BLE001 - surface any connection/eval failure
         # A connection/DSN error can echo a credential (e.g. a Postgres URI with the
         # password); redact before it reaches the terminal or a CI log.
-        console.print(
-            f"[red]Evaluation failed:[/red] {escape(redact(describe(exc, 400), secrets))}"
+        detail = (
+            explain_remote_failure(spec.url, exc)
+            if spec.kind is TransportKind.HTTP and spec.url
+            else describe(exc, 400)
         )
+        console.print(f"[red]Evaluation failed:[/red] {escape(redact(detail, secrets))}")
         # The server did not start, the transport broke, the URL was wrong. Infra, not
         # quality — and no report.json is written, which used to be the only way to tell.
         raise typer.Exit(code=Exit.UNEVALUABLE) from exc
@@ -612,11 +625,11 @@ def scan(
     probe: bool = typer.Option(
         True, "--probe/--no-probe", help="Send malformed input to each tool (Robustness)."
     ),
-    tasks: int = typer.Option(3, "--tasks", help="Generated tasks per server."),
-    repeats: int = typer.Option(2, "--repeats", help="Repeats per task."),
-    max_turns: int = typer.Option(8, "--max-turns", help="Agent turns per task."),
-    timeout: float = typer.Option(240.0, "--timeout", help="Per-server budget, in seconds."),
-    tool_timeout: float = typer.Option(60.0, "--tool-timeout", help="Per-tool-call limit."),
+    tasks: int = typer.Option(3, "--tasks", min=1, help="Generated tasks per server."),
+    repeats: int = typer.Option(2, "--repeats", min=1, help="Repeats per task."),
+    max_turns: int = typer.Option(8, "--max-turns", min=1, help="Agent turns per task."),
+    timeout: float = typer.Option(240.0, "--timeout", min=1, help="Per-server budget, in seconds."),
+    tool_timeout: float = typer.Option(60.0, "--tool-timeout", min=1, help="Per-tool-call limit."),
     provider: str | None = typer.Option(None, "--provider", help="LLM provider."),
     model: str | None = typer.Option(None, "--model", help="Override the default model."),
     base_url: str | None = typer.Option(None, "--base-url", help="OpenAI-compatible endpoint."),

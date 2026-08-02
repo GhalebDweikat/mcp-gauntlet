@@ -576,6 +576,19 @@ def run(
     if report.tool_count == 0 and not unparseable:
         _report_no_tools(unparseable=False)
 
+    # …and the same rule for a server that HAS tools and refused every call. The run already
+    # said "Not scored" on the line above the grade, wrote the reason into `report.json`, and
+    # then exited 0 with an A — a green check over a server nothing was ever able to call.
+    # It is the zero-tools situation with a different cause, and 3 is the code that means
+    # "could not evaluate — infrastructure, not quality", which is exactly what this is: no
+    # credential was supplied, so it is not the server's fault and not a regression either.
+    if report.unevaluated_reason:
+        console.print(
+            "[red]This server could not be evaluated[/red] — "
+            f"{escape(redact(report.unevaluated_reason, secrets))}"
+        )
+        raise typer.Exit(code=Exit.UNEVALUABLE)
+
     if threshold is not None:
         triggering = findings_at_or_above(report, threshold)
         if triggering:

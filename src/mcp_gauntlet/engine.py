@@ -464,6 +464,14 @@ async def evaluate_server(
 
         if needs_credentials:
             _log.info("skipping agent evaluation: %s", needs_credentials)
+            # The reason itself, not only the stage it stopped. `unevaluated_reason` lived in
+            # its own field that the console printed and `not_measured` did not mirror — so a
+            # CI job reading `not_measured` to decide whether a run was complete saw nothing
+            # about the one fact that made it incomplete.
+            not_measured.append(
+                f"this server was not scored at all — {needs_credentials}. Every dimension "
+                "below rests on the definitions it published, not on anything it did"
+            )
             not_measured.append("agent evaluation (server needs credentials nobody supplied)")
         elif llm_config is not None and exec_tools:
             client = make_async_client(llm_config)

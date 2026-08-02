@@ -236,13 +236,20 @@ sandbox or throwaway accounts:** the read-only filter trusts a server's own
 `readOnlyHint`/name and is defense-in-depth, not a guarantee, so a mislabeled tool could
 still act on a real account.
 
-**If the token is wrong**, the run doesn't quietly pass. A server that refuses every call
-produces a HIGH finding — so `--fail-on high` fails the build rather than reporting a clean
-one nothing was measured against — and a remote server that rejects the connection outright
-says so with its status instead of "the transport did not come up". Detection reads the
-protocol (HTTP status, JSON-RPC error code, machine-readable auth codes) rather than the
-wording, so it holds for a server that writes its errors in any language; the residual is
-`docs/known-gaps.md` G13.
+**If the token is wrong, the run doesn't quietly pass** — but which way it fails depends on
+whether you supplied one, and the two are different facts:
+
+- **You passed `--env`/`--header` and the server still refused every call.** That is a
+  verdict: a HIGH finding, so `--fail-on high` fails the build. Your token is wrong, expired,
+  or lacks the scope.
+- **You passed nothing and the server refuses everything.** That is not the server's fault
+  and not a regression, so it is **exit 3** — *could not evaluate* — at every `--fail-on`
+  level. It used to be a green `A 100.0`, which is the one answer that is certainly wrong.
+
+A remote server that rejects the connection outright says so with its status instead of "the
+transport did not come up". Detection reads the protocol (HTTP status, JSON-RPC error code,
+machine-readable auth codes) rather than the wording, so it holds for a server that writes
+its errors in any language; the residual is `docs/known-gaps.md` G13.
 
 ### No API key? Static mode
 

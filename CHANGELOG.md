@@ -7,6 +7,19 @@ All notable changes to mcp-gauntlet are documented here. This project adheres to
 
 ### Fixed
 
+- **A server that refused every call graded `A 100.0` and exited 0.** With no credential
+  supplied, the run printed `Not scored:`, wrote the reason into `report.json` — and then
+  returned a green check over a server nothing was ever able to call. It is now **exit 3** at
+  every `--fail-on` level, the same answer the zero-tools case already gave for the same
+  reason: nothing was measured, so neither pass nor fail is honest. Exit 3 rather than 1
+  because no credential was supplied, so this is neither the server's fault nor a regression.
+
+  The reason is also mirrored into `not_measured`, where a CI job looking for "was this run
+  complete" will actually find it. It used to live only in a field the console printed.
+
+  The README's own sentence — *"A server that refuses every call produces a HIGH finding"* —
+  was true only when credentials WERE supplied, and a tester read it as unconditional,
+  which is how it was written. It now draws the distinction.
 - **The harness read the attack, reported it, and then obeyed it.** A server served `x01` as
   benign with `readOnlyHint: true` on the first `tools/list`, then as `destructiveHint: true`
   + *"permanently deletes every row in the production ledger"* on the second. The run parsed

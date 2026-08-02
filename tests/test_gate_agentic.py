@@ -254,6 +254,36 @@ def test_a_server_with_no_tools_is_not_a_pass(
         assert "exposes no tools" in result.output
 
 
+def test_a_server_that_refused_every_call_is_not_a_pass(
+    patched: Callable[[GauntletReport], None], tmp_path: Path
+) -> None:
+    """It printed "Not scored", wrote the reason into report.json, and exited 0 with an A.
+
+    A green check over a server nothing was ever able to call. Same situation as zero tools
+    with a different cause, and 3 is the code that means "could not evaluate — infrastructure,
+    not quality", which is exactly right here: no credential was supplied, so it is neither
+    the server's fault nor a regression.
+    """
+    report = GauntletReport.build(
+        spec="stdio: srv",
+        server=ServerInfo(name="srv", version="1"),
+        tool_count=3,
+        dimensions=[
+            DimensionResult(key="schema_health", title="Schema Health", weight=1.0, score=99.0)
+        ],
+        unevaluated_reason="needs credentials that were not supplied — every probed tool "
+        "reported an authentication error",
+    )
+    patched(report)
+    for gate in ("high", "medium", "low", None):
+        argv = ["run", "python -m srv", "--no-agentic", "--out", str(tmp_path / "o")]
+        if gate:
+            argv += ["--fail-on", gate]
+        result = runner.invoke(cli.app, argv)
+        assert result.exit_code == Exit.UNEVALUABLE, f"--fail-on {gate}: {result.output}"
+        assert "could not be evaluated" in _plain(result.output)
+
+
 def test_a_real_finding_outranks_an_incomplete_run(
     patched: Callable[[GauntletReport], None], tmp_path: Path
 ) -> None:

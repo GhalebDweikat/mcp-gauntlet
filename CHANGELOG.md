@@ -40,6 +40,13 @@ for you, this is a straight upgrade.
 - **`--fail-under -10` was accepted and exits 0 forever** — a typo'd gate that looks
   configured and silently never fires. `--fail-under 200`, `--tasks -5` and `--repeats 0`
   were accepted too. All now exit 2 at parse time, naming the value and the range.
+
+  **Check your workflow before upgrading.** `--max-turns`, `--tool-timeout` and (on `scan`)
+  `--timeout` also started rejecting values 0.9.1 accepted and ran to completion. The one
+  that will bite is **`--tool-timeout 0`**, which was a working configuration — a full clean
+  run, exit 0 — and is now `Invalid value ... is not in the range x>=1`, because a zero
+  per-call limit times out every call and fills the report with false failures. `run
+  --timeout 0` is unchanged and still means "no limit", as its help says.
 - **Captured stderr was truncated from the front**, producing paths that exist nowhere
   (`cripts\python.exe: can't open file ...`). It truncates the end now: the front is where
   the program name and the problem live, and a visibly truncated string beats a plausible
@@ -80,8 +87,6 @@ for you, this is a straight upgrade.
   two SDK eras identical for weeks while the malicious fixture scored C 75.0 on 1.x and D
   60.2 on 2.0 — the definitions were byte-identical and the divergence was runtime. It now
   calls every tool with a schema-violating payload and compares the answers.
-- A failing gate (exit 1) is reported before the could-not-evaluate checks (exit 3): a server
-  with HIGH findings *and* a dead LLM backend should hear about the findings.
 - Documented, having been found by running into them: Windows paths with spaces need **single**
   quotes; `report.html` is written on every run and was mentioned nowhere; `--out` has a fixed
   default, so consecutive runs overwrite one directory; Ctrl-C exits 130; cross-run drift

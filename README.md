@@ -58,7 +58,7 @@ mcp-gauntlet run "node /path/to/proj/dist/index.js" --no-agentic
 mcp-gauntlet run "C:\Tools\python.exe 'C:\Users\Jane Smith\proj\server.py'" --no-agentic
 
 # A remote server, with auth
-mcp-gauntlet run "https://mcp.example.com" --header "Authorization: Bearer $TOKEN"
+mcp-gauntlet run "https://mcp.example.com/mcp" --header "Authorization: Bearer $TOKEN"
 ```
 
 Two things that bite people, both worth knowing before they cost you a debugging cycle:
@@ -225,7 +225,7 @@ export GITHUB_TOKEN=ghp_...
 mcp-gauntlet run "npx -y @modelcontextprotocol/server-github" --env GITHUB_TOKEN
 
 # remote server: send an auth header
-mcp-gauntlet run "https://mcp.example.com" --header "Authorization: Bearer $TOKEN"
+mcp-gauntlet run "https://mcp.example.com/mcp" --header "Authorization: Bearer $TOKEN"
 ```
 
 `--env`/`--header` are repeatable. Only the variables you name are forwarded — the child
@@ -299,6 +299,12 @@ what it **found**:
 **Gate on a severity, not a score.** `--fail-on high` fails the build when a HIGH finding
 exists — tool poisoning, injection markers, hidden characters. `medium` also catches stdout
 pollution, weak descriptions and definition drift; `low` adds undescribed parameters.
+
+**Use `--fail-on high` in CI, and reach for `medium` deliberately.** `medium` also gates on
+definition drift, which fires when *you* edit a description — once, since the baseline is
+updated by the same run — so it is a review signal rather than a build gate. If you cache
+`.gauntlet/baselines/` in CI (below) and gate at `medium`, every PR that touches a docstring
+goes red. Either gate at `high`, or pass `--no-track-drift` alongside `medium`.
 
 **`--fail-on low` is not usable yet on servers built with the official Python SDK.** That SDK
 does not carry a docstring's `Args:` section into the JSON schema, so every parameter comes

@@ -125,7 +125,19 @@ class ChildStderr:
             for line in text.splitlines()
             if line.strip() and not _NOISE.match(line.strip())
         ]
-        joined = " / ".join(lines[-3:])
+        # Keep BOTH ends. `lines[-3:]` dropped the first line entirely and said nothing —
+        # so a server whose stderr reads
+        #
+        #     LINE_01: config key 'dsn' missing        <- the answer
+        #     ...four lines of framework noise...
+        #
+        # reported only the noise. Character-level truncation was fixed to preserve the front
+        # in 0.9.2 and LINE truncation was not, which is the same defect one level up: the
+        # first line is where a startup error announces itself, and the last is where a
+        # traceback puts its exception. Both ends matter, and which one carries the answer
+        # depends on the server, so keep both and mark the gap.
+        kept = lines if len(lines) <= 3 else [lines[0], "…", *lines[-2:]]
+        joined = " / ".join(kept)
         if len(joined) <= limit:
             return joined
         # Truncate the END, not the front. `[-limit:]` kept the last N characters, which cut

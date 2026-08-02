@@ -333,6 +333,11 @@ async def evaluate_server(
         # server, and `--no-probe` means "inspect, don't execute". The messages it returns
         # are the point — they reach the model's context verbatim.
         discovery = await discover_in_session(session, init, fetch_prompts=probe)
+        # Checked BEFORE the drift call, which writes one as a side effect — asking
+        # afterwards would always answer "yes".
+        baseline_existed = baseline_file(
+            cache_dir.parent / "baselines", spec_key(spec.label())
+        ).exists()
         drift_findings = await _check_definition_drift(
             session, init, spec, discovery, cache_dir.parent / "baselines", track_drift
         )
@@ -536,6 +541,17 @@ async def evaluate_server(
                 f"{excluded_note}. Annotate a genuinely read-only tool with "
                 "`readOnlyHint: true`, or re-run with --allow-writes against a disposable "
                 "target."
+            )
+
+        if track_drift and not baseline_existed:
+            # The across-run check had nothing to compare against — a fresh CI runner
+            # (actions/checkout + uvx) never has a previous fingerprint, so a silently
+            # DELETED tool is invisible there. Every other skipped check says so; this one
+            # was explained in the README and absent from the artifact people actually read.
+            not_measured.append(
+                "definition drift across runs (no stored baseline for this server yet — one "
+                "was written by this run; a fresh CI runner starts without one unless "
+                "`.gauntlet/baselines/` is cached)"
             )
 
         if discovery.resources:

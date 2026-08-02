@@ -235,7 +235,10 @@ def compare_to_baseline(
                     severity,
                     f"tool definition changed since the last run {how}",
                     detail="The description, title, schema or safety hints a model reads "
-                    f"are not the ones recorded for this server{since}.",
+                    f"are not the ones recorded for this server{since}. If you made this "
+                    "change, it is expected: the baseline is updated by this run, so the "
+                    "next one is clean. Pass --no-track-drift if you edit descriptions "
+                    "often enough that the one-run signal is noise.",
                 )
             )
     for name in baseline.tools:

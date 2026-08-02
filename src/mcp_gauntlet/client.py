@@ -370,7 +370,9 @@ async def discover_in_session(
             # Recorded, not raised. Pagination stops: the result is unusable, and a later
             # page cannot repair an earlier one.
             unparseable = _first_validation_error(exc)
-            _log.warning("tools/list returned an unparseable tool list: %s", unparseable)
+            # debug, not warning: the finding IS the report of this, and at warning level it
+            # printed over `scan`'s progress line — twice, since discovery runs twice.
+            _log.debug("tools/list returned an unparseable tool list: %s", unparseable)
             break
         for tool in listed.tools:
             # Dedup by name so a server with overlapping pages can't inflate the tool

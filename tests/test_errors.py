@@ -144,3 +144,36 @@ def test_remote_failures_name_the_url_and_the_cause(detail: str, expected: str) 
     assert "https://mcp.example.com/mcp" in message
     assert expected in message
     assert detail.split(":")[0] in message  # the raw cause is kept, not swallowed
+
+
+def test_multiline_stderr_keeps_both_ends() -> None:
+    """`lines[-3:]` dropped the FIRST line and said nothing about it.
+
+    A server whose stderr reads "LINE_01: config key 'dsn' missing" followed by four lines of
+    framework noise reported only the noise. Character-level truncation was fixed to preserve
+    the front in 0.9.2 and LINE truncation was not — the same defect one level up.
+
+    Both ends matter and which one carries the answer depends on the server: a startup error
+    announces itself on the first line, a traceback puts its exception on the last. So keep
+    both and mark the gap.
+    """
+    import tempfile
+
+    from mcp_gauntlet.protocol import ChildStderr
+
+    def tail(lines: list[str]) -> str:
+        with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as handle:
+            handle.write("\n".join(lines))
+            return ChildStderr(handle).tail()  # type: ignore[arg-type]
+
+    got = tail(["LINE_01_THE_ACTUAL_ERROR: config missing", *[f"noise_{i}" for i in range(4)]])
+    assert got.startswith("LINE_01_THE_ACTUAL_ERROR"), got
+    assert "…" in got, got  # the gap is visible, not silent
+    assert got.endswith("noise_3"), got
+
+    # A traceback's exception is on the LAST line, and must survive too.
+    trace = tail(["Traceback (most recent call last):", "  File a", "  File b", "KeyError: dsn"])
+    assert trace.endswith("KeyError: dsn"), trace
+
+    # Short stderr is untouched — no ellipsis, nothing dropped.
+    assert tail(["a", "b", "c"]) == "a / b / c"

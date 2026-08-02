@@ -685,6 +685,19 @@ def scan(
                 raise typer.Exit(code=Exit.CONFIG) from exc
             llm_config = None  # nobody asked; static-only scan is the documented default
 
+    # BEFORE any server is contacted, and before anything is printed that implies work is
+    # under way. An unwritable --out escaped from inside run_scan as a raw traceback and
+    # typer rendered it as exit 1 — "your server regressed" for a mistyped path, which is
+    # the worst possible reading. `run` already exits 4 here; `scan` did not, the same
+    # one-command-only pattern as the --agentic and remote-message fixes.
+    try:
+        out.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        console.print(
+            f"[red]Could not write reports to[/red] {escape(str(out))}: {escape(str(exc))}"
+        )
+        raise typer.Exit(code=Exit.CONFIG) from exc
+
     how = llm_config.redacted() if llm_config is not None else "static + robustness only"
     console.print(f"[bold]Scanning[/bold] {len(entries)} server(s) — {how}")
 

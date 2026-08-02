@@ -142,12 +142,36 @@ async def main():
                 }
         except Exception:
             prompts = {}
+
+        # BEHAVIOUR, not just definitions. The definitions were byte-identical across eras
+        # for weeks while the malicious fixture scored C 75.0 on 1.x and D 60.2 on 2.0,
+        # because 1.x validates arguments inside @server.call_tool() and 2.0's raw request
+        # handler does not — so the fixtures' own shim was rejecting malformed input on one
+        # era and accepting it on the other. Nothing compared that, so nothing saw it.
+        #
+        # Recorded as "rejected"/"accepted" rather than as the error text, which is worded
+        # differently by every era and would make this noisy enough to be switched off.
+        behaviour = {}
+        for t in (await s.list_tools()).tools:
+            schema = either(t, "input_schema", "inputSchema") or {}
+            required = schema.get("required") or []
+            # Omitting a required argument violates any honest schema. Where nothing is
+            # required, send a property the schema does not declare.
+            args = {} if required else {"__gauntlet_era_probe__": 1}
+            try:
+                out = await s.call_tool(t.name, args)
+                errored = bool(either(out, "is_error", "isError"))
+            except Exception:
+                errored = True
+            behaviour[t.name] = "rejected" if errored else "accepted"
+
         print("@@JSON@@" + json.dumps({
             "sdk": md.version("mcp"),
             "protocol": str(either(init, "protocol_version", "protocolVersion")),
             "first": first,
             "second": second,
             "prompts": prompts,
+            "behaviour": behaviour,
         }, sort_keys=True))
 
 anyio.run(main)
@@ -186,7 +210,13 @@ def _report(label: str, legacy: dict, modern: dict) -> int:
         )
 
     failures = 0
-    for section in ("first", "second", "prompts"):
+    # "behaviour" is compared alongside the definitions, and it is the one that was missing.
+    # A shim can serve byte-identical definitions on both eras and still ANSWER differently,
+    # which is what happened: the malicious fixture rejected schema-violating input on 1.x
+    # and accepted it on 2.0, moving its grade 15 points, while this probe reported the two
+    # eras identical the whole time. Definitions are what the fixture SAYS; behaviour is
+    # what it DOES, and both have to match for "same fixture, both eras" to mean anything.
+    for section in ("first", "second", "prompts", "behaviour"):
         if legacy[section] == modern[section]:
             continue
         failures += 1
@@ -194,6 +224,9 @@ def _report(label: str, legacy: dict, modern: dict) -> int:
         for key in sorted(set(legacy[section]) | set(modern[section])):
             was, now = legacy[section].get(key), modern[section].get(key)
             if was == now:
+                continue
+            if not isinstance(was, dict) and not isinstance(now, dict):
+                print(f"    {key}:  legacy={was!r}  modern={now!r}")  # behaviour verdicts
                 continue
             print(f"    {key}:")
             for field in sorted(set(was or {}) | set(now or {})):
@@ -203,7 +236,8 @@ def _report(label: str, legacy: dict, modern: dict) -> int:
     if failures == 0:
         print(
             f"  IDENTICAL - {len(legacy['first'])} tool(s), both listings, "
-            f"and {len(legacy['prompts'])} prompt(s)"
+            f"{len(legacy['prompts'])} prompt(s), and the same answer to "
+            f"{len(legacy['behaviour'])} malformed call(s)"
         )
     # The rug-pull must actually fire, or this fixture has silently stopped demonstrating it.
     if label == "malicious" and not (drift_legacy and drift_modern):

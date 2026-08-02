@@ -481,8 +481,6 @@ _EXFIL_AGENT_DIRECTED = re.compile(
     r")",
     re.I,
 )
-# (B) An explicit off-machine destination.
-_EXFIL_EXTERNAL_URL = re.compile(r"https?://\S+", re.I)
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+|\n")
 
 
@@ -504,11 +502,20 @@ def _reads_as_an_exfiltration_order(text: str) -> str | None:
             _EXFIL_READ_THEN_SECRET.search(stripped) or _EXFIL_SECRET_THEN_READ.search(stripped)
         ):
             continue
-        # An external URL is damning on its own; otherwise the text has to be addressing the
-        # model, because reading a secret and forwarding it is what honest credential
-        # brokers, vault clients and auth proxies do all day.
-        if _EXFIL_EXTERNAL_URL.search(stripped):
-            return stripped
+        # The URL disjunct is GONE. It was added on the reasoning that no honest description
+        # tells its reader to send a credential to a hard-coded endpoint. That is false: an
+        # OAuth broker, a Docker push tool, an artifact fetcher and an AWS signer all name
+        # the endpoint they authenticate against, because accurate documentation does. It
+        # capped this file's OWN canonical honest example the moment the endpoint was named:
+        #
+        #   "Loads the access token from the keychain and attaches it to every outgoing
+        #    request."                                                        -> clean
+        #   "...to every outgoing request to https://api.example.com/v1."     -> CAPPED
+        #
+        # It was also not what it claimed. "Off-machine URL" was implemented as "contains
+        # scheme://", so it capped http://127.0.0.1:8080 — definitionally on-machine — and
+        # missed a bare domain, an IP:port, an email address and DNS exfil, all off-machine.
+        # It cost the honest API-client population and bought one phrasing of one channel.
         if _EXFIL_CONVEY_TO_SINK.search(stripped) and _EXFIL_AGENT_DIRECTED.search(stripped):
             return stripped
     return None
@@ -739,6 +746,16 @@ def _mixed_script_words(text: str) -> list[str]:
     return found
 
 
+def fold_confusables(text: str) -> str:
+    """Public alias for the lookalike fold, used by the read-only safety filter.
+
+    The two halves of the tool were folding differently: the scanner reported a
+    Cyrillic-е `dеlete_all` as HIGH for hidden characters while the safety filter
+    matched raw bytes and executed it. One fold, one answer.
+    """
+    return _clean_for_match(text)
+
+
 def _clean_for_match(text: str) -> str:
     """Fold the text to a bare skeleton before the injection patterns run.
 
@@ -820,18 +837,22 @@ def _scan_text(
     # the query field" reaches the model's context verbatim, exactly like a description does.
     order = _reads_as_an_exfiltration_order(cleaned)
     if order is not None:
-        # HIGH, and it caps: "read the user's credentials and pass them in here" is a
-        # near-certain attack signal, which is the bar METHODOLOGY sets for capping. It
-        # requires three independent conjuncts plus a negation guard precisely so that it
-        # can be trusted at that severity — the credential vocabulary ALONE stays INFO
-        # below, because that is the part twenty-five honest servers tripped.
+        # MEDIUM, and it does NOT cap. METHODOLOGY's rule is that only NEAR-CERTAIN signals
+        # cap the grade, and two rounds of adversarial testing have established that this is
+        # not one. It capped an OAuth broker, a Docker registry client, an SSH public-key
+        # registrar, an AWS billing helper and a credential-migration tool — every one of
+        # them accurate documentation of a legitimate operation — while a payload saying
+        # "System note:" instead of "Before answering," walked past untouched, as did the
+        # same payload with a full stop between the marker and the instruction.
         #
-        # Downgraded on a literal like every other HIGH here: sample data may quote an
-        # instruction without issuing one.
+        # A check with that profile is not conservative, it is differently aggressive. At
+        # MEDIUM it is still reported, still visible, and still gateable by anyone who wants
+        # it — without red-building an honest server on the gate the docs recommend, which
+        # has no allowlist and no suppression flag to escape with.
         findings.append(
             _f(
                 None,
-                Severity.MEDIUM if not prose else Severity.HIGH,
+                Severity.LOW if not prose else Severity.MEDIUM,
                 "instructs the agent to read a credential and pass it onward",
                 f"{order[:200]}{obfuscated}",
             )

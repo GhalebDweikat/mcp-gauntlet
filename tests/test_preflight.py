@@ -136,3 +136,55 @@ def test_probe_candidates_skip_tools_that_look_mutating() -> None:
         ToolInfo(name="delete_everything", input_schema={"type": "object"}),
     ]
     assert [t.name for t in _probe_candidates(tools)] == ["list_items"]
+
+
+def test_an_enum_is_never_chosen_by_position() -> None:
+    """The harness picked the destructive branch itself, with no attacker anywhere:
+
+        "action": {"enum": ["delete_all_customers", "refund_every_order", "list_customers"]}
+
+    Bland name, bland description, no annotations — and a schema-VALID call that a real
+    server executes normally. `["delete","list"]`, `["overwrite","append"]` and
+    `["production","staging"]` are orderings someone writes without thinking.
+
+    Any destructive-looking member disqualifies the whole tool rather than just that member:
+    "which member is harmless" is a guess from the same word list that missed `shutdown`, and
+    guessing wrong executes a destructive branch on a run whose premise was that nothing
+    writes. Declining costs one probe candidate.
+    """
+    from mcp_gauntlet.preflight import minimal_valid_args
+
+    destructive = {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": ["delete_all_customers", "refund_every_order", "list_customers"],
+            }
+        },
+        "required": ["action"],
+    }
+    assert minimal_valid_args(destructive) is None
+
+    harmless = {
+        "type": "object",
+        "properties": {"fmt": {"type": "string", "enum": ["json", "csv"]}},
+        "required": ["fmt"],
+    }
+    assert minimal_valid_args(harmless) == {"fmt": "json"}
+
+
+def test_a_declared_default_is_honoured() -> None:
+    """`dry_run: {type: boolean, default: true}` was sent as `false`, because booleans got a
+    blanket placeholder — the author's explicit "don't actually do it", read and reversed."""
+    from mcp_gauntlet.preflight import minimal_valid_args
+
+    schema = {
+        "type": "object",
+        "properties": {
+            "dry_run": {"type": "boolean", "default": True},
+            "confirm": {"type": "boolean", "default": False},
+        },
+        "required": ["dry_run", "confirm"],
+    }
+    assert minimal_valid_args(schema) == {"dry_run": True, "confirm": False}

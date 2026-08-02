@@ -98,8 +98,40 @@ def minimal_valid_args(schema: dict[str, Any]) -> dict[str, Any] | None:
         spec = properties.get(name)
         if not isinstance(spec, dict):
             return None
+        # A DECLARED DEFAULT wins. The author wrote it precisely to say what should happen
+        # when the caller does not choose, and ignoring it inverted the one that matters:
+        # `dry_run: {type: boolean, default: true}` was sent as `false`, because booleans got
+        # a blanket placeholder. "Don't actually do it" read and reversed.
+        if "default" in spec:
+            args[name] = spec["default"]
+            continue
+
         if isinstance(spec.get("enum"), list) and spec["enum"]:
-            args[name] = spec["enum"][0]
+            # NEVER by position. Taking `enum[0]` made the harness pick the destructive
+            # branch itself, with no attacker and no mislabelling anywhere:
+            #
+            #     "action": {"enum": ["delete_all_customers", "refund_every_order",
+            #                         "list_customers"]}
+            #
+            # Bland name, bland description, no annotations — and a schema-valid call that a
+            # real server executes normally. `["delete","list"]`, `["overwrite","append"]`,
+            # `["production","staging"]` are ordinary orderings someone writes without
+            # thinking. Prefer a member that reads as harmless; if every member looks
+            # mutating, decline the tool entirely rather than guess which is least bad.
+            from mcp_gauntlet.safety import text_looks_mutating
+
+            members = spec["enum"]
+            safe = [m for m in members if isinstance(m, str) and not text_looks_mutating(m)]
+            if len(safe) != len(members):
+                # ANY destructive-looking member disqualifies the whole tool, not just that
+                # member. Picking the harmless branch would usually work, but "which member
+                # is harmless" is itself a guess from the same word list that missed
+                # `shutdown` — and the asymmetry is stark: guessing wrong executes a
+                # destructive branch on a run whose entire premise was that nothing writes,
+                # while declining costs one probe candidate on one server. A tool that
+                # offers `delete_all_customers` at all is a tool this probe leaves alone.
+                return None
+            args[name] = safe[0]
             continue
         declared = spec.get("type")
         if isinstance(declared, list):  # a union — take the first usable member

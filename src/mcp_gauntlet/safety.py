@@ -47,7 +47,11 @@ _MUTATING_VERBS = (  # noqa: SIM905 - one whitespace-delimited string reads bett
     # benign bare reading, and a zero-argument tool named exactly `sync` or `restore` is a
     # "do it all now" button. Measured before the move: `sync`, `restore`, `init`, `attach`
     # and `assign` all passed the filter as read-only and would have been executed.
-    "sync restore attach assign init import"
+    "sync restore attach assign init import "
+    # Measured absent while fifteen sibling verbs were caught: a tool named `shutdown`,
+    # described "Shut the production cluster down", was executed twice by a default run.
+    "shutdown halt evict drain seed migrate prune vacuum reindex detach unassign "
+    "unlink unregister scale"
 ).split()
 
 
@@ -103,14 +107,38 @@ _IRREDEEMABLE = re.compile(
 )
 
 
+def _fold_confusables(text: str) -> str:
+    """The same lookalike fold the security scan uses, imported lazily.
+
+    Lazy to keep this module free of a hard dependency on `checks` — the same reason
+    `preflight` reaches `looks_mutating` lazily. On any failure the text is returned
+    unchanged, which can only make a tool look MORE mutating, never less.
+    """
+    try:
+        from mcp_gauntlet.checks import fold_confusables
+
+        return fold_confusables(text)
+    except Exception:  # noqa: BLE001 - a fold failure must never make a tool look safe
+        return text
+
+
 def _normalize(text: str) -> str:
     """Split snake_case / kebab-case / camelCase so verbs in tool names are matchable
     (``\\b`` treats ``_`` as a word char, so ``delete_file`` never matches ``delete``)."""
+    # Fold FIRST. The security scan folds lookalike characters and this filter did not,
+    # so `dеlete_all` with a Cyrillic е was reported HIGH for hidden characters and
+    # EXECUTED by the same run — the tool disagreeing with itself and resolving in favour
+    # of executing. `ｄelete_all` (fullwidth) drew no finding at all and still ran.
+    text = _fold_confusables(text)
     # Two boundaries, not one. The first alternative needs a lowercase-or-digit before the
     # capital, so an ACRONYM prefix was never split: `S3DeleteObject` worked only because
     # the `3` satisfied it, while `DBDeleteRow` came through as one token and was executed.
     # Half-present is worse than absent, because it reads as covered.
     text = re.sub(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", " ", text)
+    # Digits are separators too: `delete2all` was one token and executed, while its
+    # underscore and camelCase siblings were caught. Splitting letter/digit boundaries costs
+    # nothing on honest names (`md5_hash` -> `md 5 hash`) and closes the variant.
+    text = re.sub(r"(?<=[A-Za-z])(?=\d)|(?<=\d)(?=[A-Za-z])", " ", text)
     return re.sub(r"[-_./]+", " ", text)
 
 
@@ -171,7 +199,16 @@ def looks_mutating(tool: ToolInfo) -> bool:
     # the annotation — just a guess about it rather than a statement. A self-incriminating
     # hint still wins above, so `destructiveHint: true` cannot be overridden this way.
     if tool.read_only_hint is True and not _IRREDEEMABLE.search(
-        _normalize(" ".join(p for p in (tool.name, tool.title, tool.annotation_title) if p))
+        # The DESCRIPTION is in here deliberately. Reading only the name let a server pair
+        # `readOnlyHint: true` with "Erases the customer database and issues refunds for
+        # every open order. Irreversible." and have it EXECUTED — the word "Irreversible"
+        # read, understood, and then discarded because the server said otherwise. A
+        # contextual verb in a name is a guess worth overriding; "erases" in the prose is not.
+        _normalize(
+            " ".join(
+                p for p in (tool.name, tool.title, tool.annotation_title, tool.description) if p
+            )
+        )
     ):
         return False
     # Include the display titles: a tool named `entry_op` whose title reads "Delete Entry"
@@ -181,6 +218,33 @@ def looks_mutating(tool: ToolInfo) -> bool:
         part for part in (tool.name, tool.title, tool.annotation_title, tool.description) if part
     )
     return bool(_WRITE_HINTS.search(_normalize(surface)) or _compound_write_name(tool))
+
+
+def text_looks_mutating(text: str) -> bool:
+    """Whether a bare string reads as a mutating verb.
+
+    Used to keep the credential pre-flight from choosing a destructive `enum` member as its
+    invented argument. Same vocabulary and same folding as the tool-level filter, so a
+    lookalike-character member cannot slip through either.
+    """
+    return bool(_WRITE_HINTS.search(_normalize(text)))
+
+
+def trusted_on_its_own_word(tool: ToolInfo) -> bool:
+    """Would this tool have been EXCLUDED but for its own `readOnlyHint: true`?
+
+    Worth surfacing rather than leaving implicit. The operator withheld `--allow-writes`;
+    these are the calls the SERVER handed back by asserting it was safe. That assertion is
+    the server's, not ours, and a compromised dependency or a copy-pasted annotation makes it
+    cheaply. The override earns its place — without it a maintainer whose read-only tool is
+    named `search_deploys` has no correct move — but it should never be invisible.
+    """
+    if tool.read_only_hint is not True:
+        return False
+    surface = " ".join(
+        part for part in (tool.name, tool.title, tool.annotation_title, tool.description) if part
+    )
+    return bool(_WRITE_HINTS.search(_normalize(surface))) and not looks_mutating(tool)
 
 
 def filter_read_only(tools: list[ToolInfo]) -> tuple[list[ToolInfo], list[str]]:

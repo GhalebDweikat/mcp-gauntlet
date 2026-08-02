@@ -118,3 +118,70 @@ def test_the_filter_reports_what_it_removed() -> None:
     kept, excluded = filter_read_only(tools)
     assert sorted(t.name for t in kept) == ["add", "read_notes"]
     assert sorted(excluded) == ["DBDeleteRow", "sync"]
+
+
+# ------------------------------------------------------- what the harness will EXECUTE
+#
+# A side-effect tester pointed a default run at a server that logged every invocation. With
+# no --allow-writes, it emailed an invoice, deployed a release, ran a schema migration, shut
+# down a cluster, and called a tool with `action: "delete_all_customers"` — then exited 0.
+# Each case below is one of those, reduced.
+
+
+def test_an_irreversible_description_beats_a_read_only_claim() -> None:
+    """The override reads names AND prose now.
+
+    Reading only the name let a server pair `readOnlyHint: true` with "Erases the customer
+    database and issues refunds for every open order. Irreversible." and have it executed —
+    the word "Irreversible" read, understood, and discarded because the server said
+    otherwise. A contextual verb in a NAME is a guess worth overriding; "erases" in the
+    prose is not.
+    """
+    assert looks_mutating(
+        _tool(
+            "fetch_report",
+            description="Erases the customer database and issues refunds for every open "
+            "order. Irreversible.",
+            read_only_hint=True,
+        )
+    )
+
+
+def test_lookalike_characters_do_not_slip_past_the_safety_filter() -> None:
+    """The scanner folded confusables and the safety filter did not, so the two halves
+    disagreed: `dеlete_all` (Cyrillic е) was reported HIGH for hidden characters and EXECUTED
+    by the same run. `ｄelete_all` (fullwidth) drew no finding at all and still ran."""
+    for name in ("d\u0435lete_all", "\uff44elete_all", "de\u00adlete_all", "tr\u0430nsfer_funds"):
+        assert looks_mutating(_tool(name)), name
+
+
+def test_a_digit_does_not_hide_a_verb() -> None:
+    # `delete2all` was one token and executed, while its underscore and camelCase siblings
+    # were caught.
+    assert looks_mutating(_tool("delete2all"))
+    # ...and the split must not over-exclude ordinary names.
+    assert not looks_mutating(_tool("md5_hash", description="Return the md5 hash of the input."))
+
+
+def test_shutdown_is_a_mutating_verb() -> None:
+    # Absent while fifteen siblings were caught; executed twice by a default run.
+    assert looks_mutating(_tool("shutdown", description="Shut the production cluster down."))
+
+
+def test_a_self_cleared_tool_is_reported_as_such() -> None:
+    """The override is defensible; being silent about it is not.
+
+    The operator withheld --allow-writes and the SERVER handed these calls back by asserting
+    it was safe. That assertion is the server's, not the harness's.
+    """
+    from mcp_gauntlet.safety import trusted_on_its_own_word
+
+    assert trusted_on_its_own_word(
+        _tool("send_invoice", description="Email the invoice to the customer.", read_only_hint=True)
+    )
+    # An ordinary getter was never at risk of exclusion, so there is nothing to disclose.
+    assert not trusted_on_its_own_word(
+        _tool("get_status", description="Return the status.", read_only_hint=True)
+    )
+    # An irredeemable tool is still excluded, so it was not "cleared" by anything.
+    assert not trusted_on_its_own_word(_tool("wipe_database", read_only_hint=True))

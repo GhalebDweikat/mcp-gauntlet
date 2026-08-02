@@ -418,3 +418,57 @@ def test_a_report_written_before_the_field_existed_still_loads() -> None:
     loaded = GauntletReport.model_validate(old)
     assert loaded.mcp_sdk_version == ""
     assert loaded.grade == "A"
+
+
+def test_a_truncated_credential_is_still_redacted() -> None:
+    """Redaction ran on the finished report; excerpts were TRUNCATED before that.
+
+    When the truncation window cut across a credential the full value no longer appeared,
+    the exact-match replace found nothing, and a long run of a live token was published into
+    report.json / report.md / report.html — 28 of 40 characters in the reproduction, from a
+    server that merely echoed its own token back in its `instructions`. The shipped CI
+    workflow uploads that directory as a build artifact with `if: always()`, and the README
+    promised "credential values are scrubbed from every report".
+
+    It worked in every test written for it, because those tests used short strings where the
+    whole value survived. It failed on whichever token happened to straddle the boundary.
+    """
+    from mcp_gauntlet.report import redact
+
+    token = "ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"
+    secrets = frozenset({token})
+    sentence = f"This server is configured with credential {token} for upstream access"
+
+    # Every way an excerpt can be cut, including from the MIDDLE — the first version of this
+    # fix walked prefixes and suffixes only, on the reasoning that truncation cuts one end,
+    # and still leaked 35 characters of the both-ends case.
+    for cut in (
+        sentence,
+        sentence[:70],
+        sentence[20:],
+        sentence[30:70],
+        sentence[45:80],
+        sentence[50:65],
+    ):
+        scrubbed = redact(cut, secrets)
+        longest = max(
+            (
+                size
+                for size in range(len(token), 3, -1)
+                if any(token[i : i + size] in scrubbed for i in range(len(token) - size + 1))
+            ),
+            default=0,
+        )
+        assert longest == 0, f"{longest} characters of a live token survived: {scrubbed!r}"
+
+
+def test_redaction_does_not_eat_ordinary_prose() -> None:
+    """The threshold is what keeps this honest. At eight characters it turned "the password
+    field is required" into "the ***REDACTED*** field is required" for a secret of
+    `password123456` — a word that merely opens the token."""
+    from mcp_gauntlet.report import redact
+
+    assert (
+        redact("the password field is required", frozenset({"password123456"}))
+        == "the password field is required"
+    )

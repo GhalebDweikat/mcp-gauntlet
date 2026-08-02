@@ -45,7 +45,7 @@ from mcp_gauntlet.report import (
     redact,
 )
 from mcp_gauntlet.robustness import run_robustness_probes
-from mcp_gauntlet.safety import filter_read_only
+from mcp_gauntlet.safety import filter_read_only, trusted_on_its_own_word
 from mcp_gauntlet.taskcache import (
     DEFAULT_CACHE_DIR,
     cache_file,
@@ -356,6 +356,20 @@ async def evaluate_server(
             ]
             + _deprecated_capability_findings(init, discovery.server.protocol_version)
         )
+
+        # Tools the read-only filter would have withheld, and executed anyway because the
+        # server annotated them `readOnlyHint: true`. The user did not pass --allow-writes;
+        # the server granted these back on its own word, and that belongs in the report
+        # rather than in the reader's assumptions.
+        self_cleared = [t.name for t in discovery.tools if trusted_on_its_own_word(t)]
+        if self_cleared:
+            not_measured.append(
+                "read-only exclusion was waived for "
+                f"{', '.join(sorted(self_cleared))} — the name or description reads as "
+                "mutating, and the server's own `readOnlyHint: true` overrode that, so these "
+                "tools WERE called. Pass --no-probe if you do not want a server's own "
+                "annotation to decide that."
+            )
 
         # Dimensions produced by TALKING to the server. Held aside rather than appended to a
         # single list because the static checks now run last (see the assembly below), and

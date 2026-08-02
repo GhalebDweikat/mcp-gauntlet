@@ -42,6 +42,13 @@ def _scrub(obj: object) -> object:
     return obj
 
 
+# A fragment shorter than this is not worth blanking: it stops being identifying, and
+# redacting it would mangle prose that merely shares a substring with a token. Twelve
+# characters of a real token is not a usable credential; eight was, and it also ate the
+# word "password" out of ordinary sentences.
+_MIN_SECRET_FRAGMENT = 12
+
+
 def redact(text: str, secrets: Iterable[str]) -> str:
     """Replace each known credential value in one string with a placeholder.
 
@@ -54,8 +61,34 @@ def redact(text: str, secrets: Iterable[str]) -> str:
     whole report, use :func:`redact_report`, which scrubs the fields before rendering.
     """
     for secret in secrets:
-        if secret:
-            text = text.replace(secret, REDACTION_PLACEHOLDER)
+        if not secret:
+            continue
+        text = text.replace(secret, REDACTION_PLACEHOLDER)
+        # PARTIAL matches too, and this is not belt-and-braces — it is the actual bug.
+        # Redaction runs on the finished report, and finding excerpts are TRUNCATED before
+        # that. When the truncation window cut across a credential, the full value no longer
+        # appeared, the exact-match replace found nothing, and a long run of a live token was
+        # published into report.json / report.md / report.html — 28 of 40 characters in the
+        # reproduction, from a server that merely echoed its own token in its `instructions`.
+        # The shipped CI workflow uploads that directory as a build artifact with
+        # `if: always()`, and the README promised "credential values are scrubbed from every
+        # report". It worked in testing and failed on whichever token straddled the boundary.
+        #
+        # ANY substring, not just a prefix or a suffix: an excerpt taken from the middle of a
+        # long string is cut at both ends, and the first version of this fix — which walked
+        # prefixes and suffixes only, on the reasoning that truncation cuts one end — still
+        # leaked 35 characters of that case.
+        #
+        # Longest first, so a placeholder never lands mid-fragment. Bounded by
+        # _MIN_SECRET_FRAGMENT: below that a run stops being identifying, and blanking it
+        # would mangle honest prose that merely shares a substring with a token — an early
+        # threshold of 8 turned "the password field is required" into "the ***REDACTED***
+        # field is required" for a secret of `password123456`.
+        for size in range(len(secret) - 1, _MIN_SECRET_FRAGMENT - 1, -1):
+            for start in range(len(secret) - size + 1):
+                fragment = secret[start : start + size]
+                if fragment in text:
+                    text = text.replace(fragment, REDACTION_PLACEHOLDER)
     return text
 
 

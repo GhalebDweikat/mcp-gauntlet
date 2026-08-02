@@ -246,7 +246,14 @@ def compare_to_baseline(
             findings.append(
                 _f(
                     name,
-                    Severity.INFO,
+                    # A tool that VANISHED, scored below one whose docstring was edited. INFO
+                    # is beneath high, medium AND low, so no gate the docs recommend could
+                    # fail on it — and INFO is excluded from the console's notable findings,
+                    # so it was silent on screen too. Meanwhile 0.9.1 made a zero-tool server
+                    # exit 3 on the reasoning that "tool registration silently breaking is a
+                    # total outage"; losing one tool is the same outage, retail. Matches the
+                    # severity of a silent redefinition, which is the weaker signal of the two.
+                    severity,
                     f"tool has disappeared since the last run {how}",
                     detail=f"It was offered when this server was last evaluated{since}.",
                 )

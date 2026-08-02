@@ -284,6 +284,10 @@ mean empty.
 Each server gets its own report directory. Nothing is ranked and no grades are compared side
 by side — see [What this does and does not claim](METHODOLOGY.md).
 
+**`--out` defaults to a fixed directory** (`reports` for `run`, `gauntlet-scan` for `scan`),
+so consecutive runs against different servers overwrite each other. Give each its own path if
+you are comparing them — a tester mis-attributed one release's numbers to another this way.
+
 ## Use it in CI
 
 This is where the tool earns its keep: a regression suite for your own MCP server, run on
@@ -306,12 +310,18 @@ updated by the same run — so it is a review signal rather than a build gate. I
 `.gauntlet/baselines/` in CI (below) and gate at `medium`, every PR that touches a docstring
 goes red. Either gate at `high`, or pass `--no-track-drift` alongside `medium`.
 
-**`--fail-on low` is not usable yet on servers built with the official Python SDK.** That SDK
-does not carry a docstring's `Args:` section into the JSON schema, so every parameter comes
-through undescribed and a perfectly good server emits a LOW finding per argument. The bundled
-`good_server` — an A grade — trips it four times. Treat `low` as aspirational until either
-the SDK propagates them or this check learns to tell "undocumented" from "the SDK dropped
-it"; `medium` is the strict gate that actually works today.
+**`--fail-on low` needs `Field(description=...)`, not a docstring.** The official Python SDK
+does not carry a docstring's `Args:` section into the JSON schema, so a server documented that
+way emits a LOW finding per parameter — the bundled `good_server`, an A grade, trips it four
+times. The fix is one line per parameter and it works today:
+
+```python
+def search(query: Annotated[str, Field(description="The text to search for.")]) -> str: ...
+```
+
+A tester took a server from 10 LOW findings to `--fail-on low` passing this way. Earlier
+wording here called the level "not usable", which steered people off a strict gate that works
+— the docstring is the problem, not the gate.
 
 `--fail-under` still exists, and is the weaker choice. A HIGH security finding caps the
 overall score at 75, so a `--fail-under 60` gate — which this README used to recommend —

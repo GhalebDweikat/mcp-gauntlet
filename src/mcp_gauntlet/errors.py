@@ -71,6 +71,14 @@ def http_status(exc: BaseException) -> tuple[int, Any] | None:
     and as a 401 that stops the session opening at all. The second used to be reported as
     "the transport did not come up", which sends a reader to check their firewall.
     """
+    # What the transport recorded off the wire, when it recorded anything. This is the only
+    # source that works on `mcp` 2.0, which catches httpx's `HTTPStatusError` and re-raises an
+    # `MCPError` carrying no response at all — see `client._StatusWatcher`.
+    for holder in (exc, *causes(exc)):
+        recorded = getattr(holder, "mcp_gauntlet_http_status", None)
+        if isinstance(recorded, tuple) and isinstance(recorded[0], int):
+            return recorded[0], recorded[1]
+
     for cause in causes(exc):
         response = getattr(cause, "response", None)
         status = getattr(response, "status_code", None)

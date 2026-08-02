@@ -26,8 +26,10 @@ from __future__ import annotations
 import socket
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Iterator
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import anyio
@@ -35,6 +37,7 @@ import pytest
 
 from mcp_gauntlet.client import open_session
 from mcp_gauntlet.config import ServerSpec, TransportKind
+from mcp_gauntlet.errors import explain_remote_failure
 
 FIXTURE = Path(__file__).parent / "data" / "http_fixture_server.py"
 
@@ -113,6 +116,77 @@ def test_remote_server_can_actually_be_reached(http_server: str) -> None:
 
     names = anyio.run(_go)
     assert "echo" in names
+
+
+class _StatusOnly(BaseHTTPRequestHandler):
+    """Answers every request with one status. Set `status` on the subclass."""
+
+    status = 401
+
+    def _reply(self) -> None:
+        body = b'{"error":"unauthorized"}'
+        self.send_response(self.status)
+        if self.status == 401:
+            self.send_header("WWW-Authenticate", 'Bearer realm="api", error="invalid_token"')
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    do_GET = do_POST = do_DELETE = _reply
+
+    def log_message(self, *_args: object) -> None:
+        pass
+
+
+def _explain_status(status: int) -> str:
+    """Point the harness at an endpoint that answers `status`, and return what it says."""
+    handler = type("_H", (_StatusOnly,), {"status": status})
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    url = f"http://127.0.0.1:{server.server_address[1]}/mcp"
+    try:
+        spec = ServerSpec.parse(url)
+
+        async def _go() -> str:
+            with anyio.fail_after(60):
+                try:
+                    async with open_session(spec) as _:
+                        return ""  # pragma: no cover - the endpoint never speaks MCP
+                except BaseException as exc:  # noqa: BLE001 - the message IS the subject
+                    return explain_remote_failure(url, exc)
+
+        return anyio.run(_go)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=10)
+
+
+@pytest.mark.skipif(sys.platform == "emscripten", reason="no sockets")
+def test_a_rejected_connection_names_the_status_on_both_eras() -> None:
+    """A wrong token on a hosted server usually stops the session opening at all, so the
+    credential pre-flight never runs and this message is the only thing the user sees.
+
+    It said "the transport did not come up" — which sends them to check their firewall — and
+    0.9.3 claimed to have fixed that. **It fixed it on `mcp` 1.x only.** 1.x lets httpx's
+    `HTTPStatusError` out with `.response.status_code` attached; 2.0 catches it and raises
+    `MCPError(-32603, "Server returned an error response")` carrying no response, no
+    `__cause__` and no `__context__`, so the status was simply gone — on the era a fresh
+    install resolves. A tester found it; nothing here could have, because no test looked at
+    this message over a real socket.
+
+    Over a real socket on whichever era is installed, so the dual-SDK CI leg covers both.
+    """
+    message = _explain_status(401)
+    assert "HTTP 401" in message
+    assert "credentials" in message
+    assert "--header" in message
+    assert "did not come up" not in message
+
+    # A server-side fault is still a server-side fault, on both eras.
+    assert "credentials" not in _explain_status(500)
 
 
 @pytest.mark.skipif(sys.platform == "emscripten", reason="no sockets")

@@ -7,6 +7,7 @@ Supports both transports:
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import shutil
 import sys
@@ -23,7 +24,7 @@ from pydantic import ValidationError
 
 from mcp_gauntlet.adapters import adapter
 from mcp_gauntlet.config import ServerSpec, TransportKind
-from mcp_gauntlet.errors import describe
+from mcp_gauntlet.errors import causes, describe
 from mcp_gauntlet.models import (
     DiscoveryResult,
     PromptInfo,
@@ -223,6 +224,55 @@ def _resolve_command(command: str | None, args: list[str] | None = None) -> str:
     )
 
 
+class _StatusWatcher:
+    """Remember the last failing HTTP status the transport saw, and stamp it on the failure.
+
+    The status is not otherwise recoverable on `mcp` 2.0: 1.x lets httpx's own
+    `HTTPStatusError` out with `.response.status_code` attached, while 2.0 catches it and
+    raises `MCPError(-32603, "Server returned an error response")` carrying no response, no
+    `__cause__` and no `__context__`. So a hosted server rejecting a wrong token was reported
+    as "the transport did not come up" — a message that sends the reader to check their
+    firewall — on the era a fresh install resolves.
+
+    An httpx event hook is the one vantage point that works on both eras, and the client is
+    ours to instrument because we construct it.
+    """
+
+    ATTRIBUTE = "mcp_gauntlet_http_status"
+
+    def __init__(self) -> None:
+        self.status: int | None = None
+        self.headers: Any = None
+
+    def attach_to(self, http_client: Any) -> None:
+        hooks = getattr(http_client, "event_hooks", None)
+        if not isinstance(hooks, dict):  # pragma: no cover - not an httpx client
+            return
+        hooks["response"] = [*hooks.get("response", []), self._on_response]
+
+    async def _on_response(self, response: Any) -> None:
+        status = getattr(response, "status_code", None)
+        # Failures only. A 200 tells `explain_remote_failure` nothing, and keeping the last
+        # SUCCESS around would let a mid-session hiccup be explained by an earlier 200.
+        if isinstance(status, int) and status >= 400:
+            self.status = status
+            self.headers = getattr(response, "headers", None)
+
+    def stamp(self, exc: BaseException) -> None:
+        """Record the status on the exception, and on every leaf inside it.
+
+        Both, because which object survives the trip out depends on whether anyio re-wraps
+        the group on the way — and a status that reaches `explain_remote_failure` only
+        sometimes is worse than one that never does.
+        """
+        if self.status is None:
+            return
+        payload = (self.status, self.headers)
+        for target in (exc, *causes(exc)):
+            with contextlib.suppress(AttributeError):
+                setattr(target, self.ATTRIBUTE, payload)
+
+
 @asynccontextmanager
 async def open_session(
     spec: ServerSpec,
@@ -310,14 +360,31 @@ async def open_session(
         # underneath it was not. Slice instead of unpacking, so a third era adding a
         # fourth element degrades to working rather than to a traceback — the session only
         # ever needed the two streams.
-        async with (
-            create_mcp_http_client(headers=spec.headers or None) as http_client,
-            streamable_http_client(spec.url, http_client=http_client) as streams,
-        ):
-            read, write = streams[0], streams[1]
-            async with _RecordingSession(read, write, interactions=interactions) as session:
-                init = await _initialize(session)
-                yield session, init, interactions
+        async with create_mcp_http_client(headers=spec.headers or None) as http_client:
+            # Watch the wire for a failing status, because the exception will not carry one.
+            #
+            # 1.x lets httpx's own `HTTPStatusError` out, and `.response.status_code` is right
+            # there. 2.0 catches it and raises `MCPError(-32603, "Server returned an error
+            # response")` with no `.response`, no `__cause__` and no `__context__` — the
+            # status is simply gone by the time anything of ours sees it. So a wrong token on
+            # a hosted server was reported as "the transport did not come up", which sends the
+            # reader to check their firewall, on the era a fresh install resolves.
+            #
+            # An httpx event hook is the one place the status is visible on BOTH eras, and it
+            # is ours to attach because we construct the client. Recording rather than raising:
+            # a 401 during the session is the credential pre-flight's business, and only a
+            # failure to CONNECT reaches `explain_remote_failure`.
+            watcher = _StatusWatcher()
+            watcher.attach_to(http_client)
+            try:
+                async with streamable_http_client(spec.url, http_client=http_client) as streams:
+                    read, write = streams[0], streams[1]
+                    async with _RecordingSession(read, write, interactions=interactions) as session:
+                        init = await _initialize(session)
+                        yield session, init, interactions
+            except BaseException as exc:
+                watcher.stamp(exc)
+                raise
 
 
 def _first_validation_error(exc: ValidationError) -> str:

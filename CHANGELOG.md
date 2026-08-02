@@ -7,6 +7,16 @@ All notable changes to mcp-gauntlet are documented here. This project adheres to
 
 ### Fixed
 
+- **The 0.9.3 "401 at connect" fix only worked on `mcp` 1.x** — the era a fresh install does
+  *not* resolve. On 2.0 it produced, byte for byte, the message the 0.9.3 changelog said it
+  had replaced. 1.x lets httpx's `HTTPStatusError` out with `.response.status_code` attached;
+  2.0 catches it and raises `MCPError(-32603, "Server returned an error response")` carrying
+  no response, no `__cause__` and no `__context__` — the status is simply gone.
+
+  It now comes off an httpx event hook on the client the harness constructs, which is the one
+  vantage point that works on both eras, and there is a test that binds a real socket and
+  asserts the message — so the dual-SDK CI leg covers it. That is the fourth transport fix in
+  this project's history to land on one era only, and the first with a test that can see it.
 - **A server that refused every call graded `A 100.0` and exited 0.** With no credential
   supplied, the run printed `Not scored:`, wrote the reason into `report.json` — and then
   returned a green check over a server nothing was ever able to call. It is now **exit 3** at

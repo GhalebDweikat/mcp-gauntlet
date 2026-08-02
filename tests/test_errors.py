@@ -55,3 +55,31 @@ def test_duplicate_causes_are_not_repeated() -> None:
 @pytest.mark.parametrize("limit", [10, 50, 200])
 def test_never_returns_empty(limit: int) -> None:
     assert describe(ExceptionGroup("x", [RuntimeError("z")]), limit=limit)
+
+
+def test_bundled_demo_runs_without_an_activated_venv() -> None:
+    """`python -m mcp_gauntlet.fixtures.…` must not depend on what is first on PATH.
+
+    Every doc uses that spelling for the demo, and it only worked when the `python` first on
+    PATH happened to be the interpreter mcp-gauntlet is installed into — true under `uvx`,
+    false under `uv tool install` (isolated env) and false when a console script is invoked
+    from an unactivated venv, which is the normal way. A first-run tester hit
+    `No module named 'mcp_gauntlet'` on the very first command in the README, using the
+    install method the README recommends.
+
+    Resolving to `sys.executable` is not a guess here: that module cannot exist in any
+    environment but this interpreter's.
+    """
+    import sys
+
+    from mcp_gauntlet.client import _is_own_fixture, _resolve_command
+
+    assert _is_own_fixture("python", ["-m", "mcp_gauntlet.fixtures.good_server"])
+    assert _resolve_command("python", ["-m", "mcp_gauntlet.fixtures.good_server"]) == sys.executable
+
+    # Narrow on purpose — a user's own server must keep the "give the interpreter
+    # explicitly" behaviour, because for THEM a bare `python` really is ambiguous.
+    assert not _is_own_fixture("python", ["-m", "my_server"])
+    assert not _is_own_fixture("python", ["server.py"])
+    assert not _is_own_fixture("node", ["-m", "mcp_gauntlet.fixtures.good_server"])
+    assert not _is_own_fixture("python", [])

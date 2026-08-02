@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import shutil
+import sys
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -162,7 +163,31 @@ async def _initialize(session: ClientSession) -> InitializeResult:
         ) from exc
 
 
-def _resolve_command(command: str | None) -> str:
+_PYTHON_NAMES = {"python", "python3", "py", "python.exe", "python3.exe", "py.exe"}
+
+
+def _is_own_fixture(command: str | None, args: list[str]) -> bool:
+    """Is this spec launching one of the gauntlet's OWN bundled demo servers?
+
+    `python -m mcp_gauntlet.fixtures.…` is the command every doc uses for the demo, and it
+    only works when the `python` first on PATH happens to be the one mcp-gauntlet is
+    installed into — true under `uvx`, false under `uv tool install` (isolated env) and
+    false in an unactivated venv, which is the normal way to invoke a console script. So
+    the README's very first command failed for a tester on the install method the README
+    itself recommends, with `No module named 'mcp_gauntlet'`.
+
+    Narrow on purpose: it fires only for a bare python name AND a `-m mcp_gauntlet.` module.
+    That module cannot exist anywhere except this interpreter's environment, so resolving it
+    to `sys.executable` is not a guess — it is the only interpreter that could ever run it.
+    A user's own server never matches, and the "give the interpreter explicitly" advice
+    below still stands for it.
+    """
+    if command is None or Path(command).name.lower() not in _PYTHON_NAMES:
+        return False
+    return len(args) >= 2 and args[0] == "-m" and args[1].startswith("mcp_gauntlet.")
+
+
+def _resolve_command(command: str | None, args: list[str] | None = None) -> str:
     """Resolve a bare command name to an executable path.
 
     On Windows this turns ``npx`` into the actual ``npx.cmd`` on PATH, which the
@@ -170,6 +195,8 @@ def _resolve_command(command: str | None) -> str:
     """
     if not command:
         raise MCPConnectionError("stdio server spec has no command")
+    if _is_own_fixture(command, args or []):
+        return sys.executable
     resolved = shutil.which(command)
     if resolved is not None:
         return resolved
@@ -209,7 +236,7 @@ async def open_session(
     interactions = InteractionLog()
     if spec.kind is TransportKind.STDIO:
         params = StdioServerParameters(
-            command=_resolve_command(spec.command),
+            command=_resolve_command(spec.command, spec.args),
             args=spec.args,
             # None → the SDK's minimal safe default child environment (no secrets leak).
             # A dict → those vars merged over that safe base, so an allow-listed token

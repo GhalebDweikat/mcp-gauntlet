@@ -69,8 +69,15 @@ dropped, and dropping it dissolved the problem rather than deferring it.
   evaluation harness for MCP servers" — the tagline this release exists to replace.
 - **The documented CI gate could not fail the project's own malicious fixture.** A HIGH
   security finding caps the overall at 75, and the example gated at `--fail-under 60` — so
-  `75 > 60` meant no poisoned server could ever fail it. Eight HIGH tool-poisoning findings,
+  `75 > 60` meant no poisoned server could ever fail it. Seven HIGH tool-poisoning findings,
   exit 0, green check. The example now gates on `--fail-on high`.
+
+  Worth stating precisely, because the mechanism differs by SDK: on `mcp` 1.28.1 the fixture
+  scores exactly **75.0 (C), capped** — the cap acting as a floor above the threshold. On
+  `mcp` 2.0.0 the same fixture scores **60.2 (D), uncapped**, because 2.0 does not validate
+  tool arguments against the input schema the way 1.x does, so its Robustness row collapses.
+  Either way `--fail-under 60` returns 0 on a server carrying seven HIGH tool-poisoning
+  findings, which is the point.
 - **Remote servers were completely broken on `mcp` 2.0.** `streamablehttp_client` is a 1.x
   alias that 2.0 removed, so widening the pin in 0.8.0 made every http/https spec die with
   an `ImportError` before touching the network. A straight rename would have been worse: the

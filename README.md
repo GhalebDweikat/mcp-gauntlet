@@ -10,6 +10,11 @@ malformed input, a description no agent can act on.
 It fails your build on what it **found** — a finding with a name and a location — not on a
 score.
 
+What it does **not** catch is written down too: the security checks are pattern-based, and
+[docs/known-gaps.md](docs/known-gaps.md) lists, by class, what has been demonstrated to slip
+past them — including the most commonly reported real-world poisoning shape. Read it before
+you treat a clean report as a clearance.
+
 ## Quickstart
 
 No install, no API key, no clone — this runs the bundled deliberately-malicious demo

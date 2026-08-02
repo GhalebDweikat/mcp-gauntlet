@@ -527,6 +527,26 @@ def run(
         )
         raise typer.Exit(code=Exit.UNEVALUABLE)
 
+    # A server exposing no tools was evaluated in name only. It grades N/A, and the
+    # documented gate — `--fail-on high` — could not fail it, because "server exposes no
+    # tools" is MEDIUM. So the migration the docs instruct (`--fail-under` → `--fail-on
+    # high`) turned a red build green for the single most total outage there is: tool
+    # registration silently breaking on an import error, a bad env var, or an auth gate.
+    # Three independent testers hit this.
+    #
+    # Exit 3 rather than 1, and unconditional rather than gated on --fail-on: there is no
+    # verdict to give. Nothing was measured, so "pass" and "fail" are both lies, and a
+    # server that legitimately exposes only resources or prompts is equally outside what
+    # this harness can say anything about.
+    if report.tool_count == 0:
+        console.print(
+            "[red]This server exposes no tools[/red] — nothing was evaluated, so this is "
+            "neither a pass nor a quality verdict. If it had tools before, tool "
+            "registration is broken; if it only exposes resources or prompts, this harness "
+            "has nothing to measure on it."
+        )
+        raise typer.Exit(code=Exit.UNEVALUABLE)
+
     # Both gates are checked, and either can fail the build. `--fail-on` first, because it is
     # the one that says WHAT was wrong rather than only that a number moved.
     if threshold is not None:
@@ -560,10 +580,12 @@ def scan(
         help="Fail if ANY server has a finding at or above this severity: high, medium, "
         "low, info. " + EXIT_CODE_HELP,
     ),
-    agentic: bool = typer.Option(
-        True,
+    agentic: bool | None = typer.Option(
+        None,
         "--agentic/--no-agentic",
-        help="Run the live-agent evaluation against each server.",
+        help="Run the live-agent evaluation against each server "
+        "(default: on when an LLM key is configured). Passing --agentic explicitly makes a "
+        "missing or broken key a hard failure instead of a silent static-only scan.",
     ),
     probe: bool = typer.Option(
         True, "--probe/--no-probe", help="Send malformed input to each tool (Robustness)."
@@ -593,6 +615,15 @@ def scan(
         console.print(f"[red]Could not load the server list:[/red] {escape(str(exc))}")
         raise typer.Exit(code=Exit.CONFIG) from exc
 
+    if not entries:
+        # Every OTHER malformed-list case already exits 4; an empty one used to scan nothing,
+        # print an empty table and exit 0. A gate that passes because it checked nothing is
+        # the same defect as a gate that passes because the key expired.
+        console.print(
+            f'[red]No servers to scan[/red] — {servers} contains an empty "servers" list.'
+        )
+        raise typer.Exit(code=Exit.CONFIG)
+
     # The per-server clock has to cover one permitted agent hang AND a full probe budget; if
     # it cannot, the outer bound fires first and the server is recorded as unevaluable rather
     # than scored.
@@ -604,13 +635,16 @@ def scan(
         )
 
     llm_config: LLMConfig | None = None
-    if agentic:
+    if agentic is not False:
         try:
             llm_config = LLMConfig.from_env(
                 provider, model=model, base_url=base_url, api_key=api_key
             )
-        except LLMConfigError:
-            llm_config = None  # static-only scan
+        except LLMConfigError as exc:
+            if agentic:  # asked for explicitly — same contract as `run`
+                console.print(f"[red]--agentic requested but no LLM is configured:[/red] {exc}")
+                raise typer.Exit(code=Exit.CONFIG) from exc
+            llm_config = None  # nobody asked; static-only scan is the documented default
 
     how = llm_config.redacted() if llm_config is not None else "static + robustness only"
     console.print(f"[bold]Scanning[/bold] {len(entries)} server(s) — {how}")

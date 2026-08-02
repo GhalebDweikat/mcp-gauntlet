@@ -9,7 +9,7 @@
 #   * The previous version of this file gated on `--fail-under 60`. A HIGH security finding
 #     caps the overall score at 75, and 75 > 60, so NO server with a tool-poisoning finding
 #     could ever fail this gate. A platform engineer testing it found the bundled malicious
-#     fixture — eight HIGH findings — returning exit 0.
+#     fixture — seven HIGH findings — returning exit 0.
 #   * A score threshold also has to be re-baselined whenever scoring changes. One release
 #     moved a fixture 14.8 points, so a pinned number quietly meant something different after
 #     an upgrade. A severity gate does not drift that way.
@@ -34,7 +34,12 @@ jobs:
       # number that moved. If you need a frozen verdict — an audit trail, a release gate —
       # pin it (`mcp-gauntlet@1.2.3`) and bump deliberately.
       #
-      # Replace the server command with however yours launches. NOTE on the interpreter:
+      # The command below is a PLACEHOLDER and will fail until you replace it — deliberately.
+      # It used to ship pointing at `@modelcontextprotocol/server-everything`, which meant
+      # copying this file in unchanged produced a green build gating on somebody else's demo
+      # server, with nothing to draw your eye to the line you forgot.
+      #
+      # NOTE on the interpreter:
       # `uvx` puts its own environment first on PATH, so a bare `python -m your_server` runs
       # under the GAUNTLET's interpreter, which does not have your server's dependencies. Use
       # an absolute path to your venv's python, or a launcher that does not rely on PATH.
@@ -44,7 +49,7 @@ jobs:
       # --fail-on low      also undescribed parameters — a strict hygiene gate
       - name: Run the gauntlet
         run: >
-          uvx mcp-gauntlet run "npx -y @modelcontextprotocol/server-everything"
+          uvx mcp-gauntlet run "REPLACE-ME-WITH-YOUR-SERVER-COMMAND"
           --no-agentic --fail-on high --out gauntlet-report
 
       # ── Optional: the full agentic evaluation ────────────────────────────────

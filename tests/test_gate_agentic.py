@@ -171,3 +171,65 @@ def test_console_still_explains_the_inconclusive_run(
     text = buf.getvalue().lower()
     assert "inconclusive" in text
     assert "not measured" in text
+
+
+def test_scan_honours_explicit_agentic_like_run(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`run --agentic` with no key exited 4; `scan --agentic` degraded and exited 0.
+
+    Same flag, same words in the docs, opposite behaviour — and `scan` is the command the
+    repositioned docs push people toward. A fork PR (no secrets) or a rotated secret went
+    green with the weight-3.0 dimension never run. `scan` also declared the flag as a plain
+    bool defaulting True, so it could not tell "the user asked" from "nobody said", and its
+    --help advertised a default that was never the real behaviour.
+    """
+    for name in ("GROQ_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(cli, "load_env", lambda *a, **k: None)  # ignore any .env on disk
+    # A REAL list: the file is loaded before the key is checked, so a missing one would
+    # short-circuit to the same exit code for an entirely different reason.
+    listing = tmp_path / "servers.json"
+    listing.write_text('{"servers": [{"name": "s", "spec": "python -m srv"}]}', encoding="utf-8")
+    result = runner.invoke(cli.app, ["scan", "--servers", str(listing), "--agentic"])
+    assert result.exit_code == Exit.CONFIG, result.output
+    assert "no LLM is configured" in result.output
+
+
+def test_scan_refuses_an_empty_server_list(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Scanning nothing and reporting a pass is the same defect as passing on an expired key.
+
+    Every other malformed-list shape already exited 4; an empty one printed an empty table
+    and exited 0. A truncated or mis-templated servers.json is the realistic way to get here.
+    """
+    listing = tmp_path / "servers.json"
+    listing.write_text('{"servers": []}', encoding="utf-8")
+    monkeypatch.setattr(cli, "load_env", lambda *a, **k: None)
+    result = runner.invoke(cli.app, ["scan", "--servers", str(listing), "--no-agentic"])
+    assert result.exit_code == Exit.CONFIG, result.output
+    assert "No servers to scan" in result.output
+
+
+def test_a_server_with_no_tools_is_not_a_pass(
+    patched: Callable[[GauntletReport], None], tmp_path: Path
+) -> None:
+    """`--fail-on high` could not fail a server whose tool registration broke.
+
+    "server exposes no tools" is MEDIUM, and every document pushes `--fail-on high` as THE
+    CI gate — so the migration the docs instruct turned a red build green for the most total
+    outage there is. Three independent testers found it. Exit 3, not 1: nothing was
+    measured, so there is no verdict to give.
+    """
+    report = GauntletReport.build(
+        spec="stdio: srv",
+        server=ServerInfo(name="srv", version="1"),
+        tool_count=0,
+        dimensions=[],
+    )
+    patched(report)
+    result = runner.invoke(
+        cli.app,
+        ["run", "python -m srv", "--no-agentic", "--fail-on", "high", "--out", str(tmp_path / "o")],
+    )
+    assert result.exit_code == Exit.UNEVALUABLE, result.output
+    assert "exposes no tools" in result.output

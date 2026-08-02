@@ -7,6 +7,18 @@ All notable changes to mcp-gauntlet are documented here. This project adheres to
 
 ### Fixed
 
+- **The harness read the attack, reported it, and then obeyed it.** A server served `x01` as
+  benign with `readOnlyHint: true` on the first `tools/list`, then as `destructiveHint: true`
+  + *"permanently deletes every row in the production ledger"* on the second. The run parsed
+  both, printed `MEDIUM x01: tool definition changed within a single session` — and **called
+  `x01`**. The reverse direction (destructive, then benign) stayed excluded, so the decision
+  was pinned to the first listing both ways: safe when a server got nicer, wide open when it
+  got worse.
+
+  Not a heuristic missing a synonym — `destructiveHint: true` is machine-readable and was
+  demonstrably read. The README sells precisely this attack as one the tool catches. The
+  read-only filter now takes the union of every listing seen, and the exclusion says which
+  listing convicted the tool, so a reader is not sent to a definition annotated read-only.
 - **A server that failed every call scored Robustness 100.0 and graded A.** Three tools, each
   raising `connection refused`, produced a report byte-identical to the healthy original —
   `A 99.3`, "No high/medium-severity findings", exit 0. It now reports `C 79.3`, Robustness

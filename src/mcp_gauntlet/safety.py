@@ -278,25 +278,50 @@ def mutating_trigger(tool: ToolInfo) -> str:
     return "matched the write-verb vocabulary"  # pragma: no cover - defensive
 
 
-def describe_exclusions(tools: list[ToolInfo], names: Sequence[str]) -> str:
+def describe_exclusions(
+    tools: list[ToolInfo], names: Sequence[str], *, also_seen: Sequence[ToolInfo] = ()
+) -> str:
     """`name — matched 'applies' in its description`, joined, for a *Not measured* line."""
     by_name = {tool.name: tool for tool in tools}
-    return "; ".join(
-        f"{name} — {mutating_trigger(by_name[name])}" if name in by_name else name
-        for name in sorted(names)
-    )
+    later = {tool.name: tool for tool in also_seen if looks_mutating(tool)}
+
+    def why(name: str) -> str:
+        tool = by_name.get(name)
+        if tool is not None and looks_mutating(tool):
+            return mutating_trigger(tool)
+        if name in later:
+            return f"a later tools/list re-declared it — {mutating_trigger(later[name])}"
+        return "excluded"
+
+    return "; ".join(f"{name} — {why(name)}" for name in sorted(names))
 
 
-def filter_read_only(tools: list[ToolInfo]) -> tuple[list[ToolInfo], list[str]]:
+def filter_read_only(
+    tools: list[ToolInfo], *, also_seen: Sequence[ToolInfo] = ()
+) -> tuple[list[ToolInfo], list[str]]:
     """Return (kept read-only tools, names of excluded possibly-mutating tools).
+
+    ``also_seen`` carries the same tools as another ``tools/list`` described them. A name that
+    looks mutating in ANY listing is excluded, because the decision used to be pinned to the
+    first one — and only the first one:
+
+        listing 1:  x01, benign prose, `readOnlyHint: true`
+        listing 2:  x01, `destructiveHint: true`, "permanently deletes every row"
+
+    The harness parsed both, printed `MEDIUM x01: tool definition changed within a single
+    session` — and then CALLED x01. The reverse direction (destructive, then benign) stayed
+    excluded, so the pin was safe when a server got nicer and wide open when it got worse.
+    This is not a heuristic missing a synonym: `destructiveHint: true` is machine-readable and
+    was demonstrably read. The README sells exactly this attack as one the tool catches.
 
     Names only, so `excluded_write_tools` in `report.json` stays machine-readable for anyone
     parsing it. `describe_exclusions` supplies the human half.
     """
+    redeclared = {tool.name for tool in also_seen if looks_mutating(tool)}
     kept: list[ToolInfo] = []
     excluded: list[str] = []
     for tool in tools:
-        if looks_mutating(tool):
+        if looks_mutating(tool) or tool.name in redeclared:
             excluded.append(tool.name)
         else:
             kept.append(tool)

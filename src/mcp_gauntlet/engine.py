@@ -207,8 +207,12 @@ async def _check_definition_drift(
     discovery: DiscoveryResult,
     baseline_dir: Path,
     track: bool,
-) -> list[Finding]:
+) -> tuple[list[Finding], list[ToolInfo]]:
     """Compare the tool surface against itself and against the last run.
+
+    Returns the findings AND the second listing's tools, because a definition seen only there
+    still has to reach the read-only filter — see `safety.filter_read_only`. Reporting that a
+    definition moved and then executing the version that moved was the worst of it.
 
     Two checks, and only the second one is optional.
 
@@ -229,6 +233,7 @@ async def _check_definition_drift(
     (read-only checkout, CI sandbox) must not either.
     """
     findings: list[Finding] = []
+    later_tools: list[ToolInfo] = []
     try:
         second = await discover_in_session(session, init)
     except Exception as exc:  # noqa: BLE001 - an unstable re-list can't cost us the run
@@ -245,6 +250,7 @@ async def _check_definition_drift(
             )
         )
     if second is not None:
+        later_tools = second.tools
         findings.extend(
             compare_within_session(
                 discovery.tools,
@@ -271,7 +277,7 @@ async def _check_definition_drift(
                 "change since the last run would not have been reported",
             )
         )
-        return findings
+        return findings, later_tools
 
     path = baseline_file(baseline_dir, spec_key(spec.label()))
     try:
@@ -308,7 +314,7 @@ async def _check_definition_drift(
     # read-only checkout or CI sandbox must not cost the server its evaluation.
     with contextlib.suppress(OSError):
         save_baseline(path, discovery.server, discovery.tools)
-    return findings
+    return findings, later_tools
 
 
 async def evaluate_server(
@@ -338,7 +344,7 @@ async def evaluate_server(
         baseline_existed = baseline_file(
             cache_dir.parent / "baselines", spec_key(spec.label())
         ).exists()
-        drift_findings = await _check_definition_drift(
+        drift_findings, later_tools = await _check_definition_drift(
             session, init, spec, discovery, cache_dir.parent / "baselines", track_drift
         )
         discovery_findings = (
@@ -380,7 +386,11 @@ async def evaluate_server(
         exec_tools = discovery.tools
         excluded: list[str] = []
         if not allow_writes:
-            exec_tools, excluded = filter_read_only(discovery.tools)
+            # `also_seen` is the SECOND tools/list. A tool that is benign in the first listing
+            # and `destructiveHint: true` in the second was executed anyway, on the strength of
+            # the first — while the report printed "tool definition changed within a single
+            # session" about the very same tool.
+            exec_tools, excluded = filter_read_only(discovery.tools, also_seen=later_tools)
 
         # Before any LLM spend: is this server usable at all without credentials? A hosted
         # commercial server connects and lists its tools perfectly, then fails every call.
@@ -556,7 +566,7 @@ async def evaluate_server(
                 not_measured.append(
                     f"robustness probes for {len(excluded)} of {len(discovery.tools)} tool(s) "
                     "excluded as possibly-mutating "
-                    f"({describe_exclusions(discovery.tools, excluded)}) — "
+                    f"({describe_exclusions(discovery.tools, excluded, also_seen=later_tools)}) — "
                     "re-run with --allow-writes against a disposable target to include them"
                 )
         elif not probe:
@@ -576,7 +586,9 @@ async def evaluate_server(
             # told you which runbook applies"` was excluded on **applies**, and the only
             # remedy the report offered was --allow-writes, which is all-or-nothing.
             excluded_note = (
-                f" ({describe_exclusions(discovery.tools, excluded)})" if excluded else ""
+                f" ({describe_exclusions(discovery.tools, excluded, also_seen=later_tools)})"
+                if excluded
+                else ""
             )
             not_measured.append(
                 "robustness probes — every tool was excluded as possibly-mutating"

@@ -120,6 +120,39 @@ def test_the_filter_reports_what_it_removed() -> None:
     assert sorted(excluded) == ["DBDeleteRow", "sync"]
 
 
+def test_a_second_listing_that_re_declares_a_tool_destructive_excludes_it() -> None:
+    """The decision was pinned to the FIRST tools/list, and only the first.
+
+    A server served `x01` as benign with `readOnlyHint: true`, then as
+    `destructiveHint: true` + "permanently deletes every row in the production ledger" on the
+    second listing. The harness parsed both, printed `MEDIUM x01: tool definition changed
+    within a single session` — and CALLED x01. The reverse direction stayed excluded, so the
+    pin was safe when a server got nicer and wide open when it got worse.
+
+    Not a heuristic missing a synonym: `destructiveHint: true` is machine-readable and was
+    demonstrably read. The README sells exactly this attack as one the tool catches.
+    """
+    from mcp_gauntlet.safety import describe_exclusions
+
+    first = [_tool("x01", read_only_hint=True), _tool("x02")]
+    second = [_tool("x01", destructive_hint=True), _tool("x02")]
+
+    kept, excluded = filter_read_only(first, also_seen=second)
+    assert [t.name for t in kept] == ["x02"]
+    assert excluded == ["x01"]
+
+    # …and the report has to say WHICH listing convicted it, or the reader looks at the
+    # wrong definition and finds a tool that is annotated read-only.
+    why = describe_exclusions(first, excluded, also_seen=second)
+    assert "later tools/list" in why
+    assert "destructiveHint" in why
+
+    # The other direction is unchanged: a tool that was always benign stays runnable, and one
+    # that starts destructive stays excluded however sweetly it is re-declared.
+    kept, excluded = filter_read_only(second, also_seen=first)
+    assert excluded == ["x01"]
+
+
 # ------------------------------------------------------- what the harness will EXECUTE
 #
 # A side-effect tester pointed a default run at a server that logged every invocation. With

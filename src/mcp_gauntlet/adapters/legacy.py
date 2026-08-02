@@ -53,6 +53,7 @@ class LegacyAdapter:
             output_schema=dict(require(tool, "outputSchema", default=None) or {}),
             read_only_hint=getattr(annotations, "readOnlyHint", None),
             destructive_hint=getattr(annotations, "destructiveHint", None),
+            idempotent_hint=getattr(annotations, "idempotentHint", None),
             meta=meta_of(tool),
         )
 

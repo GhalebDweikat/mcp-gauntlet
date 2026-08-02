@@ -7,6 +7,25 @@ All notable changes to mcp-gauntlet are documented here. This project adheres to
 
 ### Fixed
 
+- **`destructiveHint: false` was read as permission to run a tool.** The MCP spec defines
+  both `destructiveHint` and `idempotentHint` as *"meaningful only when readOnlyHint ==
+  false"* — so an author who sets either has told you they write. `{"destructiveHint":
+  false}` is the `create_issue` / `append_row` / `send_message` shape: *I write, but
+  additively*. It was executed. So was a tool annotated `{destructiveHint: false,
+  idempotentHint: false}` — "not safe to repeat" — which the harness called **twice**, once
+  by the credential pre-flight and once by the malformed-input probe.
+
+  `idempotentHint` is now read at all (it was not modelled), and joins the drift fingerprint,
+  because whatever decides that a tool RUNS has to be part of what was approved.
+
+  `openWorldHint` is deliberately excluded from this rule: the spec attaches no
+  `readOnlyHint == false` clause to it, and it is true of ordinary search and fetch tools.
+
+  **Your first run after upgrading will not report drift over this.** Baselines now record
+  which set of fields their digests were computed from, and a mismatch says the comparison
+  did not happen rather than reporting every tool of every unchanged server as a silent
+  redefinition. Without that, `--fail-on medium` plus cached baselines — which the README
+  recommends together — would be a red build for everyone on upgrade.
 - **Six write verbs the read-only filter never matched**, so tools carrying them were
   executed by a default run: `erase`, `shred`, `clobber`, `mutate`, `rebase`, `rm`. `erase`
   is the one worth naming — it was already in the list a server's `readOnlyHint: true` may

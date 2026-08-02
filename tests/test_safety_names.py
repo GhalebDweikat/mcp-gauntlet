@@ -29,6 +29,7 @@ def _tool(
     *,
     destructive_hint: bool | None = None,
     read_only_hint: bool | None = None,
+    idempotent_hint: bool | None = None,
 ) -> ToolInfo:
     return ToolInfo(
         name=name,
@@ -36,6 +37,7 @@ def _tool(
         input_schema={},
         destructive_hint=destructive_hint,
         read_only_hint=read_only_hint,
+        idempotent_hint=idempotent_hint,
     )
 
 
@@ -150,6 +152,29 @@ def test_format_mutates_a_disk_and_not_a_date() -> None:
         ("df", "Reports free space on each volume."),
     ):
         assert not looks_mutating(_tool(name, description=description)), name
+
+
+def test_declaring_a_write_only_hint_is_declaring_that_you_write() -> None:
+    """`{"destructiveHint": false}` was read as permission, and it is the opposite.
+
+    The MCP spec defines both `destructiveHint` and `idempotentHint` as "meaningful only when
+    readOnlyHint == false", so an author who sets either has told you which world they are
+    in. `destructiveHint: false` is the create_issue / append_row / send_message shape — *I
+    write, but additively* — and those tools were called. So was one annotated
+    `{destructiveHint: false, idempotentHint: false}`, which says "not safe to repeat", and
+    the first eligible tool of every server is called twice.
+    """
+    for value in (True, False):
+        assert looks_mutating(_tool("lookup", destructive_hint=value)), f"destructive={value}"
+        assert looks_mutating(_tool("lookup", idempotent_hint=value)), f"idempotent={value}"
+
+    # An explicit `readOnlyHint: true` alongside them is not a contradiction, just redundant.
+    assert not looks_mutating(_tool("lookup", read_only_hint=True, destructive_hint=False))
+    assert not looks_mutating(_tool("lookup", read_only_hint=True, idempotent_hint=False))
+
+    # `openWorldHint` is NOT in this rule and must not be: the spec attaches no
+    # `readOnlyHint == false` clause to it, and it is true of ordinary search tools.
+    assert not looks_mutating(_tool("search"))
 
 
 def test_self_incrimination_still_beats_a_read_only_claim() -> None:

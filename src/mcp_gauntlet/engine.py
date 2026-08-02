@@ -27,6 +27,7 @@ from mcp_gauntlet.drift import (
     compare_within_session,
     era_changed,
     load_baseline,
+    recipe_changed,
     save_baseline,
     spec_key,
 )
@@ -293,6 +294,23 @@ async def _check_definition_drift(
                 detail=f"{path}: {exc}",
             )
         )
+    if baseline is not None and recipe_changed(baseline):
+        # Same principle as the era mismatch below, one level up: this release digests a
+        # field the stored baseline's digests were not computed from, so every one of them is
+        # INCOMPARABLE rather than different. Reporting the difference would accuse every
+        # unchanged server of a silent redefinition, at MEDIUM, on the grade-capping
+        # dimension — and the README recommends `--fail-on medium` with cached baselines, so
+        # that is a red build for every user of the release that changed it.
+        findings.append(
+            Finding(
+                severity=Severity.INFO,
+                message="the recorded tool definitions were fingerprinted by an older "
+                "mcp-gauntlet that read fewer fields, so this run was not compared against "
+                "them. The next run will be",
+                detail=str(path),
+            )
+        )
+        baseline = None
     if baseline is not None and era_changed(baseline):
         # Same principle as the unreadable case: say the comparison did not happen. The
         # alternative is worse than useless — the fingerprints were produced by a different

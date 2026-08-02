@@ -179,8 +179,28 @@ def _normalize(text: str) -> str:
 def _hint_says_mutating(tool: ToolInfo) -> bool:
     """True when the server *self-declares* non-read-only behavior. Trusted only in
     this (conservative) direction: a self-incriminating hint is safe to believe; a
-    ``readOnlyHint=True`` from an untrusted server is not, so it never appears here."""
-    return tool.destructive_hint is True or tool.read_only_hint is False
+    ``readOnlyHint=True`` from an untrusted server is not, so it never appears here.
+
+    DECLARING `destructiveHint` or `idempotentHint` AT ALL is such a declaration, whatever
+    value it carries. The MCP spec defines both as "meaningful only when readOnlyHint ==
+    false", so an author who sets one has told you which world they are in. `readOnlyHint`
+    itself defaults to false, which is the other half of the same fact.
+
+    That matters because `{"destructiveHint": false}` is not "harmless" — it is the
+    create_issue / append_row / send_message shape: *I write, but additively*. It was read as
+    permission and those tools were called. So was `{"idempotentHint": false}`, which
+    announces "not safe to repeat" — and the first eligible tool of every server gets called
+    twice, once by the credential pre-flight and once by the malformed-input probe.
+
+    `openWorldHint` is deliberately NOT here. A tester grouped it with these two; the spec
+    attaches no `readOnlyHint == false` clause to it, and it is true of ordinary search and
+    fetch tools that write nothing.
+    """
+    if tool.destructive_hint is True or tool.read_only_hint is False:
+        return True
+    return tool.read_only_hint is not True and (
+        tool.destructive_hint is not None or tool.idempotent_hint is not None
+    )
 
 
 # Verbs that mutate only when they take an object. `add` is the reason this exists: it is one

@@ -65,6 +65,7 @@ class ModernAdapter:
             output_schema=dict(require(tool, "output_schema", default=None) or {}),
             read_only_hint=getattr(annotations, "read_only_hint", None),
             destructive_hint=getattr(annotations, "destructive_hint", None),
+            idempotent_hint=getattr(annotations, "idempotent_hint", None),
             meta=meta_of(tool),
         )
 

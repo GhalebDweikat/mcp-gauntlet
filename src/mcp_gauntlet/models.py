@@ -22,6 +22,9 @@ class ToolInfo(BaseModel):
     # conservative direction — see mcp_gauntlet.safety — never to mark a tool safe.
     read_only_hint: bool | None = None
     destructive_hint: bool | None = None
+    # Declared at all, this says readOnlyHint is FALSE: the spec defines it as "meaningful
+    # only when readOnlyHint == false". See `safety._hint_says_mutating`.
+    idempotent_hint: bool | None = None
     # Free-form server-authored metadata. Not rendered by every client, but some (OpenAI's
     # Apps SDK among them) read namespaced keys out of it and put the strings in front of
     # the model, so it is scanned — as literal data, never allowed to cap.

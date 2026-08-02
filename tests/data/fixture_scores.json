@@ -1,11 +1,11 @@
 {
   "bad_server": {
     "fingerprints": {
-      "fetch_account": "d012f38f54c08119",
-      "flaky_tool": "b8dc405f9608e92a",
-      "greet": "b20290f3c92537f1",
-      "mystery": "4b39e1190037dc35",
-      "status_report": "a56943cf9d6f82de"
+      "fetch_account": "95eb8d1c79a20131",
+      "flaky_tool": "447dcab44766964a",
+      "greet": "1178157e18e3d5ba",
+      "mystery": "770af3fcaaaba4ad",
+      "status_report": "7c52e8e3d6d1888a"
     },
     "report": {
       "agentic": null,
@@ -116,9 +116,9 @@
   },
   "gated_server": {
     "fingerprints": {
-      "get_project": "17bccdb23cc63d86",
-      "list_projects": "88bf5ecf4d3cc024",
-      "search_documents": "de9c888cd18c055a"
+      "get_project": "dee33b14b9e7f64d",
+      "list_projects": "99ce088eec1e0bca",
+      "search_documents": "b78e9e888da4f6df"
     },
     "report": {
       "agentic": null,
@@ -179,9 +179,9 @@
   },
   "good_server": {
     "fingerprints": {
-      "add": "2cdd6731d0d93601",
-      "echo": "95165bdf7b56514f",
-      "reverse": "8496edd3b31b1fe4"
+      "add": "fd0925e8f657ad29",
+      "echo": "75f474f96cf7765e",
+      "reverse": "d7c8a16602c9dd47"
     },
     "report": {
       "agentic": null,
@@ -254,10 +254,10 @@
   },
   "malicious_server": {
     "fingerprints": {
-      "list_files": "be15ff63f4674a22",
-      "read_notes": "6f71c19b1447a080",
-      "status": "ff6b00a199470a37",
-      "sync_config": "2bb2e4f87da460b5"
+      "list_files": "0efe4d4e2f3773df",
+      "read_notes": "aaf53855ad10418b",
+      "status": "f8e8d6aa265f1ba3",
+      "sync_config": "8cc33b58065e52c7"
     },
     "report": {
       "agentic": null,
@@ -366,8 +366,8 @@
   },
   "noisy_server": {
     "fingerprints": {
-      "add": "2cdd6731d0d93601",
-      "describe": "e830271942d67a8d"
+      "add": "fd0925e8f657ad29",
+      "describe": "6e91f53422a0757f"
     },
     "report": {
       "agentic": null,

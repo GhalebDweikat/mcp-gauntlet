@@ -83,6 +83,7 @@ def fingerprint(tool: ToolInfo) -> str:
             "output_schema": tool.output_schema,
             "read_only_hint": tool.read_only_hint,
             "destructive_hint": tool.destructive_hint,
+            "idempotent_hint": tool.idempotent_hint,
             # `_meta` is scanned, so it is part of what was approved: a rug-pull relocated
             # there would otherwise be invisible to both drift checks.
             "meta": tool.meta,
@@ -106,6 +107,8 @@ class Baseline:
     # Which SDK era produced these fingerprints. A digest is only comparable against one
     # recorded the same way — see `era_changed`.
     era: str = ""
+    # Which set of FIELDS went into the digest — see `recipe_changed`.
+    recipe: str = ""
 
     def to_json(self) -> str:
         return json.dumps(
@@ -113,10 +116,24 @@ class Baseline:
                 "version": self.version,
                 "recorded_at": self.recorded_at,
                 "era": self.era,
+                "recipe": self.recipe,
                 "tools": self.tools,
             },
             indent=2,
         )
+
+
+# Bump this whenever `fingerprint()`'s INPUTS change — a field added, removed, or read
+# differently. The digest is only comparable against one computed from the same fields, and
+# without this every existing baseline would report every tool as silently redefined on the
+# first run after the upgrade: MEDIUM findings, on the weight-2.0 grade-capping dimension,
+# for servers that did not change at all. The README recommends `--fail-on medium` and
+# caching `.gauntlet/baselines/`, so that combination is a red build for every user of the
+# release that changed it.
+#
+#   "1"  description, titles, both schemas, readOnlyHint, destructiveHint, _meta
+#   "2"  …plus idempotentHint, which now decides whether a tool is executed at all
+FINGERPRINT_RECIPE = "2"
 
 
 def era_changed(baseline: Baseline) -> bool:
@@ -138,6 +155,20 @@ def era_changed(baseline: Baseline) -> bool:
     run — for nothing.
     """
     return (baseline.era or "legacy") != adapter().era
+
+
+def recipe_changed(baseline: Baseline) -> bool:
+    """Whether this baseline's digests were computed from a different set of fields.
+
+    Same reasoning as `era_changed`, one level up: when `fingerprint()` starts reading a
+    field it did not read before, every stored digest becomes incomparable — not different,
+    *incomparable* — and reporting the difference as drift accuses every unchanged server of
+    a rug-pull at once.
+
+    An unstamped baseline is recipe "1", not unknown, for the same reason an unstamped era is
+    legacy: every release before the stamp existed used exactly that set of fields.
+    """
+    return (baseline.recipe or "1") != FINGERPRINT_RECIPE
 
 
 def baseline_file(base_dir: Path, key: str) -> Path:
@@ -172,6 +203,7 @@ def load_baseline(path: Path) -> Baseline | None:
         recorded_at=str(data.get("recorded_at") or ""),
         tools=tools,
         era=str(data.get("era") or ""),
+        recipe=str(data.get("recipe") or ""),
     )
 
 
@@ -182,6 +214,7 @@ def save_baseline(path: Path, server: ServerInfo, tools: list[ToolInfo]) -> None
         recorded_at=datetime.now(UTC).isoformat(timespec="seconds"),
         tools=fingerprint_all(tools),
         era=adapter().era,
+        recipe=FINGERPRINT_RECIPE,
     )
     path.write_text(baseline.to_json(), encoding="utf-8")
 

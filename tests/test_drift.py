@@ -241,6 +241,49 @@ def test_a_baseline_from_the_other_era_is_not_compared(tmp_path: Path) -> None:
     assert era_changed(replace(stored, era=other)) is True
 
 
+def test_a_baseline_fingerprinted_from_fewer_fields_is_not_compared(tmp_path: Path) -> None:
+    """The same fabricated rug-pull, from the other direction: OUR fields changing.
+
+    `idempotentHint` now decides whether a tool is executed, so it joined the digest — and
+    every stored baseline instantly became incomparable rather than different. Without this
+    guard the first run after upgrading reports every tool of every unchanged server as a
+    silent redefinition, at MEDIUM, on the grade-capping dimension. The README recommends
+    `--fail-on medium` together with caching `.gauntlet/baselines/`, so that is a red build
+    for every user of the release that changed it.
+
+    An unstamped baseline is recipe "1", not unknown, for the same reason an unstamped era is
+    legacy: every release before the stamp used exactly that set of fields.
+    """
+    from dataclasses import replace
+
+    from mcp_gauntlet.drift import FINGERPRINT_RECIPE, load_baseline, recipe_changed, save_baseline
+
+    path = tmp_path / "b.json"
+    save_baseline(path, ServerInfo(name="s", version="1"), [_tool("a")])
+    stored = load_baseline(path)
+    assert stored is not None
+    assert stored.recipe == FINGERPRINT_RECIPE
+    assert recipe_changed(stored) is False
+
+    assert recipe_changed(replace(stored, recipe="")) is True  # written before the stamp
+    assert recipe_changed(replace(stored, recipe="1")) is True
+
+
+def test_the_hint_that_decides_execution_is_in_the_fingerprint() -> None:
+    """Whatever decides whether a tool RUNS has to be part of what was approved.
+
+    `idempotentHint` started deciding that, and a digest that ignored it would let a server
+    flip the hint between runs — changing whether the harness executes the tool — with the
+    drift check reporting nothing. That is the gap `_meta` was added to close, one field over.
+    """
+    from mcp_gauntlet.drift import fingerprint
+
+    plain = _tool("a")
+    for value in (False, True):
+        moved = plain.model_copy(update={"idempotent_hint": value})
+        assert fingerprint(plain) != fingerprint(moved), value
+
+
 def test_a_baseline_predating_the_stamp_is_treated_as_legacy(tmp_path: Path) -> None:
     """Not a guess: every published version pinned `mcp<2`, so no existing baseline can
     have been recorded under a modern SDK. Treating them as unknown would reset every

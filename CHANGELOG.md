@@ -7,6 +7,22 @@ All notable changes to mcp-gauntlet are documented here. This project adheres to
 
 ### Fixed
 
+- **Six write verbs the read-only filter never matched**, so tools carrying them were
+  executed by a default run: `erase`, `shred`, `clobber`, `mutate`, `rebase`, `rm`. `erase`
+  is the one worth naming — it was already in the list a server's `readOnlyHint: true` may
+  *not* override, and absent from the list that excludes anything in the first place. A guard
+  that only ever ran second.
+
+  `format` needed an object rather than a verb: *"Formats the attached volume"* destroys a
+  disk, while `format_date`, `format_currency` and `format_response` are three of the
+  commonest read-only tool names there are. It now matches only against storage —
+  disk, drive, volume, partition, filesystem, device, media — and the exclusion names the
+  whole phrase rather than the innocent adjective beside it.
+
+  Found by a tester who mapped the boundary with thirty-nine one-verb servers. The six
+  ambiguous ones from that set (`close`, `wire`, `rollout`, `destructive`, `irreversible`,
+  bare `format`) are deliberately still out: this filter's false positives already cost real
+  coverage, and `get_close_price` is a real tool.
 - **`scan` exited 0 for a server `run` exits 3 on.** A zero-tool server and a server that
   refused every call both produce a report, and `scan` counted "produced a report" as
   "evaluated" — so one server's tool registration silently breaking left a whole fleet's

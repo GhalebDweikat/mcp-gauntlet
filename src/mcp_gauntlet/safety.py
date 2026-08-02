@@ -52,8 +52,34 @@ _MUTATING_VERBS = (  # noqa: SIM905 - one whitespace-delimited string reads bett
     # Measured absent while fifteen sibling verbs were caught: a tool named `shutdown`,
     # described "Shut the production cluster down", was executed twice by a default run.
     "shutdown halt evict drain seed migrate prune vacuum reindex detach unassign "
-    "unlink unregister scale"
+    "unlink unregister scale "
+    # A tester mapped the boundary with thirty-nine one-verb tools ("It will <verb> the
+    # target now.") and twenty-seven matched. These are the ones from the other twelve that
+    # have no benign reading in a tool name, so adding them costs no coverage:
+    #
+    #   erase   was already in _IRREDEEMABLE_VERBS and NOT here — strong enough that a
+    #           server's `readOnlyHint: true` could not override it, and not strong enough
+    #           to exclude anything in the first place. A guard that only ever ran second.
+    #   rm      the command, and `\b` keeps it out of ordinary words.
+    #   mutate  a GraphQL mutation IS the write half of the protocol.
+    "erase shred clobber mutate rebase rm"
 ).split()
+
+# Verbs that only mutate when applied to STORAGE. `format` is why this exists: "Formats the
+# attached volume" destroys a disk, and `format_date`, `format_currency` and `format_response`
+# are three of the commonest read-only tool names there are. Putting `format` in the list
+# above would have excluded all of them; leaving it out let "Returns nothing useful. Formats
+# the attached volume." through, caught only by the accident of `attach` being in the list.
+#
+# Same shape as `_QUALIFIED_WRITE_VERBS` below, but qualified by the OBJECT rather than by
+# there being one at all.
+_STORAGE_WRITE = re.compile(
+    r"\b(?:format|formats|formatted|formatting|mount|mounts|mounted|unmount|unmounts)\b"
+    r"[\s\w]{0,20}?"
+    r"\b(?:disk|disks|drive|drives|volume|volumes|partition|partitions|filesystem|"
+    r"file\s?system|device|devices|media|card|cards)\b",
+    re.IGNORECASE,
+)
 
 
 def _inflections(verb: str) -> set[str]:
@@ -218,7 +244,12 @@ def looks_mutating(tool: ToolInfo) -> bool:
     surface = " ".join(
         part for part in (tool.name, tool.title, tool.annotation_title, tool.description) if part
     )
-    return bool(_WRITE_HINTS.search(_normalize(surface)) or _compound_write_name(tool))
+    normalized = _normalize(surface)
+    return bool(
+        _WRITE_HINTS.search(normalized)
+        or _STORAGE_WRITE.search(normalized)
+        or _compound_write_name(tool)
+    )
 
 
 def text_looks_mutating(text: str) -> bool:
@@ -270,7 +301,11 @@ def mutating_trigger(tool: ToolInfo) -> str:
     ):
         if not text:
             continue
-        match = _WRITE_HINTS.search(_normalize(text))
+        normalized = _normalize(text)
+        storage = _STORAGE_WRITE.search(normalized)
+        if storage:
+            return f"matched {storage.group(0).strip()!r} in its {label}"
+        match = _WRITE_HINTS.search(normalized)
         if match:
             return f"matched {match.group(0).strip()!r} in its {label}"
     if _compound_write_name(tool):

@@ -108,6 +108,50 @@ def test_a_read_only_claim_DOES_rescue_a_contextual_name() -> None:
         assert looks_mutating(_tool(name)), name
 
 
+def test_the_verbs_a_tester_found_missing() -> None:
+    """Mapped with thirty-nine one-verb tools; twelve slipped and were executed.
+
+    `erase` is the one worth naming: it was already in `_IRREDEEMABLE_VERBS` — strong enough
+    that a server's `readOnlyHint: true` could not override it — and absent from the base
+    list, so it never excluded anything in the first place. A guard that only ever ran second.
+    """
+    for verb in ("erase", "shred", "clobber", "mutate", "rebase", "rm"):
+        assert looks_mutating(_tool("x", description=f"It will {verb} the target now.")), verb
+
+
+def test_format_mutates_a_disk_and_not_a_date() -> None:
+    """The one that needed an object, not a verb.
+
+    "Returns nothing useful. Formats the attached volume." was excluded only by the accident
+    of `attach` being in the list — so the report named `'attached'`, and the changelog framed
+    the remedy as "a one-word edit". Making that edit would have turned a disk-formatting tool
+    from excluded into executed. But `format` cannot go in the plain verb list either:
+    `format_date`, `format_currency` and `format_response` are three of the commonest
+    read-only tool names there are.
+    """
+    from mcp_gauntlet.safety import mutating_trigger
+
+    volume = _tool("volume_a", description="Returns nothing useful. Formats the attached volume.")
+    assert looks_mutating(volume)
+    # And it now names the PHRASE, not the innocent adjective next to it.
+    assert "Formats the attached volume" in mutating_trigger(volume)
+
+    for name, description in (
+        ("disk_tool", "Formats the disk."),
+        ("fs_tool", "Format a filesystem on the device."),
+    ):
+        assert looks_mutating(_tool(name, description=description)), name
+
+    for name, description in (
+        ("format_date", "Format a date for display."),
+        ("format_currency", "Formats a number as currency."),
+        ("render", "Formats the response as JSON."),
+        ("list_disks", "Lists every disk on the host."),
+        ("df", "Reports free space on each volume."),
+    ):
+        assert not looks_mutating(_tool(name, description=description)), name
+
+
 def test_self_incrimination_still_beats_a_read_only_claim() -> None:
     # A server contradicting itself is believed in the conservative direction, always.
     assert looks_mutating(_tool("lookup", read_only_hint=True, destructive_hint=True))

@@ -245,7 +245,7 @@ def test_a_real_finding_outranks_an_incomplete_run(
     that would have produced findings never ran. So the order is failing-gate, then
     incomplete-run, then exit 0.
     """
-    from mcp_gauntlet.report import Finding
+    from mcp_gauntlet.report import Finding, Severity
 
     detail = AgenticDetail(
         provider="groq", model="m", tasks_generated=2, repeats=1, inconclusive=True, results=[]
@@ -261,7 +261,11 @@ def test_a_real_finding_outranks_an_incomplete_run(
                 weight=2.0,
                 score=75.0,
                 findings=[
-                    Finding(tool="t", severity="high", message="description attempts to override")
+                    Finding(
+                        tool="t",
+                        severity=Severity.HIGH,
+                        message="description attempts to override",
+                    )
                 ],
             )
         ],

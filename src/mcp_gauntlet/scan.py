@@ -31,9 +31,14 @@ from pathlib import Path
 
 import anyio
 
-from mcp_gauntlet.config import ServerSpec, parse_env_args, parse_header_args
+from mcp_gauntlet.config import (
+    ServerSpec,
+    TransportKind,
+    parse_env_args,
+    parse_header_args,
+)
 from mcp_gauntlet.engine import evaluate_server
-from mcp_gauntlet.errors import describe
+from mcp_gauntlet.errors import describe, explain_remote_failure
 from mcp_gauntlet.jsonio import read_json_text
 from mcp_gauntlet.llm import LLMConfig
 from mcp_gauntlet.naming import slugify
@@ -58,7 +63,7 @@ class ServerEntry:
         """The runnable spec, with credentials resolved."""
         spec = ServerSpec.parse(self.spec)
         spec.env = parse_env_args(self.env, dict(os.environ))
-        spec.headers = parse_header_args(self.headers)
+        spec.headers = parse_header_args(self.headers, dict(os.environ))
         return spec
 
 
@@ -138,6 +143,20 @@ def load_servers(path: Path) -> list[ServerEntry]:
         except ValueError as exc:
             raise ServerListError(f"{where} ({entry.name}): {exc}") from exc
         entries.append(entry)
+
+    # Reports are written to a directory named after the entry, so two entries sharing a
+    # name silently overwrite each other — a scan of a healthy server and a poisoned one
+    # left ONE directory holding the second, with nothing saying the first had gone. A
+    # loader that rejects an unknown KEY by name has no business colliding on names.
+    seen: dict[str, int] = {}
+    for index, entry in enumerate(entries, 1):
+        slug = slugify(entry.name)
+        if slug in seen:
+            raise ServerListError(
+                f"{path}: servers #{seen[slug]} and #{index} both resolve to the report "
+                f"directory {slug!r} — give them distinct names"
+            )
+        seen[slug] = index
     return entries
 
 
@@ -185,7 +204,16 @@ async def run_scan(
             # server nor the cause. Redacted for the same reason `run` redacts here: a
             # connection error can echo a credential (a Postgres URI carries its password),
             # and this line goes to the console and into the scan log.
-            error = redact(describe(exc), secrets)
+            # Classified for `scan` too. 0.9.2 gave `run` a message naming the URL and the
+            # cause and left `scan` with a bare `ConnectError:` — the same asymmetry as the
+            # 0.9.1 `scan --agentic` bug, where the fix reached one command and not the
+            # other. `scan` is the command that hits remote servers in bulk.
+            detail = (
+                explain_remote_failure(spec.url, exc)
+                if spec.kind is TransportKind.HTTP and spec.url
+                else describe(exc)
+            )
+            error = redact(detail, secrets)
 
         result = ScanResult(name=entry.name, spec=entry.spec, report=report, error=error)
         if report is not None:

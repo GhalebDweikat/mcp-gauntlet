@@ -17,6 +17,7 @@ from mcp import ClientSession
 
 from mcp_gauntlet.adapters import adapter
 from mcp_gauntlet.models import ToolInfo
+from mcp_gauntlet.preflight import block_text, looks_like_missing_credentials
 from mcp_gauntlet.report import Dim, DimensionResult, Finding, Severity
 from mcp_gauntlet.schemas import (
     arg_surface,
@@ -249,6 +250,7 @@ async def run_robustness_probes(
         return None
     findings: list[Finding] = []
     scores: list[float] = []
+    auth_rejected: list[str] = []
     started = anyio.current_time()
 
     for index, tool in enumerate(tools):
@@ -367,6 +369,20 @@ async def run_robustness_probes(
             break
 
         if adapter().result_is_error(result):
+            sdk = adapter()
+            text = " ".join(x for block in sdk.result_content(result) if (x := block_text(block)))
+            if looks_like_missing_credentials(text):
+                # An auth rejection is NOT evidence that the server validates its input — it
+                # never got as far as looking. Crediting it 100 is how a server given a wrong
+                # or expired token scored **A 100.0 with exit 0**, producing a report
+                # byte-identical to the same server with a working one: every call 401'd, and
+                # a 401 is technically "rejected the malformed input".
+                #
+                # Not scored either way. Whether this server validates is simply unknown, and
+                # a 0 would blame it for a credential problem that is probably the caller's.
+                # The finding below carries the verdict; the number stays out of it.
+                auth_rejected.append(tool.name)
+                continue
             scores.append(100.0)  # rejected via an isError result = correct handling
         else:
             # Silently accepting schema-violating input is a validation failure, not a
@@ -380,6 +396,33 @@ async def run_robustness_probes(
                 )
             )
             scores.append(0.0)
+
+    if auth_rejected and not scores:
+        # EVERY probed tool refused on authentication, so nothing about this server's
+        # behaviour was observed. Reported rather than scored, and HIGH so the documented
+        # gate (`--fail-on high`) catches it: a run where every call was rejected must not
+        # read as a pass. This needs no LLM — a 100% auth-failure rate is an offline fact,
+        # and Tool Reliability, the dimension that would otherwise notice, requires one.
+        return DimensionResult(
+            key=Dim.ROBUSTNESS,
+            title="Robustness",
+            weight=1.0,
+            score=0.0,
+            summary="Every tool call was rejected for authentication, so whether this "
+            "server validates its input could not be observed.",
+            findings=[
+                Finding(
+                    severity=Severity.HIGH,
+                    message=(
+                        f"every tool call was rejected for authentication "
+                        f"({len(auth_rejected)} tool(s)) — the credentials supplied are "
+                        "wrong, expired, or lack the required scope, so nothing about this "
+                        "server was actually measured"
+                    ),
+                    detail=", ".join(sorted(auth_rejected)[:8]),
+                )
+            ],
+        )
 
     if not scores:
         # Every tool was legitimately unprobeable (zero-argument tools with real schemas).

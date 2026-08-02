@@ -14,10 +14,12 @@ Signals, both used only to *exclude* (never to wave a tool through):
     description — real descriptions are third-person ("Creates a file") and names are
     snake_case ("delete_file"), so we match creates/creating/created and normalize
     ``-``/``_``/camelCase before matching, not just the bare stem;
-  * the server's own MCP annotation hints, but only when the server *self-declares*
-    non-read-only behavior. Per the MCP spec, a ``readOnlyHint`` from an untrusted
-    server must never be used to decide a tool is safe, so hints can only make us more
-    conservative, never less.
+  * the server's own MCP annotation hints. A self-incriminating hint
+    (``destructiveHint: true``, ``readOnlyHint: false``) is always believed. A
+    ``readOnlyHint: true`` overrides the NAME guess for a CONTEXTUAL verb — `deploy`,
+    `sync`, `send` all appear in ordinary getters — but never for an irredeemable one:
+    `wipe_database` claiming to be read-only is refused. Without that split, a maintainer
+    whose read-only tool happened to contain a write verb had no correct move at all.
 """
 
 from __future__ import annotations
@@ -81,6 +83,26 @@ _WRITE_HINTS = re.compile(
 )
 
 
+# Verbs a `readOnlyHint: true` may NOT override. Everything in `_MUTATING_VERBS` is a guess
+# from a NAME; these are the subset where the guess is strong enough that a server's claim to
+# the contrary is not credible. `wipe_database` asserting it is read-only is exactly the claim
+# this filter exists to refuse, and believing it would be reckless.
+#
+# The rest are CONTEXTUAL — `deploy`, `sync`, `send`, `run`, `apply` all appear in the names of
+# perfectly ordinary getters (`search_deploys`, `get_sync_status`, `list_running_jobs`). There,
+# an explicit annotation from the server's author is better evidence than a substring, and
+# refusing it left a maintainer of a read-only server with no correct move at all.
+_IRREDEEMABLE_VERBS = (  # noqa: SIM905 - matches the style of _MUTATING_VERBS above
+    "delete remove drop destroy wipe purge truncate erase kill terminate "
+    "revoke uninstall decommission deprovision burn "
+    "charge refund withdraw transfer pay purchase"
+).split()
+_IRREDEEMABLE = re.compile(
+    r"\b(" + "|".join(sorted({f for v in _IRREDEEMABLE_VERBS for f in _inflections(v)})) + r")\b",
+    re.IGNORECASE,
+)
+
+
 def _normalize(text: str) -> str:
     """Split snake_case / kebab-case / camelCase so verbs in tool names are matchable
     (``\\b`` treats ``_`` as a word char, so ``delete_file`` never matches ``delete``)."""
@@ -135,6 +157,23 @@ def _compound_write_name(tool: ToolInfo) -> bool:
 def looks_mutating(tool: ToolInfo) -> bool:
     if _hint_says_mutating(tool):
         return True
+    # An explicit `readOnlyHint: true` beats the NAME heuristic. A first-run tester wrote a
+    # server of five pure getters, saw "no read-only tools to probe", made the
+    # standards-correct fix — annotating every tool — and got byte-identical output, because
+    # `search_deploys` matched a write verb in its name. There was no correct move left
+    # except `--allow-writes`, the flag the report itself says to point at a disposable
+    # target. The README meanwhile claimed the filter "trusts a server's own
+    # readOnlyHint/name"; it trusted the name and ignored the hint.
+    #
+    # This does NOT weaken the filter's actual guarantee, because it never had one against a
+    # hostile server: a malicious tool named `search_notes` was always executed. The name
+    # rule protects HONEST servers from an accident, and it is the same source of truth as
+    # the annotation — just a guess about it rather than a statement. A self-incriminating
+    # hint still wins above, so `destructiveHint: true` cannot be overridden this way.
+    if tool.read_only_hint is True and not _IRREDEEMABLE.search(
+        _normalize(" ".join(p for p in (tool.name, tool.title, tool.annotation_title) if p))
+    ):
+        return False
     # Include the display titles: a tool named `entry_op` whose title reads "Delete Entry"
     # declares its own mutating verb in the field a human reads, and the filter exists to
     # keep the harness from autonomously executing exactly that.

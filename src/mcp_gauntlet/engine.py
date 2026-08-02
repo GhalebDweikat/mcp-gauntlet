@@ -368,9 +368,54 @@ async def evaluate_server(
         # Scoring that produces a published D or F for a configuration the harness chose not
         # to supply. Skipped when credentials WERE supplied — then an auth error is a real
         # finding about the server (or about the token), not a reason to stop.
-        needs_credentials = ""
-        if llm_config is not None and exec_tools and not spec.env and not spec.headers:
-            needs_credentials = await probe_credentials(session, exec_tools) or ""
+        # Run REGARDLESS of whether an LLM is configured. This used to require one, so the
+        # documented CI gate — `--no-agentic` — never reached it, and it was skipped again
+        # whenever credentials WERE supplied. The comment above promised that an auth error
+        # would then be "a real finding about the server (or about the token)"; no finding
+        # was ever produced, and the intention sat unimplemented next to the code that
+        # skipped it.
+        #
+        # What that cost: a server given a WRONG or EXPIRED token, answering 401 to every
+        # call, scored **A 100.0 with exit 0** — a report byte-identical to the same server
+        # with a working token. Robustness even read 100.0, because a 401 is technically a
+        # rejection of malformed input. The only dimension that would have noticed is Tool
+        # Reliability, and that needed an LLM key. So the gate asserted a verified pass over
+        # a server it had never successfully called.
+        #
+        # Cheap: at most three tool calls, no LLM. Skipped under --no-probe, which already
+        # means "inspect, don't execute", and which says so under Not measured.
+        auth_failure = ""
+        if probe and exec_tools:
+            auth_failure = await probe_credentials(session, exec_tools) or ""
+        supplied_credentials = bool(spec.env or spec.headers)
+        # Only "this server needs credentials NOBODY supplied" excuses the agent stage. If
+        # credentials were supplied and still rejected, the run is not excused — it is wrong.
+        needs_credentials = auth_failure if not supplied_credentials else ""
+
+        if auth_failure and supplied_credentials:
+            # A named, gating finding rather than a silent skip. Tool Reliability rather than
+            # Security Signals, deliberately: a rejected token is not an attack signal and
+            # must not cap the grade, but "every call we made failed" is precisely what that
+            # dimension measures — and it can be measured here without an LLM.
+            live_dimensions.append(
+                DimensionResult(
+                    key=Dim.TOOL_RELIABILITY,
+                    title="Tool Reliability",
+                    weight=1.0,
+                    score=0.0,
+                    summary="Every tool call attempted failed authentication, so nothing "
+                    "about this server's behaviour could be measured.",
+                    findings=[
+                        Finding(
+                            severity=Severity.HIGH,
+                            message="every tool call failed authentication despite the "
+                            "credentials supplied — the token is wrong, expired, or lacks "
+                            "the required scope",
+                            detail=redact(auth_failure, spec.secret_values()),
+                        )
+                    ],
+                )
+            )
 
         if needs_credentials:
             _log.info("skipping agent evaluation: %s", needs_credentials)
@@ -481,7 +526,17 @@ async def evaluate_server(
         elif needs_credentials:
             not_measured.append("robustness probes (every call would hit the same auth wall)")
         elif not exec_tools:
-            not_measured.append("robustness probes (no read-only tools to probe)")
+            # Name them. The partial case already did, and the TOTAL case — the one where a
+            # reader most needs to know which heuristic fired and on what — said only "no
+            # read-only tools to probe". That turned a thirty-second fix into a bisect with
+            # four throwaway servers for the tester who hit it.
+            excluded_note = f" ({', '.join(sorted(excluded))})" if excluded else ""
+            not_measured.append(
+                "robustness probes — every tool was excluded as possibly-mutating"
+                f"{excluded_note}. Annotate a genuinely read-only tool with "
+                "`readOnlyHint: true`, or re-run with --allow-writes against a disposable "
+                "target."
+            )
 
         if discovery.resources:
             # Only metadata is scanned. A payload in what `resources/read` returns is

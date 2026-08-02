@@ -75,10 +75,42 @@ def test_a_self_declared_destructive_tool_is_excluded_whatever_it_is_called() ->
     assert looks_mutating(_tool("lookup", read_only_hint=False))
 
 
-def test_a_read_only_claim_cannot_rescue_a_mutating_name() -> None:
-    # An untrusted server asserting read_only_hint=True over a name like `wipe_database` is
-    # exactly the claim this filter must not accept.
-    assert looks_mutating(_tool("wipe_database", read_only_hint=True))
+def test_a_read_only_claim_cannot_rescue_an_IRREDEEMABLE_name() -> None:
+    """An untrusted server asserting read_only_hint=True over `wipe_database` is exactly the
+    claim this filter must not accept, and it still refuses it."""
+    for name in ("wipe_database", "delete_user", "DBDeleteRow", "transfer_funds", "purge_all"):
+        assert looks_mutating(_tool(name, read_only_hint=True)), name
+
+
+def test_a_read_only_claim_DOES_rescue_a_contextual_name() -> None:
+    """The rule used to be blanket, and that left a maintainer with no correct move.
+
+    A first-run tester wrote a server of five pure getters, saw "no read-only tools to
+    probe", annotated every tool exactly as MCP prescribes, and got byte-identical output —
+    because `search_deploys` contains "deploy". The only escape was `--allow-writes`, the
+    flag the report itself says to point at a disposable target. The README meanwhile claimed
+    the filter "trusts a server's own readOnlyHint/name"; it trusted the name and ignored the
+    hint.
+
+    Everything in the write list is a GUESS from a name. `delete` is a guess strong enough to
+    override a contrary claim; `deploy`, `sync`, `send` and `run` appear in the names of
+    perfectly ordinary getters, and there an explicit annotation from the author is better
+    evidence than a substring.
+
+    This weakens no guarantee that existed: the filter never protected against a hostile
+    server, because a malicious tool named `search_notes` was always executed. It protects
+    honest servers from an accident, and the annotation comes from the same source as the
+    name — just as a statement rather than a guess.
+    """
+    for name in ("search_deploys", "get_sync_status", "list_running_jobs", "send_status_report"):
+        assert not looks_mutating(_tool(name, read_only_hint=True)), name
+        # ...and the name heuristic still applies when the author did NOT annotate.
+        assert looks_mutating(_tool(name)), name
+
+
+def test_self_incrimination_still_beats_a_read_only_claim() -> None:
+    # A server contradicting itself is believed in the conservative direction, always.
+    assert looks_mutating(_tool("lookup", read_only_hint=True, destructive_hint=True))
 
 
 def test_the_filter_reports_what_it_removed() -> None:

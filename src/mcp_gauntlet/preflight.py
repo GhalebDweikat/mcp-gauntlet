@@ -60,21 +60,77 @@ def looks_like_missing_credentials(text: str) -> bool:
     return bool(_AUTH_MARKERS.search(text))
 
 
-def _probe_candidates(tools: list[ToolInfo]) -> list[ToolInfo]:
-    """Tools callable while knowing nothing — no required arguments, not mutating.
+_PLACEHOLDER_BY_TYPE: dict[str, Any] = {
+    "string": "test",
+    "integer": 1,
+    "number": 1,
+    "boolean": False,
+    "array": [],
+    "object": {},
+}
 
-    Restricted to zero-required-argument tools on purpose: inventing an argument to probe
-    with is how the task generator ended up asking servers about directories that never
-    existed. If a server offers no such tool the probe simply declines to conclude anything.
+
+def minimal_valid_args(schema: dict[str, Any]) -> dict[str, Any] | None:
+    """Trivially schema-valid arguments, or None if one cannot be constructed confidently.
+
+    Only ever used to find out whether a call fails for AUTHENTICATION reasons. The result
+    is otherwise discarded, which is what makes inventing values acceptable here: a server
+    answering "no such directory" is not auth-shaped and is ignored, so a wrong guess costs
+    a wasted call rather than a wrong verdict.
+
+    Declines on anything it cannot satisfy honestly — an enum with no members, an unknown
+    type, a required property the schema does not describe. A probe that gives up says
+    nothing; a probe that guesses badly would say something false.
+    """
+    required = schema.get("required") or []
+    if not isinstance(required, list):
+        return None
+    if not required:
+        # Nothing is required, so `{}` already satisfies the schema — and this is the
+        # zero-argument case the probe has always handled. Demanding a `properties` dict
+        # here regressed it to "no candidates at all".
+        return {}
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        return None
+    args: dict[str, Any] = {}
+    for name in required:
+        spec = properties.get(name)
+        if not isinstance(spec, dict):
+            return None
+        if isinstance(spec.get("enum"), list) and spec["enum"]:
+            args[name] = spec["enum"][0]
+            continue
+        declared = spec.get("type")
+        if isinstance(declared, list):  # a union — take the first usable member
+            declared = next((d for d in declared if d in _PLACEHOLDER_BY_TYPE), None)
+        if declared not in _PLACEHOLDER_BY_TYPE:
+            return None
+        args[name] = _PLACEHOLDER_BY_TYPE[declared]
+    return args
+
+
+def _probe_candidates(tools: list[ToolInfo]) -> list[ToolInfo]:
+    """Tools this probe can call without doing damage, and without guessing wildly.
+
+    Originally zero-required-argument tools only, on the reasoning that inventing an
+    argument is how the task generator ended up asking servers about directories that never
+    existed. That reasoning holds for SCORING a result and not for this: here the only
+    question asked of the answer is "was this an auth failure", and an invented path
+    produces a not-found error, which is not auth-shaped and is ignored.
+
+    Restricting to zero-argument tools had a real cost. A server whose every tool takes a
+    parameter — most servers — could not be probed at all, so a WRONG or EXPIRED credential
+    was undetectable: the malformed-input probe hits the SDK's own argument validation
+    before it ever reaches the server's auth check, and reads as a healthy rejection.
     """
     from mcp_gauntlet.safety import looks_mutating
 
     out = []
     for tool in tools:
-        required = tool.input_schema.get("required") or []
-        if isinstance(required, list) and required:
-            continue
         if looks_mutating(tool):
+            continue  # never invent arguments for something that might write
+        if minimal_valid_args(tool.input_schema) is None:
             continue
         out.append(tool)
     return out
@@ -98,7 +154,9 @@ async def probe_credentials(
     reasons: list[str] = []
     for tool in candidates[:max_calls]:
         try:
-            result: Any = await session.call_tool(tool.name, {})
+            result: Any = await session.call_tool(
+                tool.name, minimal_valid_args(tool.input_schema) or {}
+            )
         except Exception as exc:  # noqa: BLE001 - a probe must never break the evaluation
             if looks_like_missing_credentials(str(exc)):
                 reasons.append(f"{tool.name}: {str(exc)[:160]}")

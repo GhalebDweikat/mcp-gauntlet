@@ -7,6 +7,7 @@ command that launches a stdio server, e.g. ``npx -y @scope/some-server /tmp``.
 from __future__ import annotations
 
 import os
+import re
 import shlex
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -105,8 +106,25 @@ def parse_env_args(entries: list[str], environ: dict[str, str]) -> dict[str, str
     return resolved
 
 
-def parse_header_args(entries: list[str]) -> dict[str, str]:
-    """Resolve ``--header 'Name: Value'`` entries into a header map for an HTTP server."""
+_ENV_PLACEHOLDER = re.compile(r"\$(\w+)|\$\{(\w+)\}")
+
+
+def parse_header_args(entries: list[str], environ: dict[str, str] | None = None) -> dict[str, str]:
+    """Resolve ``--header 'Name: Value'`` entries into a header map for an HTTP server.
+
+    ``$TOKEN`` and ``${TOKEN}`` inside the value are expanded from the environment, so a
+    committed `servers.json` can carry ``"Authorization: Bearer $SEARCH_TOKEN"`` without
+    carrying the secret. Previously the placeholder was sent LITERALLY: the README's own
+    example shipped `Bearer $SEARCH_TOKEN` on the wire, which is a syntactically valid header,
+    so the server answered 401 and the run was filed as "could not evaluate" — the one exit
+    code the docs tell you not to fail a build on. A copy-paste of the documentation produced
+    a gate that never authenticated and never said so.
+
+    An unset placeholder is an ERROR for the same reason a bare ``--env NAME`` is: sending a
+    header that reads ``Bearer $SEARCH_TOKEN`` is worse than sending none, because the server
+    rejects it and the cause is invisible.
+    """
+    environ = dict(os.environ) if environ is None else environ
     headers: dict[str, str] = {}
     for entry in entries:
         name, sep, value = entry.partition(":")
@@ -115,5 +133,21 @@ def parse_header_args(entries: list[str]) -> dict[str, str]:
             # A malformed header (no colon) may be a bare token — don't echo it; a valid
             # 'Name: Value' would also carry the secret VALUE. Report only that it's malformed.
             raise ValueError("an --header entry is malformed (expected 'Name: Value')")
-        headers[name] = value.strip()
+        missing: list[str] = []
+
+        def _expand(match: re.Match[str], missing: list[str] = missing) -> str:
+            key = match.group(1) or match.group(2)
+            if not environ.get(key):
+                missing.append(key)
+                return ""
+            return environ[key]
+
+        resolved = _ENV_PLACEHOLDER.sub(_expand, value.strip())
+        if missing:
+            # Names only, never the header value: it carries the secret.
+            raise ValueError(
+                f"--header {name}: ${missing[0]} is not set in the environment "
+                f"(set it, or write the value inline)"
+            )
+        headers[name] = resolved
     return headers

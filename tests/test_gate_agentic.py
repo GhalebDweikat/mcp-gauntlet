@@ -233,3 +233,44 @@ def test_a_server_with_no_tools_is_not_a_pass(
     )
     assert result.exit_code == Exit.UNEVALUABLE, result.output
     assert "exposes no tools" in result.output
+
+
+def test_a_real_finding_outranks_an_incomplete_run(
+    patched: Callable[[GauntletReport], None], tmp_path: Path
+) -> None:
+    """When both are true, report the verdict — not the excuse.
+
+    "your server has a HIGH finding" is actionable; "the LLM backend was down" is not, and
+    the finding is still real. The reverse must never happen: a PASS reported while a stage
+    that would have produced findings never ran. So the order is failing-gate, then
+    incomplete-run, then exit 0.
+    """
+    from mcp_gauntlet.report import Finding
+
+    detail = AgenticDetail(
+        provider="groq", model="m", tasks_generated=2, repeats=1, inconclusive=True, results=[]
+    )
+    report = GauntletReport.build(
+        spec="stdio: srv",
+        server=ServerInfo(name="srv", version="1"),
+        tool_count=2,
+        dimensions=[
+            DimensionResult(
+                key="security",
+                title="Security Signals",
+                weight=2.0,
+                score=75.0,
+                findings=[
+                    Finding(tool="t", severity="high", message="description attempts to override")
+                ],
+            )
+        ],
+        agentic=detail,
+    )
+    patched(report)
+    result = runner.invoke(
+        cli.app,
+        ["run", "python -m srv", "--agentic", "--fail-on", "high", "--out", str(tmp_path / "o")],
+    )
+    assert result.exit_code == Exit.GATE_FAILED, result.output
+    assert "at or above high" in result.output

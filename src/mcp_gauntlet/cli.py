@@ -511,13 +511,36 @@ def run(
         )
     console.print(f"\n[dim]Reports written:[/dim] {json_path} | {md_path} | {html_path}")
 
+    # ORDER MATTERS, and it is: a definite verdict, then the reasons there might not be one.
+    #
+    # A real finding at or above the threshold is the most actionable thing this tool can
+    # say, so it is reported first even when part of the run also failed — "your server has
+    # eight HIGH findings" beats "the LLM backend was down" every time, and both were true.
+    # What must never happen is the reverse: reporting a PASS while something that would
+    # have produced findings never ran. That is why the incomplete-run checks sit between
+    # the failing gate and exit 0, rather than after everything.
+    if threshold is not None:
+        triggering = findings_at_or_above(report, threshold)
+        if triggering:
+            worst = sort_findings(triggering)[0]  # already orders severity-first
+            console.print(
+                f"[red]{len(triggering)} finding(s) at or above {threshold.value}[/red] — "
+                f"worst: {escape(redact(worst.message, secrets))}"
+            )
+            raise typer.Exit(code=Exit.GATE_FAILED)
+
+    if fail_under is not None and report.overall_score < fail_under:
+        console.print(
+            f"[red]Overall score {report.overall_score:.1f} is below threshold {fail_under}.[/red]"
+        )
+        raise typer.Exit(code=Exit.GATE_FAILED)
+
     # An agentic run that was ASKED for and could not happen is not a pass. `--agentic` is
     # the explicit form, and the CI example recommends it precisely so that a broken LLM
     # backend fails loudly; without this the run exited 0 with a green check while the four
     # heaviest dimensions never ran. A missing key was already caught up front — an expired
     # or revoked one is not discovered until the first API call, and that is the case a
-    # long-lived pipeline actually hits. Checked BEFORE the gates: passing a gate on
-    # evidence that was never collected is the failure mode, so it cannot be reported first.
+    # long-lived pipeline actually hits.
     if agentic and report.agentic is not None and report.agentic.inconclusive:
         console.print(
             "[red]--agentic was requested but the agent evaluation could not run[/red] — "
@@ -546,24 +569,6 @@ def run(
             "has nothing to measure on it."
         )
         raise typer.Exit(code=Exit.UNEVALUABLE)
-
-    # Both gates are checked, and either can fail the build. `--fail-on` first, because it is
-    # the one that says WHAT was wrong rather than only that a number moved.
-    if threshold is not None:
-        triggering = findings_at_or_above(report, threshold)
-        if triggering:
-            worst = sort_findings(triggering)[0]  # already orders severity-first
-            console.print(
-                f"[red]{len(triggering)} finding(s) at or above {threshold.value}[/red] — "
-                f"worst: {escape(redact(worst.message, secrets))}"
-            )
-            raise typer.Exit(code=Exit.GATE_FAILED)
-
-    if fail_under is not None and report.overall_score < fail_under:
-        console.print(
-            f"[red]Overall score {report.overall_score:.1f} is below threshold {fail_under}.[/red]"
-        )
-        raise typer.Exit(code=Exit.GATE_FAILED)
 
 
 @app.command()

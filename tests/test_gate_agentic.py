@@ -24,6 +24,7 @@ reports success when it stops working.
 
 import io
 import json
+import re
 from collections.abc import Callable
 from pathlib import Path
 
@@ -37,6 +38,19 @@ from mcp_gauntlet.models import ServerInfo
 from mcp_gauntlet.report import AgenticDetail, DimensionResult, GauntletReport
 
 runner = CliRunner()
+
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _plain(text: str) -> str:
+    """Console output with styling removed.
+
+    Any assertion about WORDS in the console has to go through this. Rich emits colour when
+    it thinks it is being watched — which on a CI runner it is, and on a developer's captured
+    test output it is not — and its highlighter wraps parts of a token in separate escape
+    sequences, so `--fail-under` genuinely is not a substring of the coloured render.
+    """
+    return _ANSI.sub("", text)
 
 
 def _report(*, inconclusive: bool) -> GauntletReport:
@@ -319,7 +333,14 @@ def test_out_of_range_numbers_are_usage_errors(
     monkeypatch.setattr(cli, "evaluate_server", _never)
     result = runner.invoke(cli.app, argv)
     assert result.exit_code == Exit.USAGE, result.output
-    assert flag in result.output
+    # Strip styling before looking for the flag. With colour ON — which is what a CI runner
+    # gets, and what nobody gets locally — Rich's highlighter breaks an option name into
+    # separately-styled runs, so `--fail-under` is on screen as
+    # `\x1b[1;36m-\x1b[0m\x1b[1;36m-fail\x1b[0m\x1b[1;36m-under\x1b[0m` and the literal
+    # substring is not in the output at all. This assertion was therefore GREEN on every
+    # developer machine and RED on every CI run for twelve consecutive commits, including the
+    # one that cut 0.9.2.
+    assert flag in _plain(result.output)
 
 
 def test_zero_timeout_still_means_disabled(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

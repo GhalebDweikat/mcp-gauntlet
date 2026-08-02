@@ -49,6 +49,17 @@ run_gate() {
   return 0
 }
 
+# Colour ON, always, even into a captured log. Not cosmetic: Rich emits escape codes when it
+# thinks it is being watched, which a CI runner is and a developer's captured test output is
+# not — and its highlighter splits a token into separately-styled runs, so `--fail-under` is
+# genuinely absent from the coloured render of a message containing it. Nine assertions on
+# console text were therefore GREEN on every machine this script ran on and RED on every CI
+# run, for twelve consecutive commits including the one that cut 0.9.2.
+#
+# The header of this file says the point is that CI and local cannot disagree about what
+# "green" means. They did, because the SCRIPT was shared and the ENVIRONMENT was not.
+export FORCE_COLOR=1
+
 echo "Running gates..."
 run_gate ruff-check   uv run ruff check .
 run_gate ruff-format  uv run ruff format --check .

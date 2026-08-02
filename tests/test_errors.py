@@ -6,9 +6,16 @@ survey pilot failed with exactly that string: it names no cause, and as a publis
 reads as the harness shrugging rather than as a fact about the server.
 """
 
+from typing import TextIO, cast
+
 import pytest
 
 from mcp_gauntlet.errors import describe
+
+# `cast` rather than `# type: ignore[arg-type]` on the `ChildStderr(handle)` calls below.
+# `tempfile.TemporaryFile` is typed differently per platform in typeshed, so the ignore was
+# REQUIRED on Windows — where this is developed — and UNUSED on Linux, where mypy runs with
+# `warn_unused_ignores` and failed. Green on the maintainer's machine, red on every CI run.
 
 
 def test_unwraps_a_task_group_to_the_real_cause() -> None:
@@ -104,7 +111,7 @@ def test_stderr_tail_truncates_the_end_not_the_front() -> None:
     line = r"C:\proj\.venv\Scripts\python.exe: can't open file " + "'" + "x" * 400 + "'"
     with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as handle:
         handle.write(line)
-        tail = ChildStderr(handle).tail()  # type: ignore[arg-type]
+        tail = ChildStderr(cast(TextIO, handle)).tail()
     assert tail.startswith(r"C:\proj\.venv\Scripts\python.exe"), tail[:60]
     assert tail.endswith("…"), tail[-20:]
     assert "cripts" not in tail[:10]  # the specific fabricated fragment
@@ -117,7 +124,7 @@ def test_a_short_stderr_tail_is_untouched() -> None:
 
     with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as handle:
         handle.write("Cannot find module 'express'")
-        got = ChildStderr(handle).tail()  # type: ignore[arg-type]
+        got = ChildStderr(cast(TextIO, handle)).tail()
         assert got == "Cannot find module 'express'"
 
 
@@ -195,7 +202,7 @@ def test_multiline_stderr_keeps_both_ends() -> None:
     def tail(lines: list[str]) -> str:
         with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as handle:
             handle.write("\n".join(lines))
-            return ChildStderr(handle).tail()  # type: ignore[arg-type]
+            return ChildStderr(cast(TextIO, handle)).tail()
 
     got = tail(["LINE_01_THE_ACTUAL_ERROR: config missing", *[f"noise_{i}" for i in range(4)]])
     assert got.startswith("LINE_01_THE_ACTUAL_ERROR"), got

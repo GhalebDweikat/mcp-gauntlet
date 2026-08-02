@@ -7,6 +7,7 @@ discard a run the user just paid for.
 import inspect
 import io
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -25,6 +26,8 @@ from mcp_gauntlet.report import (
     to_markdown,
 )
 from mcp_gauntlet.robustness import run_robustness_probes
+
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def _hostile_report() -> GauntletReport:
@@ -192,4 +195,8 @@ def test_version_flag_reports_the_installed_version() -> None:
 
     result = CliRunner().invoke(cli.app, ["--version"])
     assert result.exit_code == 0
-    assert __version__ in result.output
+    # Styling stripped first. Rich highlights a version string as a number and splits it into
+    # separate escape-code runs, so `0.9.3` renders as `\x1b[1;36m0.9\x1b[0m.\x1b[1;36m3\x1b[0m`
+    # and is not a substring of the coloured output — the same trap as `--fail-under` in
+    # `test_gate_agentic`, which was red on CI and green locally for twelve commits.
+    assert __version__ in _ANSI.sub("", result.output)

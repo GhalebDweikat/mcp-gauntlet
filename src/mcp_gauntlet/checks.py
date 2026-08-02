@@ -782,15 +782,35 @@ def _clean_for_match(text: str) -> str:
     invisible so the hidden-character check ignored them, and they are not stripped, so
     ``ignore all<U+00A0>previous instructions`` broke the phrase for a pattern that expects
     ordinary whitespace. One wedged INSIDE a word is a different matter and is flagged.
+
+    A LINE BREAK is whitespace, not a control character to delete, and the difference was the
+    single worst defect this project has shipped. `\n`, `\r` and `\t` are Unicode category
+    `Cc`, so they went out with the zero-width smuggling characters — gluing the words either
+    side together. `Ignore all previous\ninstructions` folded to `previousinstructions` and
+    matched nothing, so **one keystroke turned every capping check off, on every surface at
+    once**: description, title, server instructions, an output schema behind a `$ref`, a
+    resource description, the second `tools/list`. A plausible poisoned notes server carrying
+    five separate payloads scored A 98.4 and exited 0 on the documented CI gate.
+
+    It is not an exotic vector. Hard-wrapping *replaces* the space, and `inspect.cleandoc` —
+    what the official Python SDK's FastMCP does to every docstring — leaves bare newlines. A
+    server was caught or not caught depending on whether its author's editor wrapped the line.
+
+    So: anything `str.isspace()` becomes a space (which also covers `Zs`, `Zl`, `Zp` and NEL),
+    and only genuinely invisible formats and marks are deleted. Runs collapse to one space so
+    a pattern written with a literal space still matches across a blank line.
     """
     decomposed = unicodedata.normalize("NFKD", text)
     kept = [
-        " " if unicodedata.category(ch) == "Zs" else ch
+        " " if ch.isspace() else ch
         for ch in decomposed
-        if not _is_variation_selector(ord(ch))
-        and unicodedata.category(ch) not in {"Cf", "Cc", "Mn", "Me"}
+        if ch.isspace()
+        or (
+            not _is_variation_selector(ord(ch))
+            and unicodedata.category(ch) not in {"Cf", "Cc", "Mn", "Me"}
+        )
     ]
-    return "".join(kept).translate(_CONFUSABLE_FOLD)
+    return re.sub(r" {2,}", " ", "".join(kept)).translate(_CONFUSABLE_FOLD)
 
 
 def _scan_text(

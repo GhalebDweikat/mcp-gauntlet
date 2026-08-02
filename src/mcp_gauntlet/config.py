@@ -106,7 +106,11 @@ def parse_env_args(entries: list[str], environ: dict[str, str]) -> dict[str, str
     return resolved
 
 
-_ENV_PLACEHOLDER = re.compile(r"\$(\w+)|\$\{(\w+)\}")
+# `\w+` swallowed the digits in `X-Price: cost is $5.00`, so a header with a price in it
+# exited 4 claiming `$5` was an unset variable — with no way to say "I meant a dollar sign".
+# Two narrowings fix it: an environment variable cannot START with a digit in any shell, and
+# `$$` now means a literal `$` for the rare value that needs `$WORD` on the wire.
+_ENV_PLACEHOLDER = re.compile(r"\$\$|\$([A-Za-z_]\w*)|\$\{([A-Za-z_]\w*)\}")
 
 
 def parse_header_args(entries: list[str], environ: dict[str, str] | None = None) -> dict[str, str]:
@@ -123,6 +127,10 @@ def parse_header_args(entries: list[str], environ: dict[str, str] | None = None)
     An unset placeholder is an ERROR for the same reason a bare ``--env NAME`` is: sending a
     header that reads ``Bearer $SEARCH_TOKEN`` is worse than sending none, because the server
     rejects it and the cause is invisible.
+
+    Write ``$$`` for a literal dollar sign. A variable name cannot begin with a digit, so
+    ``X-Price: cost is $5.00`` needs no escaping either — it used to exit 4 insisting ``$5``
+    was unset, with nothing in the syntax able to say otherwise.
     """
     environ = dict(os.environ) if environ is None else environ
     headers: dict[str, str] = {}
@@ -136,18 +144,25 @@ def parse_header_args(entries: list[str], environ: dict[str, str] | None = None)
         missing: list[str] = []
 
         def _expand(match: re.Match[str], missing: list[str] = missing) -> str:
+            if match.group(0) == "$$":
+                return "$"
             key = match.group(1) or match.group(2)
             if not environ.get(key):
                 missing.append(key)
                 return ""
             return environ[key]
 
+        # The NAME is expanded too. It was not, and reached the wire literally without a
+        # word said — so `--header '$AUTH_HEADER: ...'` sent a header called `$AUTH_HEADER`
+        # while the value beside it expanded correctly. A rule that holds on one side of the
+        # colon and not the other is worse than either rule applied consistently.
+        resolved_name = _ENV_PLACEHOLDER.sub(_expand, name)
         resolved = _ENV_PLACEHOLDER.sub(_expand, value.strip())
         if missing:
             # Names only, never the header value: it carries the secret.
             raise ValueError(
-                f"--header {name}: ${missing[0]} is not set in the environment "
-                f"(set it, or write the value inline)"
+                f"--header {resolved_name or name}: ${missing[0]} is not set in the "
+                "environment (set it, write the value inline, or use $$ for a literal $)"
             )
-        headers[name] = resolved
+        headers[resolved_name] = resolved
     return headers

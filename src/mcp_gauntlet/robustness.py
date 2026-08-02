@@ -238,6 +238,10 @@ async def run_robustness_probes(
     # 60s so the pieces compose: one permitted agent hang (--tool-timeout, 60s) plus a
     # full probe budget still fits inside the leaderboard's 240s per-server allowance.
     budget_s: float = 60.0,
+    # Whether the caller has ALREADY emitted a HIGH saying the credentials were rejected.
+    # One fact deserves one HIGH: a reader counting "2 findings at or above high" and finding
+    # both sentences describing the same wrong token stops trusting the count.
+    auth_already_reported: bool = False,
 ) -> DimensionResult | None:
     """Probe each tool with malformed input.
 
@@ -419,21 +423,30 @@ async def run_robustness_probes(
         # gate (`--fail-on high`) catches it: a run where every call was rejected must not
         # read as a pass. This needs no LLM — a 100% auth-failure rate is an offline fact,
         # and Tool Reliability, the dimension that would otherwise notice, requires one.
+        # "every tool call" was printed over a probe of three tools on a ten-tool server.
+        # Say what was probed, not what exists — the whole complaint here is that a number
+        # was reported over a measurement that never happened.
+        probed = len(auth_rejected)
         return DimensionResult(
             key=Dim.ROBUSTNESS,
             title="Robustness",
             weight=1.0,
             score=0.0,
-            summary="Every tool call was rejected for authentication, so whether this "
-            "server validates its input could not be observed.",
+            summary=f"All {probed} probed tool(s) were rejected for authentication, so "
+            "whether this server validates its input could not be observed.",
             findings=[
                 Finding(
-                    severity=Severity.HIGH,
+                    severity=Severity.INFO if auth_already_reported else Severity.HIGH,
                     message=(
-                        f"every tool call was rejected for authentication "
-                        f"({len(auth_rejected)} tool(s)) — the credentials supplied are "
-                        "wrong, expired, or lack the required scope, so nothing about this "
-                        "server was actually measured"
+                        f"all {probed} probed tool(s) were rejected for authentication"
+                        + (
+                            " — see the Tool Reliability finding; nothing about this "
+                            "server's input validation was measured either"
+                            if auth_already_reported
+                            else " — the credentials supplied are wrong, expired, or lack "
+                            "the required scope, so nothing about this server was "
+                            "actually measured"
+                        )
                     ),
                     detail=", ".join(sorted(auth_rejected)[:8]),
                 )

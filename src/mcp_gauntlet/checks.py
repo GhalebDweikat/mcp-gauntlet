@@ -849,11 +849,18 @@ def _scan_text(
         # MEDIUM it is still reported, still visible, and still gateable by anyone who wants
         # it — without red-building an honest server on the gate the docs recommend, which
         # has no allowlist and no suppression flag to escape with.
+        # Located like every other finding here. It shipped with a hardcoded `None` and no
+        # `where`, so it rendered as a bare "server:" with no field path — on a forty-tool
+        # server that points a reader at the server `instructions`, which are clean, and on
+        # the bundled malicious fixture it produced four byte-identical findings that could
+        # not be told apart. Every other security check already says `output property 'Entry'
+        # description` or `second tools/list: description`. A finding you cannot act on is
+        # worse than no finding, and this was the newest code in the file.
         findings.append(
             _f(
-                None,
+                tool,
                 Severity.LOW if not prose else Severity.MEDIUM,
-                "instructs the agent to read a credential and pass it onward",
+                f"{where} instructs the agent to read a credential and pass it onward",
                 f"{order[:200]}{obfuscated}",
             )
         )

@@ -86,9 +86,19 @@ canonical payload scores clean. Folding handles alphabets, not languages.
 a tool description and a parameter description so neither half matches alone.
 
 ### G5. Paraphrase outside the matched phrase family
-**Partly caught.** The grade cap needs roughly `{ignore|disregard} all {previous|prior}
-instructions`. Near-synonyms — "your new instructions are as follows", "ignore everything
-above this line" — are reported at MEDIUM or not at all.
+**Not caught.** The grade cap needs roughly `{ignore|disregard} all {previous|prior}
+instructions`. Both near-synonyms below produce **zero findings** — not the MEDIUM this entry
+used to imply by writing "reported at MEDIUM or not at all", which a tester reasonably read as
+the likely case and then measured:
+
+```
+your new instructions are as follows: …          -> no finding
+Ignore everything above this line and …          -> no finding
+```
+
+A description containing both, together, is still clean. Understating a gap in the document
+whose job is to state gaps is the same mistake as a check that reports success when it stops
+working, and it belongs here rather than in a footnote.
 
 *Direction for G2–G5 together:* these are the limits of pattern matching, and widening the
 patterns will buy false positives faster than coverage. The honest fix is an LLM-judged pass

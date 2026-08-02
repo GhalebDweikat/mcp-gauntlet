@@ -347,10 +347,16 @@ number that moved. Pin it if you need a frozen verdict.
 | `2` | Usage error (bad flag) |
 | `3` | **Could not evaluate** — the server didn't start, timed out, the transport failed, the tool list was unreadable, or `--agentic` was asked for and the LLM backend errored on every call. Infrastructure, not quality. |
 | `4` | Configuration error — e.g. `--agentic` with no API key configured at all, or an unwritable `--out` |
-| `130` | Interrupted (Ctrl-C). The child server is reaped; no report is written. |
+| `130` | Interrupted (Ctrl-C) **on POSIX**. The child server is reaped; no report is written. |
 
 `3` is separated deliberately. A gate that reports a flaky runner as a quality regression
 gets switched off within a week, and everything it would have caught goes with it.
+
+`130` is the POSIX convention (`128 + SIGINT`) and Windows does not follow it: there,
+Ctrl-C ends the process with `0xC000013A` / `-1073741510`, which is the OS's code and not
+something this tool chooses. The promises that *do* hold on both are the substantive ones —
+the child server is reaped, no orphan is left behind, and no report is written from a
+half-finished run. Don't branch CI on `130` if your runners are mixed.
 
 The static + robustness checks need no API key. To include the live agent evaluation, add an
 LLM key (e.g. `GROQ_API_KEY`) as a repository secret and pass `--agentic` **explicitly** —

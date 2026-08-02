@@ -25,6 +25,7 @@ Signals, both used only to *exclude* (never to wave a tool through):
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 
 from mcp_gauntlet.models import ToolInfo
 
@@ -247,8 +248,51 @@ def trusted_on_its_own_word(tool: ToolInfo) -> bool:
     return bool(_WRITE_HINTS.search(_normalize(surface))) and not looks_mutating(tool)
 
 
+def mutating_trigger(tool: ToolInfo) -> str:
+    """Why `looks_mutating` excluded this tool, in the fewest words that let you argue.
+
+    Disclosing the exclusion without disclosing its CAUSE was only half a fix. Two real
+    examples from one tester's server: `"Use after search_runbooks has told you which runbook
+    applies"` was excluded on **applies**, and `"e.g. checkout 5xx"` on **checkout** — prose
+    words in a description, in a tool that writes nothing. The report named the tools and
+    never the word, so the only visible remedy was `--allow-writes`, which is all-or-nothing
+    and points at a disposable target. Knowing the word turns that into a one-word edit.
+    """
+    if tool.destructive_hint is True:
+        return "the server declared destructiveHint: true"
+    if tool.read_only_hint is False:
+        return "the server declared readOnlyHint: false"
+    for label, text in (
+        ("name", tool.name),
+        ("title", tool.title),
+        ("title", tool.annotation_title),
+        ("description", tool.description),
+    ):
+        if not text:
+            continue
+        match = _WRITE_HINTS.search(_normalize(text))
+        if match:
+            return f"matched {match.group(0).strip()!r} in its {label}"
+    if _compound_write_name(tool):
+        return "its name is a compound built on an ambiguous write verb"
+    return "matched the write-verb vocabulary"  # pragma: no cover - defensive
+
+
+def describe_exclusions(tools: list[ToolInfo], names: Sequence[str]) -> str:
+    """`name — matched 'applies' in its description`, joined, for a *Not measured* line."""
+    by_name = {tool.name: tool for tool in tools}
+    return "; ".join(
+        f"{name} — {mutating_trigger(by_name[name])}" if name in by_name else name
+        for name in sorted(names)
+    )
+
+
 def filter_read_only(tools: list[ToolInfo]) -> tuple[list[ToolInfo], list[str]]:
-    """Return (kept read-only tools, names of excluded possibly-mutating tools)."""
+    """Return (kept read-only tools, names of excluded possibly-mutating tools).
+
+    Names only, so `excluded_write_tools` in `report.json` stays machine-readable for anyone
+    parsing it. `describe_exclusions` supplies the human half.
+    """
     kept: list[ToolInfo] = []
     excluded: list[str] = []
     for tool in tools:

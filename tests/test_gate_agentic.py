@@ -227,12 +227,17 @@ def test_a_server_with_no_tools_is_not_a_pass(
         dimensions=[],
     )
     patched(report)
-    result = runner.invoke(
-        cli.app,
-        ["run", "python -m srv", "--no-agentic", "--fail-on", "high", "--out", str(tmp_path / "o")],
-    )
-    assert result.exit_code == Exit.UNEVALUABLE, result.output
-    assert "exposes no tools" in result.output
+    # And the SAME verdict at every threshold. It used to exit 3 at `high` and 1 at `medium`,
+    # because "exposes no tools" is a MEDIUM finding — so tightening the gate turned "nothing
+    # was measured" into a definite fail on a run with no measurements in it. One of those two
+    # answers is wrong whichever you believe.
+    for gate in ("high", "medium", "low", None):
+        argv = ["run", "python -m srv", "--no-agentic", "--out", str(tmp_path / "o")]
+        if gate:
+            argv += ["--fail-on", gate]
+        result = runner.invoke(cli.app, argv)
+        assert result.exit_code == Exit.UNEVALUABLE, f"--fail-on {gate}: {result.output}"
+        assert "exposes no tools" in result.output
 
 
 def test_a_real_finding_outranks_an_incomplete_run(

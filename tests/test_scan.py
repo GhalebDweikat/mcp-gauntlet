@@ -111,13 +111,57 @@ def test_credentials_reach_the_spec(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     """`scan` had no --env and no --header at all, so it could not evaluate any server that
     needs a token — and "several servers you own" are exactly the ones with tokens."""
     monkeypatch.setenv("SERVICE_TOKEN", "tok-abc")
-    entries = load_servers(
-        _list(tmp_path, env=["SERVICE_TOKEN"], headers=["Authorization: Bearer xyz"])
+    path = tmp_path / "servers.json"
+    path.write_text(
+        json.dumps(
+            {
+                "servers": [
+                    {"name": "child", "spec": "python -m srv", "env": ["SERVICE_TOKEN"]},
+                    {
+                        "name": "remote",
+                        "spec": "https://mcp.example.com/mcp",
+                        "headers": ["Authorization: Bearer xyz"],
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
     )
-    spec = entries[0].to_spec()
-    assert spec.env == {"SERVICE_TOKEN": "tok-abc"}
-    assert spec.headers == {"Authorization": "Bearer xyz"}
-    assert "tok-abc" in spec.secret_values()
+    child, remote = (entry.to_spec() for entry in load_servers(path))
+    assert child.env == {"SERVICE_TOKEN": "tok-abc"}
+    assert "tok-abc" in child.secret_values()
+    assert remote.headers == {"Authorization": "Bearer xyz"}
+
+
+def test_a_credential_on_the_wrong_transport_is_rejected(tmp_path: Path) -> None:
+    """Both were accepted and discarded, and the scan then read A 100.0 with the credential
+    never sent — the same silence that made unknown keys an error in the first place."""
+    with pytest.raises(ServerListError, match='"headers" are sent over HTTP'):
+        load_servers(_list(tmp_path, headers=["Authorization: Bearer xyz"]))
+
+    path = tmp_path / "remote.json"
+    path.write_text(
+        json.dumps(
+            {"servers": [{"name": "r", "spec": "https://x.example/mcp", "env": ["TOKEN=v"]}]}
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ServerListError, match='"env" sets variables for a child process'):
+        load_servers(path)
+
+
+def test_unknown_top_level_keys_are_rejected(tmp_path: Path) -> None:
+    """Per-entry keys were checked and the top level was not, so the check applied one level
+    below where people actually mistype. `{"servers": [...], "failOn": "high"}` ran ungated
+    and exited 0; `{"servers": [...], "env": ["TOKEN=v"]}` silently dropped a credential."""
+    path = tmp_path / "servers.json"
+    for stray in ({"failOn": "high"}, {"env": ["TOKEN=v1"]}, {"out": "reports"}):
+        path.write_text(
+            json.dumps({"servers": [{"name": "s", "spec": "python -m srv"}], **stray}),
+            encoding="utf-8",
+        )
+        with pytest.raises(ServerListError, match="unknown top-level key"):
+            load_servers(path)
 
 
 @pytest.mark.parametrize("value", [None, ""])

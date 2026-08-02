@@ -83,6 +83,12 @@ class ScanResult:
 
 
 _ENTRY_KEYS = {"name", "spec", "env", "headers"}
+# The TOP level was never checked, so the whole reason unknown per-entry keys are rejected —
+# a silently-dropped key reads as a wired-up configuration — applied one nesting level down
+# and not at the level people actually mistype. `{"servers": [...], "failOn": "high"}` ran
+# ungated and exited 0; `{"servers": [...], "env": ["TOKEN=v1"]}` discarded a credential and
+# scanned as if none were needed.
+_TOP_LEVEL_KEYS = {"servers"}
 
 
 def _string_list(entry: dict, key: str, where: str) -> list[str]:
@@ -114,6 +120,13 @@ def load_servers(path: Path) -> list[ServerEntry]:
         raise ServerListError(f"{path} is not valid JSON: {exc}") from exc
     if not isinstance(data, dict) or not isinstance(data.get("servers"), list):
         raise ServerListError(f'{path} must be an object with a "servers" list')
+    stray = sorted(set(data) - _TOP_LEVEL_KEYS)
+    if stray:
+        raise ServerListError(
+            f"{path} has unknown top-level key(s) {', '.join(stray)}; the only key is "
+            '"servers" — per-server settings like "env" and "headers" belong inside each '
+            "entry, and gate settings are command-line flags"
+        )
     entries: list[ServerEntry] = []
     for index, raw in enumerate(data["servers"]):
         where = f"{path}: server #{index + 1}"
@@ -139,9 +152,24 @@ def load_servers(path: Path) -> list[ServerEntry]:
         # to fail a build on. A whole scan then reports healthy while every credentialed
         # server in it went unchecked. Failing fast costs one bad run and no false green.
         try:
-            entry.to_spec()
+            resolved = entry.to_spec()
         except ValueError as exc:
             raise ServerListError(f"{where} ({entry.name}): {exc}") from exc
+        # A credential on the wrong side of the transport was accepted and discarded: an
+        # `env` entry on an https:// server and a `headers` entry on a stdio command both
+        # scanned as A 100.0 with the credential never sent. `run` at least prints a warning;
+        # here it is an error, because a committed `servers.json` is read once by a machine
+        # and a yellow line in a CI log is not read at all.
+        if resolved.kind is TransportKind.HTTP and entry.env:
+            raise ServerListError(
+                f'{where} ({entry.name}): "env" sets variables for a child process and this '
+                'entry is an http(s) URL — use "headers" to authenticate a remote server'
+            )
+        if resolved.kind is TransportKind.STDIO and entry.headers:
+            raise ServerListError(
+                f'{where} ({entry.name}): "headers" are sent over HTTP and this entry is a '
+                'stdio command — use "env" to pass a credential to a child process'
+            )
         entries.append(entry)
 
     # Reports are written to a directory named after the entry, so two entries sharing a

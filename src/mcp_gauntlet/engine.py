@@ -45,7 +45,7 @@ from mcp_gauntlet.report import (
     redact,
 )
 from mcp_gauntlet.robustness import run_robustness_probes
-from mcp_gauntlet.safety import filter_read_only, trusted_on_its_own_word
+from mcp_gauntlet.safety import describe_exclusions, filter_read_only, trusted_on_its_own_word
 from mcp_gauntlet.taskcache import (
     DEFAULT_CACHE_DIR,
     cache_file,
@@ -532,7 +532,11 @@ async def evaluate_server(
         # regardless of the payload, so the probe would be measuring the auth wall, not the
         # server's input validation.
         if probe and exec_tools and not needs_credentials:
-            robustness = await run_robustness_probes(session, exec_tools)
+            robustness = await run_robustness_probes(
+                session,
+                exec_tools,
+                auth_already_reported=bool(auth_failure and supplied_credentials),
+            )
             if robustness is not None:
                 live_dimensions.append(robustness)
             if excluded:
@@ -544,7 +548,8 @@ async def evaluate_server(
                 # `not_measured` only ever fired when ALL tools were excluded.
                 not_measured.append(
                     f"robustness probes for {len(excluded)} of {len(discovery.tools)} tool(s) "
-                    f"excluded as possibly-mutating ({', '.join(sorted(excluded))}) — "
+                    "excluded as possibly-mutating "
+                    f"({describe_exclusions(discovery.tools, excluded)}) — "
                     "re-run with --allow-writes against a disposable target to include them"
                 )
         elif not probe:
@@ -559,7 +564,13 @@ async def evaluate_server(
             # reader most needs to know which heuristic fired and on what — said only "no
             # read-only tools to probe". That turned a thirty-second fix into a bisect with
             # four throwaway servers for the tester who hit it.
-            excluded_note = f" ({', '.join(sorted(excluded))})" if excluded else ""
+            # …and say WHICH WORD did it. Naming the tools turned a bisect into a read; naming
+            # the trigger turns the read into a one-word edit. `"Use after search_runbooks has
+            # told you which runbook applies"` was excluded on **applies**, and the only
+            # remedy the report offered was --allow-writes, which is all-or-nothing.
+            excluded_note = (
+                f" ({describe_exclusions(discovery.tools, excluded)})" if excluded else ""
+            )
             not_measured.append(
                 "robustness probes — every tool was excluded as possibly-mutating"
                 f"{excluded_note}. Annotate a genuinely read-only tool with "

@@ -93,6 +93,26 @@ def test_parse_header_args_rejects_malformed() -> None:
         parse_header_args(["no-colon-here"])
 
 
+def test_a_dollar_sign_that_is_not_a_variable() -> None:
+    """`X-Price: cost is $5.00` exited 4 insisting `$5` was an unset variable, and the syntax
+    offered no way to say otherwise. A variable name cannot begin with a digit in any shell,
+    and `$$` now writes a literal `$` for the value that really needs `$WORD` on the wire."""
+    assert parse_header_args(["X-Price: cost is $5.00"], {}) == {"X-Price": "cost is $5.00"}
+    assert parse_header_args(["X-Raw: $$HOME"], {"HOME": "/root"}) == {"X-Raw": "$HOME"}
+    # …and a real placeholder still resolves, and a real missing one still fails.
+    assert parse_header_args(["A: Bearer $T"], {"T": "tok"}) == {"A": "Bearer tok"}
+    with pytest.raises(ValueError, match=r"\$T is not set"):
+        parse_header_args(["A: Bearer $T"], {})
+
+
+def test_a_placeholder_in_the_header_NAME_is_expanded_too() -> None:
+    """It was not, and reached the wire literally without a word said — so the same `$VAR`
+    resolved on one side of the colon and shipped as text on the other."""
+    assert parse_header_args(["$HDR: v"], {"HDR": "X-Auth"}) == {"X-Auth": "v"}
+    with pytest.raises(ValueError, match=r"\$HDR is not set"):
+        parse_header_args(["$HDR: v"], {})
+
+
 def test_secret_values_collects_credentials_over_a_length_floor() -> None:
     spec = ServerSpec.parse("python -m srv")
     spec.env = {"TOKEN": "ghp_longsecret", "SHORT": "ab"}  # "ab" is below the length floor

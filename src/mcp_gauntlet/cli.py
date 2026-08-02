@@ -198,6 +198,30 @@ def _parse_fail_on(fail_on: str | None) -> Severity | None:
         raise typer.Exit(code=Exit.USAGE) from None
 
 
+def _report_no_tools(*, unparseable: bool) -> None:
+    """Explain a zero-tool run and exit 3. Never returns.
+
+    Two different facts reach zero tools and telling the author the wrong one costs them an
+    afternoon in the wrong file, so they get different sentences — but the same exit code,
+    because in both cases nothing about the server was measured.
+    """
+    if unparseable:
+        console.print(
+            "[red]This server's tool list could not be parsed[/red] — it answered "
+            "tools/list, and the answer was not a valid tool list, so nothing could be "
+            "evaluated. See the Schema Health finding for the offending field. Gate on "
+            "[cyan]--fail-on high[/cyan] to make this fail your build."
+        )
+    else:
+        console.print(
+            "[red]This server exposes no tools[/red] — nothing was evaluated, so this is "
+            "neither a pass nor a quality verdict. If it had tools before, tool "
+            "registration is broken; if it only exposes resources or prompts, this "
+            "harness has nothing to measure on it."
+        )
+    raise typer.Exit(code=Exit.UNEVALUABLE)
+
+
 def _render_report(report: GauntletReport, secrets: frozenset[str] = frozenset()) -> None:
     def r(text: str) -> str:  # scrub any echoed credential from server-controlled console text
         return redact(text, secrets)
@@ -537,6 +561,21 @@ def run(
     # What must never happen is the reverse: reporting a PASS while something that would
     # have produced findings never ran. That is why the incomplete-run checks sit between
     # the failing gate and exit 0, rather than after everything.
+    # …with ONE thing ahead of it: a server that exposed no tools at all. "Nothing was
+    # measured, so neither pass nor fail is honest" does not stop being true when you tighten
+    # the gate, and it used to: `--fail-on high` exited 3 and `--fail-on medium` exited 1 on
+    # the same server, because "exposes no tools" is a MEDIUM finding. One of those two is
+    # wrong whichever you believe, and a gate that reports a *verdict* on a run with no
+    # measurements in it is the worse of the two.
+    #
+    # An UNPARSEABLE tool list also lands at zero tools and is deliberately NOT here: that is
+    # a defect IN the server, it is reported HIGH, and the docs tell you to gate on it.
+    unparseable = any(
+        f.message == UNPARSEABLE_TOOLS_MESSAGE for d in report.dimensions for f in d.findings
+    )
+    if report.tool_count == 0 and not unparseable:
+        _report_no_tools(unparseable=False)
+
     if threshold is not None:
         triggering = findings_at_or_above(report, threshold)
         if triggering:
@@ -580,26 +619,10 @@ def run(
     # server that legitimately exposes only resources or prompts is equally outside what
     # this harness can say anything about.
     if report.tool_count == 0:
-        # Two different facts reach zero tools, and telling the author the wrong one costs
-        # them an afternoon in the wrong file. Only reachable without `--fail-on`; with a
-        # threshold set, the HIGH finding fails the gate first (exit 1).
-        if any(
-            f.message == UNPARSEABLE_TOOLS_MESSAGE for d in report.dimensions for f in d.findings
-        ):
-            console.print(
-                "[red]This server's tool list could not be parsed[/red] — it answered "
-                "tools/list, and the answer was not a valid tool list, so nothing could be "
-                "evaluated. See the Schema Health finding for the offending field. Gate on "
-                "[cyan]--fail-on high[/cyan] to make this fail your build."
-            )
-        else:
-            console.print(
-                "[red]This server exposes no tools[/red] — nothing was evaluated, so this is "
-                "neither a pass nor a quality verdict. If it had tools before, tool "
-                "registration is broken; if it only exposes resources or prompts, this "
-                "harness has nothing to measure on it."
-            )
-        raise typer.Exit(code=Exit.UNEVALUABLE)
+        # Only the unparseable branch reaches here now; the empty-tool-list branch ran before
+        # the gate. Reachable without `--fail-on`; with a threshold set, the HIGH finding
+        # fails the gate first (exit 1), which is the intended behaviour for a server defect.
+        _report_no_tools(unparseable=unparseable)
 
 
 @app.command()

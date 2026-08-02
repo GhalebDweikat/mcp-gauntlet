@@ -1,4 +1,17 @@
-# What happens next — after 0.9.3
+# What happens next — after 0.9.4
+
+**Test BEFORE tagging, not after.** Round four ran against the published 0.9.3 wheel and
+found two defects *in that release*: a line break switched every capping security check off,
+and a server that failed every call scored Robustness 100.0 and graded A. Both had shipped.
+The plan said to release then test; that order was wrong and the next round runs first.
+
+Everything below this line was written before 0.9.4 and still holds, except that the
+comparability baseline is now published 0.9.4 and the stability bar has **three** consecutive
+clean data points rather than two.
+
+---
+
+# What happened after 0.9.3
 
 Working plan, written so it survives a context reset.
 

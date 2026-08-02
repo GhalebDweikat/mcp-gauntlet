@@ -17,7 +17,12 @@ from mcp import ClientSession
 
 from mcp_gauntlet.adapters import adapter
 from mcp_gauntlet.models import ToolInfo
-from mcp_gauntlet.preflight import block_text, looks_like_missing_credentials
+from mcp_gauntlet.preflight import (
+    block_text,
+    looks_like_missing_credentials,
+    machine_auth_code,
+    rejected_the_caller,
+)
 from mcp_gauntlet.report import Dim, DimensionResult, Finding, Severity
 from mcp_gauntlet.schemas import (
     arg_surface,
@@ -341,7 +346,16 @@ async def run_robustness_probes(
                 )
             )
             break
-        except _protocol_error():
+        except _protocol_error() as exc:
+            # …unless the protocol-level rejection was of the CALLER rather than of the
+            # payload. A wrongly-credentialed server that answers 401 over the JSON-RPC error
+            # channel refuses everything identically, and crediting that 100 is the same
+            # inflation the `isError` branch below already guards against — the only
+            # difference being which channel the refusal arrived on. It scored 100 here for
+            # two releases because nothing on this path read the error's code or data.
+            if rejected_the_caller(exc):
+                auth_rejected.append(tool.name)
+                continue
             scores.append(100.0)  # protocol-level rejection = correct handling
             continue
         except Exception as exc:  # noqa: BLE001 - transport may be compromised; stop probing
@@ -371,7 +385,9 @@ async def run_robustness_probes(
         if adapter().result_is_error(result):
             sdk = adapter()
             text = " ".join(x for block in sdk.result_content(result) if (x := block_text(block)))
-            if looks_like_missing_credentials(text):
+            if machine_auth_code(sdk.result_structured(result)) or looks_like_missing_credentials(
+                text
+            ):
                 # An auth rejection is NOT evidence that the server validates its input — it
                 # never got as far as looking. Crediting it 100 is how a server given a wrong
                 # or expired token scored **A 100.0 with exit 0**, producing a report

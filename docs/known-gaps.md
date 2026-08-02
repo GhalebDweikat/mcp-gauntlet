@@ -116,30 +116,56 @@ itself is unchanged — reading them is still open.
 
 ---
 
-### G13. A bad credential is detected by matching English error prose
-The check that decides "every call failed authentication" matches the error TEXT against a
-short phrase list. It catches `401`, `Unauthorized`, `Authentication failed`, `Invalid API
-key` and a few others.
+### G13. A bad credential in prose no machine reads — narrowed
+**What it was.** The check that decides "every call failed authentication" matched the error
+TEXT against a short English phrase list, and nothing else. It missed `token expired` (the
+word "expired" was not in the vocabulary in that order), `Bad credentials` — GitHub's own 401
+body — `invalid_auth` (Slack), `ExpiredToken` (AWS), `Not authenticated`, anything
+non-English, and **any failure delivered over the JSON-RPC error channel rather than as a
+tool result**, since it read `str(exc)` and never the error's code or data. Three of four
+wrongly-credentialed servers in one adversarial scan came back **A 100.0, exit 0**. It also
+convicted honest servers whose ordinary errors carried the vocabulary: a JSON linter
+reporting `invalid token at line 4`, a signature verifier reporting `authentication failed
+for message digest`, a test runner reporting `expected 401 Unauthorized, got 200 OK`.
 
-**It misses** `token expired` (the word "expired" is not in the vocabulary at all),
-`Bad credentials` — GitHub's own 401 body — `invalid_auth` (Slack), `ExpiredToken` (AWS),
-`Not authenticated`, `Requires authentication`, anything non-English, and any failure
-delivered over the JSON-RPC error channel rather than as a tool result. Three of four
-wrongly-credentialed servers in one adversarial scan came back **A 100.0, exit 0**.
-403/`permission denied` is excluded deliberately — it is what a sandboxed filesystem server
-correctly says about a path outside its root — but a scope-expired OAuth token is a 403 at
-most providers, so that exclusion cuts against you.
+Both halves were the same defect. A word list cannot separate "this server rejected my token"
+from "this server is telling me about a token", which is exactly the shape of
+[G1](#g1-instructions-to-exfiltrate-via-a-tools-own-parameters).
 
-**It also false-positives** on honest servers whose ordinary errors carry the vocabulary: a
-JSON linter reporting `invalid token at line 4`, a schema validator reporting `Invalid API
-key format`, a signature verifier reporting `authentication failed for message digest`, a
-test runner reporting `expected 401 Unauthorized, got 200 OK`. There is no allowlist;
-`--no-probe` silences it and the real check with it.
+**What decides now.** The channel, not the wording:
 
-*Direction:* key on the error CHANNEL and status rather than on prose — a JSON-RPC error code,
-an HTTP status where one is available — and treat the phrase list as corroboration rather than
-as the decision. Lexical matching cannot separate "this server rejected my token" from "this
-server is telling me about a token", which is the same shape as [G1](#g1-instructions-to-exfiltrate-via-a-tools-own-parameters).
+1. **A machine-readable rejection** — HTTP 401/407, HTTP 403 carrying a `WWW-Authenticate`
+   challenge, a JSON-RPC error whose code is a positive HTTP status, or an identifier-shaped
+   auth code in the error's structured `data` (`invalid_token`, `ExpiredToken`,
+   `invalid_auth`). Matched against a *whole* structured value, never searched for inside a
+   sentence. Any one of these decides alone, in any language.
+2. **A wall, not a complaint** — failing that, auth-shaped prose must recur across **two
+   different tools**, or come from a tool that was sent **no arguments at all**. A credential
+   wall is uniform; a complaint about content is specific to the content, and a tool we
+   passed nothing to cannot be complaining about our input. One success anywhere still clears
+   the server outright, which is what saves the linter: its other tools work.
+
+A bare 403 is still excluded — it is what a sandboxed filesystem server correctly says about
+a path outside its root — but the challenge-carrying 403 that a scope-expired OAuth token
+actually produces is now caught, which is the half of that exclusion that used to cut the
+wrong way. Prose that is plainly about a document is vetoed outright: a source location
+(`at line 4`, `position 12`), assertion wording (`expected … got …`), or content-integrity
+vocabulary (`signature`, `message digest`, `checksum`).
+
+A 401 that stops the session opening at all — the commonest shape for a hosted server with a
+wrong token, where the pre-flight never runs — used to be reported as "the transport did not
+come up", sending the reader to check their firewall. It now names the status and the remedy.
+
+**What still slips.** A stdio server that refuses in **non-English prose with no machine-readable
+code anywhere** — no status, no structured data, just a sentence — is still missed. The
+tempting fix is "every tool returned the byte-identical error, so it is a wall", and that is
+rejected on purpose: a server whose database is down also fails every tool identically, and
+labelling that *needs credentials* is the same class of wrong verdict this gap is about,
+pointed at a different server. Coverage and diagnosis are different claims, and the harness
+currently has no way to make the first without the second.
+
+`--no-probe` still silences this check and the real one together, and there is still no
+allowlist.
 
 ## Scoring
 

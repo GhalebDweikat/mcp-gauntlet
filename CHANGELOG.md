@@ -3,6 +3,56 @@
 All notable changes to mcp-gauntlet are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **A wrong credential is now detected by reading the channel, not the prose.** 0.9.2 shipped
+  this check with a warning not to rely on it, and the warning was right: it matched error
+  TEXT against a short English phrase list, so it missed `token expired`, `Bad credentials`
+  (GitHub's own 401 body), `invalid_auth` (Slack), `ExpiredToken` (AWS), `Not authenticated`,
+  anything non-English, and **every failure delivered over the JSON-RPC error channel** —
+  it read `str(exc)` and never the error's code or data. What decides now:
+
+  1. **A machine-readable rejection**, deciding on its own in any language: HTTP 401/407, a
+     403 carrying a `WWW-Authenticate` challenge, a JSON-RPC error whose code is a positive
+     HTTP status, or an identifier-shaped auth code in the error's structured `data`. Codes
+     are matched against a *whole* structured value, never searched for inside a sentence.
+  2. **Prose, but only as corroboration** — it must recur across two different tools, or come
+     from a tool that was sent no arguments at all. A credential wall is uniform; a complaint
+     about content is specific to the content.
+
+  The same change removes the false positives, because they were the same defect: a word list
+  cannot separate "this server rejected my token" from "this server is telling me about a
+  token". A JSON linter reporting `invalid token at line 4`, a signature verifier reporting
+  `authentication failed for message digest` and a test runner reporting `expected 401
+  Unauthorized, got 200 OK` are all cleared now, and prose carrying a source location,
+  assertion wording, or content-integrity vocabulary is vetoed outright.
+
+  A bare 403 is still ignored — it is what a sandboxed filesystem server correctly says about
+  a path outside its root. **What still slips** is a stdio server that refuses in non-English
+  prose with no machine-readable code anywhere; `docs/known-gaps.md` G13 says why the obvious
+  fix for that is worse than the gap.
+
+### Fixed
+
+- **A JSON-RPC auth refusal scored Robustness 100.** "Correctly rejected the malformed input"
+  and "refused the caller before looking at the input" arrived on the same channel and were
+  read as the same thing, so a wrongly-credentialed server was *credited* for refusing. The
+  `isError` path had guarded against this since 0.9.2; the protocol-error path had not, which
+  made the guard depend on which channel a server happened to use.
+- **A 401 at connect time was reported as a network fault.** A hosted server given a wrong
+  token usually never lets the session open, so the credential pre-flight never runs — and all
+  the user saw was `could not reach <url> — the transport did not come up`, which sends them
+  to check their firewall. It now names the status, says the credential is missing, wrong or
+  out of scope, and shows the `--header` form.
+- **One finding contradicted itself mid-sentence**: "every tool call failed authentication
+  despite the credentials supplied … needs credentials that were not supplied". The probe
+  reports the observation; the caller — which is the only part that knows whether a credential
+  was supplied — writes the sentence.
+- **"Every tool call was rejected" was printed after probing one tool**, and after probing
+  three when only two were rejected. It now says which, out of how many.
+
 ## [0.9.2] — 2026-08-01
 
 Seven fixes from the same fresh-eyes testing that produced 0.9.1, plus the first real

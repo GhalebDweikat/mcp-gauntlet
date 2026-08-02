@@ -73,7 +73,8 @@ def test_the_preflight_declines_to_score_the_gated_fixture() -> None:
 
     reason = anyio.run(_probe)
     assert reason is not None
-    assert "needs credentials" in reason
+    # The probe reports the observation and the engine frames it — see `probe_credentials`.
+    assert "every probed tool" in reason
     assert "GATED_API_KEY" in reason or "401" in reason
 
 

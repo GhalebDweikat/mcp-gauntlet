@@ -86,7 +86,7 @@ def test_bundled_demo_runs_without_an_activated_venv() -> None:
 
 
 def test_stderr_tail_truncates_the_end_not_the_front() -> None:
-    """`[-limit:]` kept the LAST N characters, so it cut the beginning of the first line.
+    r"""`[-limit:]` kept the LAST N characters, so it cut the beginning of the first line.
 
     Real examples handed to a first-time debugger:
 
@@ -144,6 +144,37 @@ def test_remote_failures_name_the_url_and_the_cause(detail: str, expected: str) 
     assert "https://mcp.example.com/mcp" in message
     assert expected in message
     assert detail.split(":")[0] in message  # the raw cause is kept, not swallowed
+
+
+def test_a_401_at_connect_blames_the_credential_not_the_network() -> None:
+    """The one remote failure whose cause is the CALLER, and it read like a network fault.
+
+    A hosted server given a wrong token usually never lets the session open at all, so the
+    credential pre-flight never runs and nothing downstream gets a chance to say so. All the
+    user saw was "the transport did not come up", which sends them to check their firewall.
+
+    Read from the status rather than the wording, so it holds for a server that writes its
+    body in any language — the same reason `preflight.rejected_the_caller` exists.
+    """
+    from types import SimpleNamespace
+
+    from mcp_gauntlet.errors import explain_remote_failure
+
+    class _Refused(Exception):
+        def __init__(self, status: int) -> None:
+            super().__init__(f"Client error '{status}' for url")
+            self.response = SimpleNamespace(status_code=status, headers={})
+
+    group = ExceptionGroup("unhandled errors in a TaskGroup", [_Refused(401)])
+    message = explain_remote_failure("https://mcp.example.com/mcp", group)
+    assert "HTTP 401" in message
+    assert "credentials" in message
+    assert "--header" in message  # says what to DO, not only what happened
+    assert "did not come up" not in message
+
+    # An ordinary server-side fault is still a server-side fault.
+    other = ExceptionGroup("unhandled errors in a TaskGroup", [_Refused(500)])
+    assert "credentials" not in explain_remote_failure("https://x/mcp", other)
 
 
 def test_multiline_stderr_keeps_both_ends() -> None:

@@ -236,6 +236,14 @@ sandbox or throwaway accounts:** the read-only filter trusts a server's own
 `readOnlyHint`/name and is defense-in-depth, not a guarantee, so a mislabeled tool could
 still act on a real account.
 
+**If the token is wrong**, the run doesn't quietly pass. A server that refuses every call
+produces a HIGH finding — so `--fail-on high` fails the build rather than reporting a clean
+one nothing was measured against — and a remote server that rejects the connection outright
+says so with its status instead of "the transport did not come up". Detection reads the
+protocol (HTTP status, JSON-RPC error code, machine-readable auth codes) rather than the
+wording, so it holds for a server that writes its errors in any language; the residual is
+`docs/known-gaps.md` G13.
+
 ### No API key? Static mode
 
 Everything except the live agent runs without an LLM. `mcp-gauntlet run <server>`

@@ -176,6 +176,32 @@ async def test_mcp_error_counts_as_rejection() -> None:
     assert dim.score == 100.0
 
 
+async def test_a_protocol_error_that_rejects_the_CALLER_is_not_credited() -> None:
+    """Same channel, opposite meaning — and it scored 100 for two releases.
+
+    "Rejected the malformed input" is what earns 100 here. A wrongly-credentialed server
+    refuses everything identically before it ever looks at the payload, so crediting that is
+    how a bad token produced a report byte-identical to a good one. The `isError` branch below
+    already guarded against it; this branch read neither the error's code nor its data, so the
+    guard depended on which channel the refusal happened to arrive on.
+    """
+    error_type = adapter().protocol_error_type()
+    if adapter().era == "modern":
+        err: BaseException = error_type(  # type: ignore[call-arg]
+            code=-32603, message="内部エラー", data={"error": "invalid_auth"}
+        )
+    else:
+        err = error_type(
+            ErrorData(code=-32603, message="内部エラー", data={"error": "invalid_auth"})
+        )
+
+    dim = await run_robustness_probes(_session(lambda n, a: err), [_TOOL, _TOOL2])
+    assert dim is not None
+    assert dim.score == 0.0
+    assert any(f.severity is Severity.HIGH for f in dim.findings)
+    assert any("authentication" in f.message for f in dim.findings)
+
+
 async def test_timeout_is_high_severity() -> None:
     dim = await run_robustness_probes(_session(lambda n, a: TimeoutError()), [_TOOL])
     assert dim is not None

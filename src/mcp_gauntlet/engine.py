@@ -409,7 +409,17 @@ async def evaluate_server(
         supplied_credentials = bool(spec.env or spec.headers)
         # Only "this server needs credentials NOBODY supplied" excuses the agent stage. If
         # credentials were supplied and still rejected, the run is not excused — it is wrong.
-        needs_credentials = auth_failure if not supplied_credentials else ""
+        #
+        # `probe_credentials` returns the OBSERVATION and nothing more; which sentence it
+        # belongs in depends on whether anyone supplied a credential, which the probe cannot
+        # know. Framing it there produced a finding that contradicted itself mid-sentence:
+        # "failed authentication despite the credentials supplied … needs credentials that
+        # were not supplied".
+        needs_credentials = (
+            f"needs credentials that were not supplied — {auth_failure}"
+            if auth_failure and not supplied_credentials
+            else ""
+        )
 
         if auth_failure and supplied_credentials:
             # A named, gating finding rather than a silent skip. Tool Reliability rather than
@@ -427,9 +437,9 @@ async def evaluate_server(
                     findings=[
                         Finding(
                             severity=Severity.HIGH,
-                            message="every tool call failed authentication despite the "
-                            "credentials supplied — the token is wrong, expired, or lacks "
-                            "the required scope",
+                            message="the credentials supplied were rejected — the token is "
+                            "wrong, expired, or lacks the required scope, so nothing about "
+                            "this server's behaviour could be measured",
                             detail=redact(auth_failure, spec.secret_values()),
                         )
                     ],

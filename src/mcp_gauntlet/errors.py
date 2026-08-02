@@ -12,18 +12,29 @@ The cause is always in there. It just has to be unwrapped.
 
 from __future__ import annotations
 
+from typing import Any
+
 _MAX_CAUSES = 3
 
 
-def _leaves(exc: BaseException) -> list[BaseException]:
-    """Flatten nested exception groups down to the exceptions that actually happened."""
+def causes(exc: BaseException) -> list[BaseException]:
+    """Flatten nested exception groups down to the exceptions that actually happened.
+
+    Public because reading a *structured* field off the real cause — an HTTP status, a
+    JSON-RPC error code — is the only way to tell "the server rejected my credential" from
+    "the server is describing a credential", and every one of those fields is behind the
+    same anyio wrapper this module exists to see past.
+    """
     inner = getattr(exc, "exceptions", None)
     if not inner:
         return [exc]
     out: list[BaseException] = []
     for sub in inner:
-        out.extend(_leaves(sub))
+        out.extend(causes(sub))
     return out
+
+
+_leaves = causes  # historical name, kept so nothing in-tree breaks on the rename
 
 
 def describe(exc: BaseException, limit: int = 200) -> str:
@@ -51,6 +62,26 @@ def describe(exc: BaseException, limit: int = 200) -> str:
     return joined[:limit]
 
 
+def http_status(exc: BaseException) -> tuple[int, Any] | None:
+    """The HTTP status of the real cause, with the response it came from, or None.
+
+    Its own function because two very different places need it and neither can read it
+    naively: the status is on `.response` of an httpx error buried under anyio's task group,
+    and a wrong-credential failure shows up at *both* — as a refused tool call mid-session,
+    and as a 401 that stops the session opening at all. The second used to be reported as
+    "the transport did not come up", which sends a reader to check their firewall.
+    """
+    for cause in causes(exc):
+        response = getattr(cause, "response", None)
+        status = getattr(response, "status_code", None)
+        if not isinstance(status, int):
+            status = getattr(cause, "status_code", None)
+            response = None
+        if isinstance(status, int):
+            return status, response
+    return None
+
+
 def explain_remote_failure(url: str, exc: BaseException) -> str:
     """A remote connection failure that names the URL and what went wrong.
 
@@ -69,6 +100,18 @@ def explain_remote_failure(url: str, exc: BaseException) -> str:
     """
     detail = describe(exc, 200)
     lowered = detail.lower()
+    status = http_status(exc)
+    if status is not None and status[0] in (401, 403, 407):
+        # Read from the status rather than from the wording, because this is the one remote
+        # failure whose *cause is the caller* — and a reader told "the transport did not come
+        # up" goes and checks their firewall. It is also the commonest way a wrong credential
+        # presents on a hosted server: the session never opens, so the credential pre-flight
+        # never runs and nothing else in the harness gets a chance to say so.
+        return (
+            f"could not reach {url} — the server rejected the request with HTTP {status[0]}: "
+            "the credentials are missing, wrong, or lack the required scope. Supply them with "
+            f"--header 'Authorization: Bearer ...' ({detail})"
+        )
     if "getaddrinfo" in lowered or "name or service not known" in lowered:
         hint = "the hostname does not resolve — check the spelling and your DNS"
     elif "timeout" in lowered or "timed out" in lowered:

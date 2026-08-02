@@ -7,6 +7,28 @@ All notable changes to mcp-gauntlet are documented here. This project adheres to
 
 ### Fixed
 
+- **A server that failed every call scored Robustness 100.0 and graded A.** Three tools, each
+  raising `connection refused`, produced a report byte-identical to the healthy original —
+  `A 99.3`, "No high/medium-severity findings", exit 0. It now reports `C 79.3`, Robustness
+  `0.0`, a HIGH finding, and exit 1.
+
+  The dimension credits 100 for "the server rejected malformed input", and that claim needs
+  the server to be able to answer *anything*. The auth case was already special-cased — by
+  matching English prose, which is why the same wall answering in Japanese still scored 100,
+  and why a server that hard-exits on the first call scored 100 on `mcp` 2.0, on a dimension
+  whose own summary says a well-behaved server rejects rather than "silently accepting,
+  hanging, or crashing".
+
+  The credential pre-flight already makes well-formed calls; it now reports whether any of
+  them **answered**, as a tri-state — yes, no, or *unknown* because nothing was safe to call.
+  Unknown is not no: under `--no-probe` there is no evidence either way, and acting as if
+  there were would fail honest servers on a measurement never taken. All five bundled
+  fixtures score identically to before.
+
+  The finding deliberately names no cause. "Every call failed" is what was observed;
+  reporting a server whose database is down as a credential problem is the same wrong verdict
+  pointed at a different server.
+
 - **A line break switched every capping security check off.** `\n`, `\r` and `\t` are Unicode
   category `Cc`, so the fold that prepares text for matching deleted them along with the
   zero-width smuggling characters — gluing the words either side together.

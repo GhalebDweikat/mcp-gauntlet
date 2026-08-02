@@ -33,7 +33,7 @@ from mcp_gauntlet.drift import (
 from mcp_gauntlet.evaluate import run_agentic_eval
 from mcp_gauntlet.llm import LLMConfig, make_async_client
 from mcp_gauntlet.models import DiscoveryResult, ToolInfo
-from mcp_gauntlet.preflight import probe_credentials
+from mcp_gauntlet.preflight import probe_server
 from mcp_gauntlet.protocol import TransportLog
 from mcp_gauntlet.report import (
     AgenticDetail,
@@ -404,8 +404,14 @@ async def evaluate_server(
         # Cheap: at most three tool calls, no LLM. Skipped under --no-probe, which already
         # means "inspect, don't execute", and which says so under Not measured.
         auth_failure = ""
+        # `answered` is None until the pre-flight runs, and stays None under --no-probe: with
+        # no well-formed call made, "did this server answer anything" is genuinely unknown and
+        # Robustness must not act as if it were False.
+        server_answered: bool | None = None
         if probe and exec_tools:
-            auth_failure = await probe_credentials(session, exec_tools) or ""
+            outcome = await probe_server(session, exec_tools)
+            auth_failure = outcome.observation or ""
+            server_answered = outcome.answered
         supplied_credentials = bool(spec.env or spec.headers)
         # Only "this server needs credentials NOBODY supplied" excuses the agent stage. If
         # credentials were supplied and still rejected, the run is not excused — it is wrong.
@@ -536,6 +542,7 @@ async def evaluate_server(
                 session,
                 exec_tools,
                 auth_already_reported=bool(auth_failure and supplied_credentials),
+                server_answered=server_answered,
             )
             if robustness is not None:
                 live_dimensions.append(robustness)

@@ -242,6 +242,9 @@ async def run_robustness_probes(
     # One fact deserves one HIGH: a reader counting "2 findings at or above high" and finding
     # both sentences describing the same wrong token stops trusting the count.
     auth_already_reported: bool = False,
+    # Did a WELL-FORMED call to this server succeed? True yes, False no calls succeeded,
+    # None nothing safe could be called so we know neither. See the block below.
+    server_answered: bool | None = None,
 ) -> DimensionResult | None:
     """Probe each tool with malformed input.
 
@@ -259,6 +262,10 @@ async def run_robustness_probes(
         return None
     findings: list[Finding] = []
     scores: list[float] = []
+    # Tools that answered our malformed input with an error we are NOT willing to read as
+    # "correctly rejected", because nothing this server was asked has ever worked. See the
+    # `_no_credit_for_refusing` block below for why that distinction is the whole check.
+    unmeasurable: list[str] = []
     auth_rejected: list[str] = []
     started = anyio.current_time()
 
@@ -360,6 +367,9 @@ async def run_robustness_probes(
             if rejected_the_caller(exc):
                 auth_rejected.append(tool.name)
                 continue
+            if server_answered is False:
+                unmeasurable.append(tool.name)  # same reasoning as the isError branch below
+                continue
             scores.append(100.0)  # protocol-level rejection = correct handling
             continue
         except Exception as exc:  # noqa: BLE001 - transport may be compromised; stop probing
@@ -389,6 +399,24 @@ async def run_robustness_probes(
         if adapter().result_is_error(result):
             sdk = adapter()
             text = " ".join(x for block in sdk.result_content(result) if (x := block_text(block)))
+            if server_answered is False:
+                # THE GENERAL CASE, and the one the auth check below is a special case of.
+                # This dimension credits 100 for "the server rejected malformed input", and
+                # that claim needs the server to be able to answer ANYTHING. When no
+                # well-formed call has succeeded, an error here is equally consistent with a
+                # server that fails on every input — which is not validation, it is being
+                # broken.
+                #
+                # Three tools all raising `connection refused` scored Robustness 100.0 and
+                # graded **A 99.3**, with a report byte-identical to the healthy original. A
+                # tester put it exactly right: a regression suite that cannot tell a dead
+                # server from a live one should not have "regression" on the tin.
+                #
+                # Keying on the pre-flight rather than on the error TEXT is what makes it work
+                # in any language: the same server answering in Japanese used to score 100
+                # because the auth vocabulary below is English.
+                unmeasurable.append(tool.name)
+                continue
             if machine_auth_code(sdk.result_structured(result)) or looks_like_missing_credentials(
                 text
             ):
@@ -417,38 +445,51 @@ async def run_robustness_probes(
             )
             scores.append(0.0)
 
-    if auth_rejected and not scores:
-        # EVERY probed tool refused on authentication, so nothing about this server's
-        # behaviour was observed. Reported rather than scored, and HIGH so the documented
-        # gate (`--fail-on high`) catches it: a run where every call was rejected must not
-        # read as a pass. This needs no LLM — a 100% auth-failure rate is an offline fact,
-        # and Tool Reliability, the dimension that would otherwise notice, requires one.
+    refused = auth_rejected + unmeasurable
+    if refused and not scores:
+        # EVERY probed tool failed, so nothing about this server's behaviour was observed.
+        # Reported rather than scored, and HIGH so the documented gate (`--fail-on high`)
+        # catches it: a run where every call failed must not read as a pass. This needs no
+        # LLM — a 100% failure rate is an offline fact, and Tool Reliability, the dimension
+        # that would otherwise notice, requires one.
+        #
         # "every tool call" was printed over a probe of three tools on a ten-tool server.
         # Say what was probed, not what exists — the whole complaint here is that a number
         # was reported over a measurement that never happened.
-        probed = len(auth_rejected)
+        probed = len(refused)
+        blames_auth = bool(auth_rejected) and not unmeasurable
+        if blames_auth:
+            why = "were rejected for authentication"
+            cause = (
+                " — see the Tool Reliability finding; nothing about this server's input "
+                "validation was measured either"
+                if auth_already_reported
+                else " — the credentials supplied are wrong, expired, or lack the required "
+                "scope, so nothing about this server was actually measured"
+            )
+        else:
+            # Deliberately makes no claim about WHY. The evidence is that no call to this
+            # server has ever worked, well-formed or malformed; naming a cause we cannot see
+            # is how a broken database got reported as a credential problem.
+            why = "failed, and so did every well-formed call the pre-flight made"
+            cause = (
+                " — this server answered nothing, so whether it validates its input could "
+                "not be observed. Check that it starts and can reach whatever it depends on"
+            )
         return DimensionResult(
             key=Dim.ROBUSTNESS,
             title="Robustness",
             weight=1.0,
             score=0.0,
-            summary=f"All {probed} probed tool(s) were rejected for authentication, so "
-            "whether this server validates its input could not be observed.",
+            summary=f"All {probed} probed tool(s) {why}, so whether this server validates "
+            "its input could not be observed.",
             findings=[
                 Finding(
-                    severity=Severity.INFO if auth_already_reported else Severity.HIGH,
-                    message=(
-                        f"all {probed} probed tool(s) were rejected for authentication"
-                        + (
-                            " — see the Tool Reliability finding; nothing about this "
-                            "server's input validation was measured either"
-                            if auth_already_reported
-                            else " — the credentials supplied are wrong, expired, or lack "
-                            "the required scope, so nothing about this server was "
-                            "actually measured"
-                        )
-                    ),
-                    detail=", ".join(sorted(auth_rejected)[:8]),
+                    severity=Severity.INFO
+                    if auth_already_reported and blames_auth
+                    else Severity.HIGH,
+                    message=f"all {probed} probed tool(s) {why}{cause}",
+                    detail=", ".join(sorted(refused)[:8]),
                 )
             ],
         )

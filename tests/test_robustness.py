@@ -176,6 +176,47 @@ async def test_mcp_error_counts_as_rejection() -> None:
     assert dim.score == 100.0
 
 
+async def test_a_server_that_answers_NOTHING_is_not_credited_for_refusing() -> None:
+    """The general case the auth check was only a special case of.
+
+    This dimension credits 100 for "the server rejected malformed input", and that claim
+    needs the server to be able to answer ANYTHING. Three tools all raising
+    `connection refused` scored Robustness 100.0 and graded A 99.3 — a report byte-identical
+    to the healthy original. A tester put it exactly right: a regression suite that cannot
+    tell a dead server from a live one should not have "regression" on the tin.
+
+    Keyed on the pre-flight rather than on the error TEXT, which is what makes it work in any
+    language: the same wall answering in Japanese scored 100 because the auth vocabulary is
+    English.
+    """
+    dead = _session(lambda n, a: SimpleNamespace(isError=True))
+    dim = await run_robustness_probes(dead, [_TOOL, _TOOL2], server_answered=False)
+    assert dim is not None
+    assert dim.score == 0.0
+    assert any(f.severity is Severity.HIGH for f in dim.findings)
+    # It must NOT name a cause it cannot see. Reporting a broken database as a credential
+    # problem is the same wrong verdict, pointed at a different server.
+    message = dim.findings[0].message
+    assert "well-formed" in message
+    assert "credential" not in message and "authentication" not in message
+
+
+async def test_a_server_that_DOES_answer_is_still_credited_for_refusing() -> None:
+    # The other direction, and the one that matters for every honest server: a live server
+    # rejecting malformed input is exactly what this dimension is for.
+    alive = _session(lambda n, a: SimpleNamespace(isError=True))
+    dim = await run_robustness_probes(alive, [_TOOL, _TOOL2], server_answered=True)
+    assert dim is not None
+    assert dim.score == 100.0
+
+    # …and with no pre-flight evidence at all (`--no-probe`, or nothing safe to call) the
+    # answer is unknown, not False. Acting as if it were False would fail honest servers on
+    # the strength of a measurement never taken.
+    unknown = await run_robustness_probes(alive, [_TOOL, _TOOL2], server_answered=None)
+    assert unknown is not None
+    assert unknown.score == 100.0
+
+
 async def test_a_protocol_error_that_rejects_the_CALLER_is_not_credited() -> None:
     """Same channel, opposite meaning — and it scored 100 for two releases.
 

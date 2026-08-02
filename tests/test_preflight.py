@@ -410,6 +410,41 @@ async def test_a_tool_sent_no_arguments_can_condemn_alone() -> None:
     assert reason is not None
 
 
+async def test_the_probe_reports_whether_the_server_answered_at_all() -> None:
+    """A tri-state, and the third value is the point.
+
+    Robustness credits a tool 100 for erroring on malformed input. That is only evidence of
+    validation if the server can be shown to answer something — otherwise it is equally
+    consistent with a server that fails on every input, which scored A 99.3.
+
+    `None` is not `False`. Under `--no-probe`, or when nothing is safe to call, no well-formed
+    call was made and "did it answer" is genuinely unknown; treating that as False would fail
+    honest servers on a measurement never taken.
+    """
+    from mcp_gauntlet.preflight import probe_server
+
+    alive = _Scripted({"list_things": None})
+    assert (await probe_server(cast(ClientSession, alive), [_FREE])).answered is True
+
+    dead = _Scripted({"list_things": "widget datastore unreachable: connection refused"})
+    outcome = await probe_server(cast(ClientSession, dead), [_FREE])
+    assert outcome.answered is False
+    assert outcome.observation is None  # not auth-shaped, so no credential verdict
+
+    nothing_to_call = ToolInfo(
+        name="fetch", input_schema={"type": "object", "properties": {"u": {}}, "required": ["u"]}
+    )
+    unknown = await probe_server(cast(ClientSession, alive), [nothing_to_call])
+    assert unknown.answered is None
+
+    # A non-English wall: no credential verdict (G13's documented residual), but the server
+    # is still known not to have answered — which is what stops Robustness crediting it.
+    japanese = _Scripted({"list_things": "認証に失敗しました。アクセストークンが無効です。"})
+    outcome = await probe_server(cast(ClientSession, japanese), [_FREE])
+    assert outcome.observation is None
+    assert outcome.answered is False
+
+
 async def test_a_partial_refusal_says_so_rather_than_saying_every() -> None:
     session = _Scripted(
         {"search": "401 Unauthorized", "lookup": "401 Unauthorized", "stat": "no such record"}

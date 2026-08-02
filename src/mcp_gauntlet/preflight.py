@@ -411,32 +411,60 @@ class _Rejection:
     argumentless: bool
 
 
-async def probe_credentials(
-    session: ClientSession, tools: list[ToolInfo], *, max_calls: int = 3
-) -> str | None:
-    """Describe how this server refused every call, or None if it did not.
+@dataclass(frozen=True)
+class ProbeOutcome:
+    """What one well-formed call to each of a few tools revealed about this server.
 
-    The string is a neutral OBSERVATION — "every probed tool was refused…" — because the
-    caller knows something this function does not: whether credentials were supplied at all.
-    Returning "needs credentials that were not supplied" from here produced a finding reading
-    "every tool call failed despite the credentials supplied … needs credentials that were
-    not supplied", one sentence contradicting itself in the middle.
+    `answered` is the part nothing else in the harness could establish, and its absence was
+    expensive. Robustness credits a tool 100 for returning an error to malformed input —
+    "correctly rejected" — and that claim is only supportable if the server can be shown to
+    answer ANYTHING. A server whose every tool raised `connection refused` scored Robustness
+    100.0 and graded **A 99.3**, with a report byte-identical to the healthy original.
+
+    Three states, and the third is not the second: `True` a call succeeded, `False` calls were
+    made and none did, `None` there was nothing safe to call, so we know nothing either way.
+    """
+
+    observation: str | None
+    calls: int
+    successes: int
+
+    @property
+    def answered(self) -> bool | None:
+        if self.calls == 0:
+            return None
+        return self.successes > 0
+
+
+async def probe_server(
+    session: ClientSession, tools: list[ToolInfo], *, max_calls: int = 3
+) -> ProbeOutcome:
+    """Make a few well-formed calls and report what came back.
+
+    `observation` describes how the server refused every call, or is None if it did not. It is
+    a neutral OBSERVATION — "every probed tool was refused…" — because the caller knows
+    something this function does not: whether credentials were supplied at all. Returning
+    "needs credentials that were not supplied" from here produced a finding reading "every
+    tool call failed despite the credentials supplied … needs credentials that were not
+    supplied", one sentence contradicting itself in the middle.
 
     Conservative in both directions, and asymmetrically so. A single success anywhere clears
     the server outright. Absent a machine-readable rejection, auth-shaped prose must recur
     across two different tools, or come from a tool that was sent no arguments — because
     a credential wall is uniform and a complaint about content is not. Anything else — no
-    probeable tool, ordinary errors, a transport failure — returns None and the evaluation
-    proceeds, because refusing to score a server is itself a judgment that needs evidence.
+    probeable tool, ordinary errors, a transport failure — leaves `observation` None and the
+    evaluation proceeds, because refusing to score a server is a judgment that needs evidence.
     """
     candidates = _probe_candidates(tools)
     if not candidates:
-        return None
+        return ProbeOutcome(None, 0, 0)
 
     probed = candidates[:max_calls]
     rejections: list[_Rejection] = []
+    calls = 0
     for tool in probed:
         args = minimal_valid_args(tool.input_schema) or {}
+        calls += 1
         try:
             result: Any = await session.call_tool(tool.name, args)
         except Exception as exc:  # noqa: BLE001 - a probe must never break the evaluation
@@ -453,7 +481,9 @@ async def probe_credentials(
             continue
         sdk = adapter()
         if not sdk.result_is_error(result):
-            return None  # something worked without credentials — the server is usable
+            # Something worked, so the server is usable — and, just as importantly, it is
+            # ALIVE, which is what lets Robustness believe a later rejection.
+            return ProbeOutcome(None, calls, 1)
         text = " ".join(t for block in sdk.result_content(result) if (t := block_text(block)))
         machine = machine_auth_code(sdk.result_structured(result))
         if machine:
@@ -463,7 +493,14 @@ async def probe_credentials(
                 _Rejection(tool.name, f"{tool.name}: {text.strip()[:160]}", False, not args)
             )
 
-    return _verdict(rejections, probed=len(probed))
+    return ProbeOutcome(_verdict(rejections, probed=len(probed)), calls, 0)
+
+
+async def probe_credentials(
+    session: ClientSession, tools: list[ToolInfo], *, max_calls: int = 3
+) -> str | None:
+    """Just the credential verdict, for callers that need nothing else."""
+    return (await probe_server(session, tools, max_calls=max_calls)).observation
 
 
 def _verdict(rejections: list[_Rejection], *, probed: int) -> str | None:

@@ -87,11 +87,21 @@ def parse_env_args(entries: list[str], environ: dict[str, str]) -> dict[str, str
                 "an --env entry has an empty variable name (expected NAME or NAME=VALUE)"
             )
         if sep:
+            # `NAME=` with an explicit empty value is honoured: the user said so.
             resolved[name] = value
-        elif name in environ:
+        elif environ.get(name):
             resolved[name] = environ[name]
         else:
-            raise ValueError(f"--env {name}: not set in the environment (use NAME=VALUE to inline)")
+            # `.get(name)` rather than `name in environ`, so a variable that is SET BUT
+            # EMPTY counts as absent. That is not a corner case: on GitHub Actions a fork
+            # PR expands `${{ secrets.TOKEN }}` to an empty string, so the variable exists
+            # and carries nothing. Treating it as present handed the server a blank
+            # credential, which it rejected — and the run was then recorded as "could not
+            # evaluate" (exit 3), the one code the docs tell you NOT to fail a build on. A
+            # whole scan reported healthy while every credentialed server in it went
+            # unchecked. Use NAME= to mean an intentionally empty value.
+            detail = "set but empty" if name in environ else "not set in the environment"
+            raise ValueError(f"--env {name}: {detail} (use NAME=VALUE to inline a value)")
     return resolved
 
 

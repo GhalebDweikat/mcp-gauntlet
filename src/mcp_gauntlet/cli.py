@@ -590,7 +590,10 @@ def scan(
     servers: Path = typer.Option(
         ...,
         "--servers",
-        help='JSON file listing the servers you own: {"servers":[{"name","spec"}]}.',
+        help='JSON file listing the servers you own: {"servers":[{"name","spec"}]}. '
+        'Each entry may also carry "env" (["TOKEN"] reads the environment, '
+        '["NAME=value"] inlines) and "headers" (["Authorization: Bearer ..."]), '
+        "the same forms `run --env` and `--header` take. Unknown keys are rejected.",
     ),
     out: Path = typer.Option(Path("gauntlet-scan"), "--out", help="Directory for the reports."),
     fail_on: str | None = typer.Option(

@@ -250,9 +250,25 @@ mcp-gauntlet scan --servers my-servers.json --no-agentic --fail-on high
 ```json
 {"servers": [
   {"name": "notes",   "spec": "python -m notes_server"},
-  {"name": "billing", "spec": "node dist/billing.js"}
+  {"name": "billing", "spec": "node dist/billing.js"},
+  {"name": "search",  "spec": "https://search.internal/mcp",
+   "headers": ["Authorization: Bearer $SEARCH_TOKEN"]},
+  {"name": "warehouse", "spec": "python -m warehouse_server",
+   "env": ["WAREHOUSE_TOKEN"]}
 ]}
 ```
+
+`env` and `headers` take the same forms as `run --env` and `--header`: a bare `"TOKEN"`
+reads the value from the environment, so **the secret is never in the committed file**;
+`"NAME=value"` inlines one. Credential values are scrubbed from every report.
+
+Two things this file will not do quietly. An unknown key is an **error** naming the key, not
+something ignored — a dropped `"env"` you thought was wired up is worse than a failed load.
+And a credential that resolves to nothing fails the whole scan before it starts (exit 4)
+rather than turning into one unevaluable server (exit 3), because exit 3 is the code you are
+told not to fail builds on. That includes a variable that is *set but empty*, which is what
+GitHub Actions gives a fork PR for `${{ secrets.TOKEN }}`. Use `"NAME="` if you genuinely
+mean empty.
 
 Each server gets its own report directory. Nothing is ranked and no grades are compared side
 by side — see [What this does and does not claim](METHODOLOGY.md).

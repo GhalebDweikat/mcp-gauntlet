@@ -7,6 +7,16 @@ All notable changes to mcp-gauntlet are documented here. This project adheres to
 
 ### Fixed
 
+- **`scan` exited 0 for a server `run` exits 3 on.** A zero-tool server and a server that
+  refused every call both produce a report, and `scan` counted "produced a report" as
+  "evaluated" — so one server's tool registration silently breaking left a whole fleet's
+  build green, on the command the docs push you toward for a fleet. That is the fourth time a
+  fix has reached one command and not the other, so "could not evaluate" now has **one**
+  definition that both commands read.
+- **`servers.json` type-checked `env` and `headers` but not `name` or `spec`.** `{"name": 5}`
+  scanned a server called `5` and reported under `5/`; `{"spec": 42}` became the command `42`
+  and failed with **exit 3** — the one code the README tells you not to fail a build on —
+  where the same file's `env` gets a clear exit 4.
 - **The 0.9.3 "401 at connect" fix only worked on `mcp` 1.x** — the era a fresh install does
   *not* resolve. On 2.0 it produced, byte for byte, the message the 0.9.3 changelog said it
   had replaced. 1.x lets httpx's `HTTPStatusError` out with `.response.status_code` attached;

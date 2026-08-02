@@ -253,6 +253,28 @@ def _has_unparseable_tools(dimensions: list[DimensionResult]) -> bool:
     return any(f.message == UNPARSEABLE_TOOLS_MESSAGE for d in dimensions for f in d.findings)
 
 
+def unevaluable(report: GauntletReport) -> str | None:
+    """Why this run is neither a pass nor a fail, or None if it is a real verdict.
+
+    ONE definition, used by both `run` and `scan`, because they had two and disagreed: a
+    zero-tool server exited 3 from `run` and **0** from `scan` — and `scan` is the command
+    the docs push you toward for a fleet, so one server's tool registration silently breaking
+    left the whole build green. That is the fourth time a fix has reached one command and not
+    the other in this project's history, so the answer lives here now rather than in either.
+
+    An UNPARSEABLE tool list is deliberately NOT unevaluable: that is a defect *in* the
+    server, it is reported HIGH, and the docs tell you to gate on it.
+    """
+    if report.unevaluated_reason:
+        return report.unevaluated_reason
+    if report.tool_count == 0 and not _has_unparseable_tools(report.dimensions):
+        return (
+            "this server exposes no tools, so nothing was evaluated — neither a pass nor a "
+            "quality verdict. If it had tools before, tool registration is broken"
+        )
+    return None
+
+
 def _has_critical_security(dimensions: list[DimensionResult]) -> bool:
     """Whether the (server-authored) security dimension carries a HIGH finding.
 

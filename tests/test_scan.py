@@ -89,6 +89,34 @@ def test_an_evaluated_server_carries_its_gating_findings() -> None:
     assert result.triggering == ["poisoned"]
 
 
+def test_scan_and_run_agree_on_what_could_not_be_evaluated() -> None:
+    """`scan` counted "produced a report" as "evaluated". Both of these produce one.
+
+    `run` exits 3 for each; `scan` exited **0** — and `scan` is the command the docs push you
+    toward for a fleet, so one server's tool registration silently breaking left the whole
+    build green. Fourth time a fix has reached one command and not the other, so the answer
+    now lives in `report.unevaluable` and both commands read it.
+    """
+    from mcp_gauntlet.models import ServerInfo
+    from mcp_gauntlet.report import DimensionResult, GauntletReport
+
+    healthy = [DimensionResult(key="schema_health", title="S", weight=1.0, score=99.0)]
+
+    no_tools = GauntletReport.build(
+        spec="stdio: x", server=ServerInfo(name="x"), tool_count=0, dimensions=healthy
+    )
+    assert ScanResult(name="x", spec="stdio: x", report=no_tools).evaluated is False
+
+    refused = GauntletReport.build(
+        spec="stdio: y",
+        server=ServerInfo(name="y"),
+        tool_count=3,
+        dimensions=healthy,
+        unevaluated_reason="needs credentials that were not supplied",
+    )
+    assert ScanResult(name="y", spec="stdio: y", report=refused).evaluated is False
+
+
 # --------------------------------------------------------------- credentials
 
 
@@ -148,6 +176,16 @@ def test_a_credential_on_the_wrong_transport_is_rejected(tmp_path: Path) -> None
     )
     with pytest.raises(ServerListError, match='"env" sets variables for a child process'):
         load_servers(path)
+
+
+def test_name_and_spec_are_type_checked_like_every_other_key(tmp_path: Path) -> None:
+    """`env` and `headers` were checked and these two were not, so `str()` coerced whatever
+    arrived: `{"name": 5}` scanned a server called `5` and reported under `5/`, and
+    `{"spec": 42}` became the command `42` and failed with exit 3 — the one code the README
+    tells you not to fail a build on — where the same file's `env` gets a clear exit 4."""
+    for entry in ({"name": 5}, {"spec": 42}, {"name": ""}, {"spec": "   "}, {"name": None}):
+        with pytest.raises(ServerListError, match="must be a non-empty string"):
+            load_servers(_list(tmp_path, **entry))
 
 
 def test_unknown_top_level_keys_are_rejected(tmp_path: Path) -> None:

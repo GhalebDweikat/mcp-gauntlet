@@ -24,7 +24,6 @@ from mcp_gauntlet.exits import EXIT_CODE_HELP, Exit
 from mcp_gauntlet.htmlreport import to_html
 from mcp_gauntlet.llm import LLMConfig, LLMConfigError, list_models
 from mcp_gauntlet.report import (
-    UNPARSEABLE_TOOLS_MESSAGE,
     GauntletReport,
     Severity,
     cap_note,
@@ -34,6 +33,7 @@ from mcp_gauntlet.report import (
     redact_report,
     sort_findings,
     to_markdown,
+    unevaluable,
 )
 from mcp_gauntlet.robustness import run_robustness_probes
 from mcp_gauntlet.scan import ServerListError, load_servers, run_scan
@@ -570,22 +570,17 @@ def run(
     #
     # An UNPARSEABLE tool list also lands at zero tools and is deliberately NOT here: that is
     # a defect IN the server, it is reported HIGH, and the docs tell you to gate on it.
-    unparseable = any(
-        f.message == UNPARSEABLE_TOOLS_MESSAGE for d in report.dimensions for f in d.findings
-    )
-    if report.tool_count == 0 and not unparseable:
-        _report_no_tools(unparseable=False)
-
-    # …and the same rule for a server that HAS tools and refused every call. The run already
-    # said "Not scored" on the line above the grade, wrote the reason into `report.json`, and
-    # then exited 0 with an A — a green check over a server nothing was ever able to call.
-    # It is the zero-tools situation with a different cause, and 3 is the code that means
-    # "could not evaluate — infrastructure, not quality", which is exactly what this is: no
-    # credential was supplied, so it is not the server's fault and not a regression either.
-    if report.unevaluated_reason:
+    #
+    # The DECISION comes from `report.unevaluable`, which `scan` reads too — the two commands
+    # had two definitions of "could not evaluate" and disagreed. Only the wording is local,
+    # because a zero-tool server and a refused-every-call server send a reader to different
+    # places and telling them the wrong one costs an afternoon in the wrong file.
+    blocked = unevaluable(report)
+    if blocked is not None:
+        if report.tool_count == 0:
+            _report_no_tools(unparseable=False)  # never returns
         console.print(
-            "[red]This server could not be evaluated[/red] — "
-            f"{escape(redact(report.unevaluated_reason, secrets))}"
+            f"[red]This server could not be evaluated[/red] — {escape(redact(blocked, secrets))}"
         )
         raise typer.Exit(code=Exit.UNEVALUABLE)
 
@@ -632,10 +627,11 @@ def run(
     # server that legitimately exposes only resources or prompts is equally outside what
     # this harness can say anything about.
     if report.tool_count == 0:
-        # Only the unparseable branch reaches here now; the empty-tool-list branch ran before
-        # the gate. Reachable without `--fail-on`; with a threshold set, the HIGH finding
-        # fails the gate first (exit 1), which is the intended behaviour for a server defect.
-        _report_no_tools(unparseable=unparseable)
+        # Only the UNPARSEABLE branch reaches here: `report.unevaluable` sent the empty-list
+        # case out before the gate, and it deliberately does not classify this one. Reachable
+        # without `--fail-on`; with a threshold set the HIGH finding fails the gate first
+        # (exit 1), which is the intended behaviour for a defect in the server.
+        _report_no_tools(unparseable=True)
 
 
 @app.command()

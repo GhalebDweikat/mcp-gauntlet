@@ -42,7 +42,13 @@ from mcp_gauntlet.errors import describe, explain_remote_failure
 from mcp_gauntlet.jsonio import read_json_text
 from mcp_gauntlet.llm import LLMConfig
 from mcp_gauntlet.naming import slugify
-from mcp_gauntlet.report import GauntletReport, Severity, findings_at_or_above, redact
+from mcp_gauntlet.report import (
+    GauntletReport,
+    Severity,
+    findings_at_or_above,
+    redact,
+    unevaluable,
+)
 
 
 class ServerListError(ValueError):
@@ -79,7 +85,14 @@ class ScanResult:
 
     @property
     def evaluated(self) -> bool:
-        return self.report is not None
+        """Whether this server produced a verdict — not merely whether it produced a report.
+
+        A zero-tool server and a server that refused every call BOTH produce a report, and
+        both are exit 3 from `run`. `scan` counted them as evaluated and exited 0, which is
+        how one server's tool registration silently breaking left a whole fleet's build green.
+        `report.unevaluable` is the single definition both commands now read.
+        """
+        return self.report is not None and unevaluable(self.report) is None
 
 
 _ENTRY_KEYS = {"name", "spec", "env", "headers"}
@@ -134,6 +147,15 @@ def load_servers(path: Path) -> list[ServerEntry]:
             raise ServerListError(f"{where} must be an object")
         if "name" not in raw or "spec" not in raw:
             raise ServerListError(f'{path}: each server needs "name" and "spec"')
+        # Type-checked like `env` and `headers` already were. They were not, and `str()`
+        # coerced whatever arrived: `{"name": 5}` scanned a server called `5` and wrote its
+        # report under `5/`, while `{"spec": 42}` became the command `42` and failed with
+        # **exit 3** — the one code the README tells you not to fail a build on — where the
+        # same file's `env` gets a clear exit 4.
+        for key in ("name", "spec"):
+            if not isinstance(raw[key], str) or not raw[key].strip():
+                kind = type(raw[key]).__name__
+                raise ServerListError(f'{where}: "{key}" must be a non-empty string (got {kind})')
         unknown = sorted(set(raw) - _ENTRY_KEYS)
         if unknown:
             raise ServerListError(

@@ -3,6 +3,93 @@
 All notable changes to mcp-gauntlet are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.9.2] — 2026-08-01
+
+Seven fixes from the same fresh-eyes testing that produced 0.9.1, plus the first real
+narrowing of a documented security gap. Nothing here changes the CLI surface; if 0.9.1 works
+for you, this is a straight upgrade.
+
+### Fixed
+
+- **A tool definition the SDK could not parse exited 3 with no report at all.** Break a
+  schema *inside* the SDK's model and you got HIGH + exit 1; break it *at* the model boundary
+  and you got "could not evaluate", an empty CI artifact — and the shipped CI example tells
+  pipelines to retry on 3, so a genuine schema regression was retried until it gave up and
+  then reported as a flaky runner. Worse on `mcp` 2.0, whose model is stricter: **all six**
+  malformed shapes tested died there, including two that 1.x reports perfectly well, so
+  Schema Health was unreachable on the SDK a fresh install resolves. Now a HIGH finding in
+  Schema Health — not in Security Signals, because a HIGH there caps the grade and a
+  malformed schema is a bug, not an adversary.
+- **`scan` could not hold a credential.** No `--env`, no `--header`, so any server needing a
+  token was recorded as "could not evaluate" (exit 3, the one code the docs tell you not to
+  fail a build on) — and "several servers you own" are exactly the ones with tokens. Entries
+  now take `env` and `headers` in the same forms `run` uses. Unknown keys in `servers.json`
+  are rejected by name instead of silently dropped, and credentials resolve *before* the scan
+  starts, so a missing one is exit 4 rather than one quietly unevaluable server.
+- **A credential that is set but EMPTY counted as present.** That is what GitHub Actions
+  hands a fork PR for a secrets expression, so the server received a blank token, rejected
+  it, and the run was filed as infrastructure noise. A bare `NAME` now requires a value;
+  `NAME=` means an intentional empty. Applies to `run --env` too.
+- **Partial coverage was reported as full coverage.** `Robustness 100.0` on a server where
+  most tools were excluded as possibly-mutating recorded the denominator nowhere — the
+  dimension's own summary says "fraction of *probed* tools". Tool-Selection Accuracy was
+  emitted at **100.0 with weight 1.5** when no task carried expected tools, asserting a
+  verified perfect result for a check with no expectation to verify. Resource *contents* are
+  never read, and that was surfaced nowhere at all. All three are now stated under
+  *Not measured*.
+- **`--fail-under -10` was accepted and exits 0 forever** — a typo'd gate that looks
+  configured and silently never fires. `--fail-under 200`, `--tasks -5` and `--repeats 0`
+  were accepted too. All now exit 2 at parse time, naming the value and the range.
+- **Captured stderr was truncated from the front**, producing paths that exist nowhere
+  (`cripts\python.exe: can't open file ...`). It truncates the end now: the front is where
+  the program name and the problem live, and a visibly truncated string beats a plausible
+  wrong one.
+- **Remote failures named neither the URL nor the cause** — a refused port and a nonexistent
+  host produced the same message. Now classified (DNS, refused, timeout, TLS) with the URL
+  and the underlying error kept.
+
+### Security
+
+- **An instruction telling the agent to read a credential and pass it onward is now caught**
+  (`docs/known-gaps.md` G1) — the most commonly reported real-world MCP poisoning shape,
+  which scored **A 100.0 with zero findings** and passed both `--fail-on high` and
+  `--fail-on medium`. It is reported HIGH and caps the grade.
+
+  The credential vocabulary alone is **unchanged at INFO**: that is the part twenty-five
+  honest servers tripped in the 0.7.0 survey, and widening it was never the answer. What was
+  added is a check on the instruction *shape*, requiring three things together — read a
+  secret from where it lives, convey it onward into this tool's input or off the machine, and
+  be addressed to the model rather than describing what the tool does. The third is what
+  makes it safe to score: the first two alone re-flag every honest credential-forwarding
+  server, which is the class the INFO downgrade existed to avoid.
+
+  Verified against 40 honest strings — every shape from the original survey, the
+  credential-forwarding class, servers whose subject *is* secrets, and eight languages — with
+  zero false positives. **Bounded**: the patterns are English, so a translated order still
+  slips past (G3), as does an encoded one (G4).
+
+### Changed
+
+- **The cross-era probe compares what fixtures DO, not only what they say.** It reported the
+  two SDK eras identical for weeks while the malicious fixture scored C 75.0 on 1.x and D
+  60.2 on 2.0 — the definitions were byte-identical and the divergence was runtime. It now
+  calls every tool with a schema-violating payload and compares the answers.
+- A failing gate (exit 1) is reported before the could-not-evaluate checks (exit 3): a server
+  with HIGH findings *and* a dead LLM backend should hear about the findings.
+- Documented, having been found by running into them: Windows paths with spaces need **single**
+  quotes; `report.html` is written on every run and was mentioned nowhere; `--out` has a fixed
+  default, so consecutive runs overwrite one directory; Ctrl-C exits 130; cross-run drift
+  needs state a fresh CI runner does not have, so a silently deleted tool is invisible there;
+  `--fail-on low` is **not usable** against servers built with the official Python SDK, which
+  drops docstring `Args:` from the schema so every parameter reads as undescribed. The 0.9.0
+  entry gained the leaderboard→`scan` migration table it never had.
+
+### Comparability
+
+Scores are unchanged for an unchanged server, with one deliberate exception: a server
+carrying an exfiltration instruction now caps at 75 where it previously scored freely. The
+bundled fixtures score exactly what they scored in 0.9.1.
+
 ## [0.9.1] — 2026-08-01
 
 0.9.0 was tagged and never published. Three fresh testers were given its wheel, forbidden

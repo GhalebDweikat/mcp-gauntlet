@@ -65,11 +65,13 @@ plus a capped grade for it. There is no allowlist or suppression flag. Affects g
 moderation and scanner servers.
 
 ### G8. Resource *contents* are not read
-Only resource metadata is scanned. A payload in what `resources/read` returns is invisible,
-and unlike an unrendered prompt — which is reported as unexamined — this gap is not currently
-surfaced in the report.
+Only resource metadata is scanned. A payload in what `resources/read` returns is invisible.
+Contents are unbounded and are passthrough rather than server-authored, which is why they are
+not fetched.
 
-*Direction:* at minimum, add it to `not_measured` so the report stops implying coverage.
+**Now disclosed.** A server exposing resources gets a *Not measured* line saying their
+contents were not read, so the report no longer implies coverage it does not have. The gap
+itself is unchanged — reading them is still open.
 
 ---
 
@@ -84,9 +86,11 @@ This is why the CI gate keys on `--fail-on` (a severity) rather than `--fail-und
 score), and why the score is documented as a trend line for one server rather than a
 comparison between servers. It remains a real weakness in the number itself.
 
-### G10. Tool-Selection Accuracy scores 100 when nothing was checked
-If no task carried expected tools, the dimension is emitted at 100.0 with weight 1.5 —
-asserting a verified perfect result for a check that had no expectation to verify.
+### ~~G10. Tool-Selection Accuracy scores 100 when nothing was checked~~ — fixed
+If no task carried expected tools, the dimension was emitted at 100.0 with weight 1.5 —
+asserting a verified perfect result for a check that had no expectation to verify, at the
+second-heaviest weight. It now leaves the denominator like every other unmeasured stage, and
+the absence is recorded under *Not measured*.
 
 ---
 

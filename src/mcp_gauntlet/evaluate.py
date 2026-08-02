@@ -265,16 +265,23 @@ async def run_agentic_eval(
                 findings=success_findings,
             )
         )
-        dimensions.append(
-            DimensionResult(
-                key=Dim.TOOL_SELECTION,
-                title="Tool-Selection Accuracy",
-                weight=1.5,
-                score=round(mean(sel_values), 1) if sel_values else 100.0,
-                summary="Whether the agent called the tools each task was expected to use.",
-                findings=selection_findings,
+        # Only when something was actually checked. `if sel_values else 100.0` emitted a
+        # verified-perfect score at weight 1.5 for a dimension that had no expectation to
+        # verify — a task set carrying no `expected_tools` produced a confident 100.0 out of
+        # nothing, and being the second-heaviest weight it pulled the overall up with it.
+        # An unmeasured dimension leaves the denominator; that is what every other skipped
+        # stage does, and the engine records the absence under "Not measured".
+        if sel_values:
+            dimensions.append(
+                DimensionResult(
+                    key=Dim.TOOL_SELECTION,
+                    title="Tool-Selection Accuracy",
+                    weight=1.5,
+                    score=round(mean(sel_values), 1),
+                    summary="Whether the agent called the tools each task was expected to use.",
+                    findings=selection_findings,
+                )
             )
-        )
     if total_calls:
         reliability = _reliability_dimension(total_calls, ok_calls)
         reliability.findings.extend(timeout_findings)  # a hang is a reliability signal

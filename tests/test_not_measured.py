@@ -14,6 +14,11 @@ Two concrete cases motivated this:
   input goes from C to A on that flag alone.
 """
 
+import json
+import subprocess
+import sys
+from pathlib import Path
+
 from mcp_gauntlet.htmlreport import to_html
 from mcp_gauntlet.models import ServerInfo
 from mcp_gauntlet.report import (
@@ -157,3 +162,107 @@ def test_an_unscored_report_is_not_given_a_grade_by_the_cap() -> None:
     assert report.security_critical is True
     assert report.grade == "N/A"
     assert report.overall_score == 0.0
+
+
+# ------------------------------------------------ PARTIAL coverage, not just total absence
+#
+# `not_measured` only ever fired when a stage was skipped ENTIRELY. Partial coverage is the
+# more misleading case, because a number is still printed: `Robustness 100.0` on a server
+# where most tools were excluded means "the few we ran were fine", and the denominator was
+# recorded nowhere. All three cases below were found by testers reading a report that looked
+# complete.
+
+_DATA = Path(__file__).parent / "data"
+
+
+def _report_for(server: str, tmp_path: Path, *extra: str) -> dict:
+    out = tmp_path / "out"
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "mcp_gauntlet",
+            "run",
+            server,
+            "--no-agentic",
+            "--out",
+            str(out),
+            *extra,
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=180,
+    )
+    return json.loads((out / "report.json").read_text(encoding="utf-8"))
+
+
+def test_partially_excluded_probes_record_the_denominator(tmp_path: Path) -> None:
+    """`Robustness 100.0` when only some tools were probed must say how many.
+
+    The dimension's own summary reads "Fraction of PROBED tools that reject malformed
+    input" — and the denominator appeared nowhere a reader or a script could find it. Point
+    it at a twelve-tool server where nine look mutating and 100.0 means "the three we ran
+    were fine", which is not what anyone takes from it.
+    """
+    data = _report_for(f"{sys.executable} {_DATA / 'mixed_tools_server.py'}", tmp_path)
+    excluded_note = [n for n in data["not_measured"] if "excluded as possibly-mutating" in n]
+    assert excluded_note, data["not_measured"]
+    # The counts have to be in it; "some tools were skipped" is the sentence that was
+    # already implied by the summary and helped nobody.
+    assert "of 4 tool(s)" in excluded_note[0], excluded_note[0]
+    assert "delete_record" in excluded_note[0], excluded_note[0]
+
+
+def test_resource_contents_are_declared_unread(tmp_path: Path) -> None:
+    """Only resource METADATA is scanned, and that gap was never surfaced.
+
+    An unrendered prompt is correctly reported as unexamined; resource contents were simply
+    absent, so the report implied a coverage it did not have (docs/known-gaps.md G8).
+    """
+    data = _report_for(f"{sys.executable} {_DATA / 'resources_server.py'}", tmp_path)
+    note = [n for n in data["not_measured"] if "resource" in n]
+    assert note, data["not_measured"]
+    assert "2 resource(s)" in note[0], note[0]
+
+
+def test_resource_metadata_is_still_scanned(tmp_path: Path) -> None:
+    """The other half: what IS covered must keep working.
+
+    No bundled fixture exposed a single resource — `serve_raw` has no `list_resources` hook
+    — so the resource-scanning path METHODOLOGY advertises had never been exercised by any
+    test. A disclosure about what is not read is worth little if what IS read went unchecked.
+    """
+    data = _report_for(f"{sys.executable} {_DATA / 'resources_server.py'}", tmp_path)
+    findings = [f for d in data["dimensions"] for f in d["findings"]]
+    poisoned = [f for f in findings if "resource description" in f["message"]]
+    assert poisoned, [f["message"] for f in findings]
+    assert any(f["severity"] == "high" for f in poisoned), poisoned
+
+
+def test_selection_accuracy_is_absent_rather_than_a_perfect_100() -> None:
+    """It used to be emitted at 100.0 with weight 1.5 when nothing had been checked.
+
+    `score=mean(sel_values) if sel_values else 100.0` asserts a verified perfect result for a
+    dimension that had no expectation to verify — and at the second-heaviest weight, it
+    pulled the overall up with it. Unit-level because reaching it needs a live agent run.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    from mcp_gauntlet import evaluate
+
+    # Parsed, not grepped: the comment explaining this fix contains the literal `else 100.0`,
+    # and the first draft of this test matched its own documentation. The AST does not see
+    # inside comments — the same reason `test_no_sdk_shaped_read_survives_outside_the_adapters`
+    # parses rather than greps.
+    tree = ast.parse(textwrap.dedent(inspect.getsource(evaluate.run_agentic_eval)))
+    fallbacks = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.IfExp)
+        and isinstance(node.orelse, ast.Constant)
+        and node.orelse.value == 100.0
+    ]
+    assert not fallbacks, "a dimension must not fall back to a perfect score when unmeasured"

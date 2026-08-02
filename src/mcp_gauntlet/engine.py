@@ -37,6 +37,7 @@ from mcp_gauntlet.preflight import probe_credentials
 from mcp_gauntlet.protocol import TransportLog
 from mcp_gauntlet.report import (
     AgenticDetail,
+    Dim,
     DimensionResult,
     Finding,
     GauntletReport,
@@ -402,6 +403,16 @@ async def evaluate_server(
                 interactions=interactions,
             )
             live_dimensions.extend(agentic_dims)
+            if not any(d.key == Dim.TOOL_SELECTION for d in agentic_dims) and not (
+                agentic_detail.inconclusive
+            ):
+                # The agent ran and was judged, but no task carried expected tools, so there
+                # was nothing to score selection against. Previously emitted as 100.0 at
+                # weight 1.5 — a verified perfect result for a check that never happened.
+                not_measured.append(
+                    "tool-selection accuracy (no generated task named the tools it expected, "
+                    "so there was nothing to check the agent's choices against)"
+                )
             if agentic_detail.inconclusive:
                 # The stage was configured, attempted, and produced nothing usable — the LLM
                 # backend errored on every repeat. Without this the console printed a warning
@@ -450,6 +461,18 @@ async def evaluate_server(
             robustness = await run_robustness_probes(session, exec_tools)
             if robustness is not None:
                 live_dimensions.append(robustness)
+            if excluded:
+                # PARTIAL coverage, which is the more misleading case than none at all,
+                # because a number IS printed. `Robustness 100.0` on a twelve-tool server
+                # where nine looked mutating means "the three we ran were fine" — and the
+                # dimension's own summary says "Fraction of PROBED tools", with the
+                # denominator recorded nowhere a reader or a script could find it.
+                # `not_measured` only ever fired when ALL tools were excluded.
+                not_measured.append(
+                    f"robustness probes for {len(excluded)} of {len(discovery.tools)} tool(s) "
+                    f"excluded as possibly-mutating ({', '.join(sorted(excluded))}) — "
+                    "re-run with --allow-writes against a disposable target to include them"
+                )
         elif not probe:
             # The one a flag turns off, and the one that moved a score furthest: a server
             # accepting every malformed input goes from C (75.0) to A (93.8) on --no-probe
@@ -459,6 +482,19 @@ async def evaluate_server(
             not_measured.append("robustness probes (every call would hit the same auth wall)")
         elif not exec_tools:
             not_measured.append("robustness probes (no read-only tools to probe)")
+
+        if discovery.resources:
+            # Only metadata is scanned. A payload in what `resources/read` returns is
+            # invisible — and unlike an unrendered prompt, which IS reported as unexamined,
+            # this gap was not surfaced anywhere, so the report implied coverage it did not
+            # have. Contents are unbounded and are passthrough rather than server-authored,
+            # which is why they are not fetched; that is a reason to disclose it, not to
+            # leave it implied. See docs/known-gaps.md G8.
+            not_measured.append(
+                f"the contents of {len(discovery.resources)} resource(s) (only their "
+                "metadata is scanned; a payload inside what resources/read returns is not "
+                "seen)"
+            )
 
         # LAST, and inside the session: the transport log only stops filling when the
         # session closes. Reading it right after discovery — which is where this used to

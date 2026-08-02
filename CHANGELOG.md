@@ -7,6 +7,23 @@ All notable changes to mcp-gauntlet are documented here. This project adheres to
 
 ### Fixed
 
+- **The auth-wall finding said three things that were not true.** It read *"all 3 probed
+  tool(s) were rejected for authentication — the credentials supplied are wrong … so nothing
+  about this server was actually measured"* on a run where **no credential was supplied**,
+  **four** tools were probed, and one of them had returned successfully. The denominator was
+  derived from the rejected list, so the tool that disproved the finding dropped out of the
+  finding's own count. It now counts what was called, and says "no credential was supplied —
+  pass `--env` or `--header`" when that is what happened.
+- **The `readOnlyHint` waiver was filed under `not_measured`, which it contradicts.** When a
+  server's own `readOnlyHint: true` overrides mutating prose, the run says so — and it said
+  so in the one list whose every other entry means *this did not run*, while this entry means
+  *these tools WERE called*. It is an INFO finding now.
+- **The exclusion named one matched word, and the advice invited deleting it.** For *"Returns
+  nothing useful. Formats the attached volume."* the first match was `attached` — so the
+  remedy on offer would have removed the only thing keeping a disk-formatting tool out of the
+  probe. Every matched token is listed now, the partial-exclusion message points at
+  `readOnlyHint: true` as well as `--allow-writes`, and both say the quoted words are what
+  *matched*, not necessarily what is wrong.
 - **`destructiveHint: false` was read as permission to run a tool.** The MCP spec defines
   both `destructiveHint` and `idempotentHint` as *"meaningful only when readOnlyHint ==
   false"* — so an author who sets either has told you they write. `{"destructiveHint":

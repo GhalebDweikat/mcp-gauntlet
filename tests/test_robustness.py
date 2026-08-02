@@ -217,6 +217,36 @@ async def test_a_server_that_DOES_answer_is_still_credited_for_refusing() -> Non
     assert unknown.score == 100.0
 
 
+async def test_the_auth_wall_finding_says_only_true_things() -> None:
+    """A tester found three false statements in one sentence.
+
+        HIGH  all 3 probed tool(s) were rejected for authentication — the credentials
+              supplied are wrong, expired, or lack the required scope, so nothing about
+              this server was actually measured
+
+    No credential had been supplied. Four tools were probed, not three — the denominator was
+    derived from the rejected list, so the one that disproved the finding dropped out of its
+    own count. And `ping_status` had returned `upstream reachable`.
+    """
+    wall = _session(
+        lambda n, a: SimpleNamespace(
+            isError=True,
+            content=[SimpleNamespace(type="text", text="401 Unauthorized: Bad credentials")],
+            structuredContent=None,
+        )
+    )
+
+    dim = await run_robustness_probes(wall, [_TOOL, _TOOL2], credentials_supplied=False)
+    assert dim is not None
+    message = dim.findings[0].message
+    assert "credentials supplied are wrong" not in message
+    assert "--env" in message  # says what to DO instead
+
+    supplied = await run_robustness_probes(wall, [_TOOL, _TOOL2], credentials_supplied=True)
+    assert supplied is not None
+    assert "credentials supplied are wrong" in supplied.findings[0].message
+
+
 async def test_a_protocol_error_that_rejects_the_CALLER_is_not_credited() -> None:
     """Same channel, opposite meaning — and it scored 100 for two releases.
 

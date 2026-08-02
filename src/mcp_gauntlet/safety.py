@@ -325,9 +325,20 @@ def mutating_trigger(tool: ToolInfo) -> str:
         storage = _STORAGE_WRITE.search(normalized)
         if storage:
             return f"matched {storage.group(0).strip()!r} in its {label}"
-        match = _WRITE_HINTS.search(normalized)
-        if match:
-            return f"matched {match.group(0).strip()!r} in its {label}"
+        # EVERY matched token, not the first. Naming one word invited deleting that word, and
+        # for "Returns nothing useful. Formats the attached volume." the first match was
+        # `attached` — so the advice was to remove the only thing keeping a disk-formatting
+        # tool out of the probe. Listing them all makes it visible when the match is
+        # incidental (`applies`, `checkout`, `set`) and when it is not.
+        hits: list[str] = []
+        for match in _WRITE_HINTS.finditer(normalized):
+            word = match.group(0).strip()
+            if word.casefold() not in {h.casefold() for h in hits}:
+                hits.append(word)
+        if hits:
+            shown = ", ".join(repr(h) for h in hits[:3])
+            more = f" (+{len(hits) - 3} more)" if len(hits) > 3 else ""
+            return f"matched {shown}{more} in its {label}"
     if _compound_write_name(tool):
         return "its name is a compound built on an ambiguous write verb"
     return "matched the write-verb vocabulary"  # pragma: no cover - defensive

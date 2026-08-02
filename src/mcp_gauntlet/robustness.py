@@ -245,6 +245,10 @@ async def run_robustness_probes(
     # Did a WELL-FORMED call to this server succeed? True yes, False no calls succeeded,
     # None nothing safe could be called so we know neither. See the block below.
     server_answered: bool | None = None,
+    # Whether the caller passed --env/--header. The finding said "the credentials supplied
+    # are wrong" over runs where none were supplied — the same self-contradiction the
+    # pre-flight's own message was fixed for, alive on this branch.
+    credentials_supplied: bool = False,
 ) -> DimensionResult | None:
     """Probe each tool with malformed input.
 
@@ -267,6 +271,10 @@ async def run_robustness_probes(
     # `_no_credit_for_refusing` block below for why that distinction is the whole check.
     unmeasurable: list[str] = []
     auth_rejected: list[str] = []
+    # How many tools were actually CALLED. The finding used to derive its denominator from
+    # the rejected list, so "all 3 probed tool(s)" was printed over a probe of four — the one
+    # that disproved the finding silently dropped out of its own count.
+    attempted = 0
     started = anyio.current_time()
 
     for index, tool in enumerate(tools):
@@ -335,6 +343,7 @@ async def run_robustness_probes(
                 scores.append(0.0)
             continue  # a zero-argument tool has nothing to violate — don't score it
 
+        attempted += 1
         try:
             with anyio.fail_after(timeout_s):
                 result = await session.call_tool(tool.name, payload)
@@ -456,17 +465,32 @@ async def run_robustness_probes(
         # "every tool call" was printed over a probe of three tools on a ten-tool server.
         # Say what was probed, not what exists — the whole complaint here is that a number
         # was reported over a measurement that never happened.
-        probed = len(refused)
+        # `attempted`, not `len(refused)`. Deriving the denominator from the numerator printed
+        # "all 3 probed tool(s)" over a probe of four, dropping the one that disproved the
+        # finding out of the finding's own count.
+        probed = attempted or len(refused)
+        count = "all" if len(refused) == probed else f"{len(refused)} of"
         blames_auth = bool(auth_rejected) and not unmeasurable
         if blames_auth:
             why = "were rejected for authentication"
-            cause = (
-                " — see the Tool Reliability finding; nothing about this server's input "
-                "validation was measured either"
-                if auth_already_reported
-                else " — the credentials supplied are wrong, expired, or lack the required "
-                "scope, so nothing about this server was actually measured"
-            )
+            if auth_already_reported:
+                cause = (
+                    " — see the Tool Reliability finding; nothing about this server's input "
+                    "validation was measured either"
+                )
+            elif credentials_supplied:
+                cause = (
+                    " — the credentials supplied are wrong, expired, or lack the required "
+                    "scope, so this server's input validation went unmeasured"
+                )
+            else:
+                # It said "the credentials supplied are wrong" when NONE were supplied — the
+                # same self-contradiction the pre-flight's own message was fixed for, alive
+                # on the other branch. The caller is the only part that knows.
+                cause = (
+                    " — no credential was supplied, so this server's input validation went "
+                    "unmeasured. Pass --env or --header if it needs one"
+                )
         else:
             # Deliberately makes no claim about WHY. The evidence is that no call to this
             # server has ever worked, well-formed or malformed; naming a cause we cannot see
@@ -481,14 +505,14 @@ async def run_robustness_probes(
             title="Robustness",
             weight=1.0,
             score=0.0,
-            summary=f"All {probed} probed tool(s) {why}, so whether this server validates "
-            "its input could not be observed.",
+            summary=f"{count.capitalize()} {probed} probed tool(s) {why}, so whether this "
+            "server validates its input could not be observed.",
             findings=[
                 Finding(
                     severity=Severity.INFO
                     if auth_already_reported and blames_auth
                     else Severity.HIGH,
-                    message=f"all {probed} probed tool(s) {why}{cause}",
+                    message=f"{count} {probed} probed tool(s) {why}{cause}",
                     detail=", ".join(sorted(refused)[:8]),
                 )
             ],

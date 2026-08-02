@@ -365,6 +365,32 @@ async def evaluate_server(
         drift_findings, later_tools = await _check_definition_drift(
             session, init, spec, discovery, cache_dir.parent / "baselines", track_drift
         )
+        # Tools the read-only filter would have withheld, and executed anyway because the
+        # server annotated them `readOnlyHint: true`. The user did not pass --allow-writes;
+        # the server granted these back on its own word, and that belongs in the report
+        # rather than in the reader's assumptions.
+        #
+        # A FINDING, not a `not_measured` entry. It was the latter, and every other entry in
+        # that list means "this did not run" while this one says the opposite — tools that
+        # WERE called. A CI job building a follow-up list from `not_measured` got an item
+        # meaning the reverse of the field it arrived in.
+        self_cleared = [t.name for t in discovery.tools if trusted_on_its_own_word(t)]
+        waiver_findings = (
+            [
+                Finding(
+                    severity=Severity.INFO,
+                    message="read-only exclusion was waived on the server's own word — "
+                    f"{len(self_cleared)} tool(s) whose name or description reads as mutating "
+                    "declared `readOnlyHint: true`, and WERE called",
+                    detail=", ".join(sorted(self_cleared)[:12])
+                    + ". Pass --no-probe if you do not want a server's own annotation to "
+                    "decide that.",
+                )
+            ]
+            if self_cleared
+            else []
+        )
+
         discovery_findings = (
             drift_findings
             # A surface that could not be listed is a scan that did not run. Reported at LOW
@@ -379,21 +405,8 @@ async def evaluate_server(
                 for gap in discovery.undiscovered
             ]
             + _deprecated_capability_findings(init, discovery.server.protocol_version)
+            + waiver_findings
         )
-
-        # Tools the read-only filter would have withheld, and executed anyway because the
-        # server annotated them `readOnlyHint: true`. The user did not pass --allow-writes;
-        # the server granted these back on its own word, and that belongs in the report
-        # rather than in the reader's assumptions.
-        self_cleared = [t.name for t in discovery.tools if trusted_on_its_own_word(t)]
-        if self_cleared:
-            not_measured.append(
-                "read-only exclusion was waived for "
-                f"{', '.join(sorted(self_cleared))} — the name or description reads as "
-                "mutating, and the server's own `readOnlyHint: true` overrode that, so these "
-                "tools WERE called. Pass --no-probe if you do not want a server's own "
-                "annotation to decide that."
-            )
 
         # Dimensions produced by TALKING to the server. Held aside rather than appended to a
         # single list because the static checks now run last (see the assembly below), and
@@ -579,6 +592,7 @@ async def evaluate_server(
                 exec_tools,
                 auth_already_reported=bool(auth_failure and supplied_credentials),
                 server_answered=server_answered,
+                credentials_supplied=supplied_credentials,
             )
             if robustness is not None:
                 live_dimensions.append(robustness)
@@ -593,7 +607,10 @@ async def evaluate_server(
                     f"robustness probes for {len(excluded)} of {len(discovery.tools)} tool(s) "
                     "excluded as possibly-mutating "
                     f"({describe_exclusions(discovery.tools, excluded, also_seen=later_tools)}) — "
-                    "re-run with --allow-writes against a disposable target to include them"
+                    "annotate a genuinely read-only tool with `readOnlyHint: true`, or re-run "
+                    "with --allow-writes against a disposable target. The quoted words are "
+                    "what MATCHED, not necessarily what is wrong: deleting one can leave a "
+                    "tool that really does write with nothing keeping it out of the probe"
                 )
         elif not probe:
             # The one a flag turns off, and the one that moved a score furthest: a server

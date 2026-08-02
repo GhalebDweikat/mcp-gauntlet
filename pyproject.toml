@@ -71,7 +71,11 @@ mcp-gauntlet = "mcp_gauntlet.cli:app"
 Homepage = "https://github.com/GhalebDweikat/mcp-gauntlet"
 Repository = "https://github.com/GhalebDweikat/mcp-gauntlet"
 Issues = "https://github.com/GhalebDweikat/mcp-gauntlet/issues"
-Leaderboard = "https://ghalebdweikat.github.io/mcp-gauntlet/"
+Changelog = "https://github.com/GhalebDweikat/mcp-gauntlet/blob/main/CHANGELOG.md"
+# No `Leaderboard` link. 0.9.0 deleted the public leaderboard and this URL kept advertising
+# it from the PyPI sidebar, 404ing — for a tool whose own README now says it publishes no
+# leaderboard. PyPI metadata only refreshes on publish, so a stale link outlives the feature
+# by however long the next release takes.
 
 [build-system]
 requires = ["hatchling"]

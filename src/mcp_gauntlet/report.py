@@ -127,6 +127,14 @@ class Finding(BaseModel):
     severity: Severity
     message: str
     detail: str | None = None
+    # Named in an `--expect` file, so it does not fail the gate. It is still REPORTED, and
+    # still carries its real severity: an expected finding is one you have read and decided
+    # about, not one that stopped existing. See `expectations.py`.
+    expected: bool = False
+    # Why the operator expects it — copied from the file so the report carries the reasoning
+    # rather than only the fact. A suppression whose justification lives somewhere else is a
+    # suppression nobody will ever re-examine.
+    expected_reason: str | None = None
 
 
 class Dim(StrEnum):
@@ -737,5 +745,9 @@ def findings_at_or_above(report: GauntletReport, threshold: Severity) -> list[Fi
         finding
         for dimension in report.dimensions
         for finding in dimension.findings
-        if _SEVERITY_ORDER[finding.severity] <= _SEVERITY_ORDER[threshold]
+        # `not expected` is the ONLY thing an `--expect` file changes. The finding keeps its
+        # severity, stays in the report and stays on the console; it simply stops deciding
+        # the exit code. A mechanism that removed the finding would be indistinguishable from
+        # a check that stopped working, which is the defect this whole project is about.
+        if not finding.expected and _SEVERITY_ORDER[finding.severity] <= _SEVERITY_ORDER[threshold]
     ]

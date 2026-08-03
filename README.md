@@ -338,6 +338,49 @@ A tester took a server from 10 LOW findings to `--fail-on low` passing this way.
 wording here called the level "not usable", which steered people off a strict gate that works
 — the docstring is the problem, not the gate.
 
+### When the gate is wrong
+
+It will be. A server whose job is detecting prompt injection has to quote the attacks it
+detects and gets a HIGH for it; a German description using soft hyphens trips the
+hidden-character check; a docs server over the OWASP LLM Top 10 is capped for describing
+attacks it does not perform. `docs/known-gaps.md` names these and more.
+
+Tell the gate. `--expect` takes a JSON file of findings you have already read and decided
+about:
+
+```json
+{
+  "expected": [
+    {
+      "tool": "sanitise",
+      "message": "description attempts to override prior instructions",
+      "reason": "this tool's whole job is quoting injection patterns — known-gaps G7"
+    }
+  ]
+}
+```
+
+```bash
+mcp-gauntlet run "python -m my_server" --fail-on high --expect .gauntlet/expect.json
+```
+
+`scan` takes the same file per entry, as `"expect": "path/to/expect.json"` relative to the
+server list — a fleet's servers do not share false positives.
+
+Four things it deliberately does **not** do, because a suppression mechanism is the easiest
+place to build the failure this tool exists to catch:
+
+- **It does not remove the finding.** It stays in `report.json`, on the console, at its real
+  severity, labelled `expected` and carrying your `reason`. It stops deciding the exit code
+  and nothing else. The *grade* still moves too — a capped C is a fact about what the server
+  publishes, not about your gate.
+- **It is never silent.** Every run prints how many findings matched.
+- **A stale entry is reported.** If a finding's wording changes, the entry stops matching and
+  the run says so by name — otherwise the file rots into a blind spot.
+- **`reason` is required, and matching is exact.** A substring match would quietly excuse
+  more than you meant; an exact match that stops matching turns the build red, which is loud
+  and fixable in a minute.
+
 `--fail-under` still exists, and is the weaker choice. A HIGH security finding caps the
 overall score at 75, so a `--fail-under 60` gate — which this README used to recommend —
 **could never fail a poisoned server**: the cap acted as a floor for the gate. A score

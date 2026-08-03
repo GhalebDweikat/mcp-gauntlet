@@ -21,6 +21,14 @@ from mcp_gauntlet.engine import evaluate_server
 from mcp_gauntlet.env import load_env
 from mcp_gauntlet.errors import describe, explain_remote_failure
 from mcp_gauntlet.exits import EXIT_CODE_HELP, Exit
+from mcp_gauntlet.expectations import (
+    Applied,
+    Expectation,
+    ExpectationsError,
+    apply_expectations,
+    load_expectations,
+    summarize,
+)
 from mcp_gauntlet.htmlreport import to_html
 from mcp_gauntlet.llm import LLMConfig, LLMConfigError, list_models
 from mcp_gauntlet.report import (
@@ -196,6 +204,32 @@ def _parse_fail_on(fail_on: str | None) -> Severity | None:
             f"Use one of: {', '.join(s.value for s in Severity)}."
         )
         raise typer.Exit(code=Exit.USAGE) from None
+
+
+def _load_expectations(path: Path | None) -> list[Expectation]:
+    """Read `--expect` before any work happens, or exit 4 saying why."""
+    if path is None:
+        return []
+    try:
+        return load_expectations(path)
+    except ExpectationsError as exc:
+        # 4, not 1: an unreadable expectation file is something the invocation asked for and
+        # cannot have, exactly like an unresolvable credential. It is not a verdict about a
+        # server we have not contacted.
+        console.print(f"[red]Could not read the expectations file:[/red] {escape(str(exc))}")
+        raise typer.Exit(code=Exit.CONFIG) from exc
+
+
+def _announce_expectations(applied: Applied) -> None:
+    """Say what `--expect` did — always, and including what it failed to do.
+
+    Never conditional on there being matches. A file that suppressed nothing and a file that
+    suppressed nine things must not produce the same silent console, or the mechanism becomes
+    the defect this project exists to catch.
+    """
+    for line in summarize(applied):
+        colour = "yellow" if "matched nothing" in line else "cyan"
+        console.print(f"[{colour}]{escape(line)}[/{colour}]")
 
 
 def _report_no_tools(*, unparseable: bool) -> None:
@@ -413,6 +447,14 @@ def run(
         "This is the gate to use in CI — it keys on what was actually found rather than on "
         "a number, so it does not drift when scoring changes.",
     ),
+    expect: Path | None = typer.Option(
+        None,
+        "--expect",
+        help='JSON file of findings you have already decided about: {"expected":[{"tool",'
+        '"message","reason"}]}. They stay in the report with their real severity and stop '
+        "failing the gate. Every run says how many matched, and an entry that matches "
+        "nothing is reported — a suppression file you cannot see is a blind spot.",
+    ),
     timeout: float = typer.Option(
         900.0,
         "--timeout",
@@ -429,6 +471,9 @@ def run(
 ) -> None:
     """Connect to an MCP server, run the gauntlet, and write a scored report."""
     threshold = _parse_fail_on(fail_on)
+    # Read BEFORE the run, for the same reason `--fail-on` is parsed here: a malformed file
+    # discovered afterwards has already cost a full evaluation, and possibly an LLM bill.
+    expectations = _load_expectations(expect)
     try:
         spec = ServerSpec.parse(server)
     except ValueError as exc:
@@ -529,6 +574,11 @@ def run(
         # quality — and no report.json is written, which used to be the only way to tell.
         raise typer.Exit(code=Exit.UNEVALUABLE) from exc
 
+    # Mark the expected findings BEFORE the report is written, so `report.json` records which
+    # ones an operator had already decided about and why. A suppression that exists only in
+    # the invocation is invisible to whoever reads the artifact later.
+    applied = apply_expectations(report, expectations)
+
     # Persist BEFORE rendering: a console-rendering glitch (unencodable glyph on a legacy
     # code page, stray markup from a hostile server name) must never discard the report of
     # a run the user just paid for. Rendering is best-effort on top of a written artifact.
@@ -552,6 +602,7 @@ def run(
             f"{escape(redact(str(exc), secrets))}"
         )
     console.print(f"\n[dim]Reports written:[/dim] {json_path} | {md_path} | {html_path}")
+    _announce_expectations(applied)
 
     # ORDER MATTERS, and it is: a definite verdict, then the reasons there might not be one.
     #

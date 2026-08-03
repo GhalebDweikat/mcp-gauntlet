@@ -123,8 +123,17 @@ the model's context, so those reach the model identically.
 
 ### G7. An honest security server is capped
 A server whose job is detecting injection must quote the patterns it detects, and gets a HIGH
-plus a capped grade for it. There is no allowlist or suppression flag. Affects guardrail,
-moderation and scanner servers.
+plus a capped grade for it. Affects guardrail, moderation and scanner servers — and a wider
+set than that entry originally claimed: a documentation server over the OWASP LLM Top 10, and
+a server that merely *describes its own injection defence* in plain English, are both capped
+without quoting any attack at all.
+
+**There is an escape now.** `--expect` names the finding and stops it failing the gate; the
+finding stays in the report at its real severity, and the run says what it suppressed. The
+GRADE still moves, because the cap is a property of what the server publishes rather than of
+your gate — a capped C on a security scanner is still a capped C, you have simply told CI you
+read it. Detection is unchanged: this is a gap in the CHECK, and `--expect` is a way to live
+with it, not a fix for it.
 
 ### G8. Resource *contents* are not read
 Only resource metadata is scanned. A payload in what `resources/read` returns is invisible.
@@ -185,8 +194,8 @@ labelling that *needs credentials* is the same class of wrong verdict this gap i
 pointed at a different server. Coverage and diagnosis are different claims, and the harness
 currently has no way to make the first without the second.
 
-`--no-probe` still silences this check and the real one together, and there is still no
-allowlist.
+`--no-probe` still silences this check and the real one together. A false positive can now be
+excused with `--expect`, which keeps the finding in the report and stops it failing the gate.
 
 ## Scoring
 

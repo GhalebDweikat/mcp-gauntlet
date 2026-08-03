@@ -39,6 +39,13 @@ from mcp_gauntlet.config import (
 )
 from mcp_gauntlet.engine import evaluate_server
 from mcp_gauntlet.errors import describe, explain_remote_failure
+from mcp_gauntlet.expectations import (
+    Expectation,
+    ExpectationsError,
+    apply_expectations,
+    load_expectations,
+    summarize,
+)
 from mcp_gauntlet.jsonio import read_json_text
 from mcp_gauntlet.llm import LLMConfig
 from mcp_gauntlet.naming import slugify
@@ -64,6 +71,13 @@ class ServerEntry:
     # never appears in the committed list), "NAME=VALUE" inlines it, "Header: Value" for HTTP.
     env: list[str] = field(default_factory=list)
     headers: list[str] = field(default_factory=list)
+    # Path to this server's `--expect` file, relative to the servers list. Per-entry because
+    # a fleet's servers do not share false positives: the security scanner needs G7 excused
+    # and the German one needs its soft hyphens, and one shared file would excuse both
+    # everywhere. `run --expect` is the same mechanism for one server.
+    expect: str | None = None
+    # Loaded at list-read time, so a bad path is exit 4 before the scan starts.
+    expectations: list[Expectation] = field(default_factory=list)
 
     def to_spec(self) -> ServerSpec:
         """The runnable spec, with credentials resolved."""
@@ -95,7 +109,7 @@ class ScanResult:
         return self.report is not None and unevaluable(self.report) is None
 
 
-_ENTRY_KEYS = {"name", "spec", "env", "headers"}
+_ENTRY_KEYS = {"name", "spec", "env", "headers", "expect"}
 # The TOP level was never checked, so the whole reason unknown per-entry keys are rejected —
 # a silently-dropped key reads as a wired-up configuration — applied one nesting level down
 # and not at the level people actually mistype. `{"servers": [...], "failOn": "high"}` ran
@@ -162,12 +176,25 @@ def load_servers(path: Path) -> list[ServerEntry]:
                 f"{where} ({raw['name']}) has unknown key(s) {', '.join(unknown)}; "
                 f"allowed: {', '.join(sorted(_ENTRY_KEYS))}"
             )
+        if "expect" in raw and (not isinstance(raw["expect"], str) or not raw["expect"].strip()):
+            raise ServerListError(f'{where}: "expect" must be a path to an expectations file')
         entry = ServerEntry(
             name=str(raw["name"]),
             spec=str(raw["spec"]),
             env=_string_list(raw, "env", where),
             headers=_string_list(raw, "headers", where),
+            expect=str(raw["expect"]).strip() if raw.get("expect") else None,
         )
+        # Read the expectations HERE, with everything else this file names, so a typo'd path
+        # or a malformed file is exit 4 before the scan starts rather than a surprise
+        # mid-fleet. Resolved relative to the servers list, because that is where a reader
+        # would look for it.
+        if entry.expect is not None:
+            candidate = (path.parent / entry.expect).resolve()
+            try:
+                entry.expectations = load_expectations(candidate)
+            except ExpectationsError as exc:
+                raise ServerListError(f"{where} ({entry.name}): {exc}") from exc
         # Resolve NOW, before anything is scanned. A named variable that is not set in the
         # environment is a configuration error, and letting it surface mid-scan would record
         # the server as "could not evaluate" — exit 3, which the docs correctly tell you NOT
@@ -274,6 +301,11 @@ async def run_scan(
             # `secrets` was the missing argument, and without it a scanned credentialed
             # server could write a token a server echoed back into a committed report —
             # exactly what `run` has always scrubbed.
+            # Mark before writing, so `report.json` records which findings this fleet had
+            # already decided about — and say so, per server, for the same reason `run` does.
+            applied = apply_expectations(report, entry.expectations)
+            for line in summarize(applied):
+                log(f"  {line}")
             write_report(report, out_dir / slugify(entry.name), secrets)
             if fail_on is not None:
                 result.triggering = [f.message for f in findings_at_or_above(report, fail_on)]

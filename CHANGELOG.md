@@ -3,6 +3,42 @@
 All notable changes to mcp-gauntlet are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`--expect`: tell the gate about a finding you have already decided about.** Every
+  false-positive class this tool has found was inescapable — a security server must quote the
+  attacks it detects and is capped for it (G7), a German description using soft hyphens trips
+  the hidden-character check, a docs server over the OWASP LLM Top 10 is capped for describing
+  attacks it does not perform — and the only remedies were blunt flags or deleting the gate.
+  A CI gate that cannot be told it is wrong gets deleted the first week it is wrong.
+
+  ```json
+  { "expected": [ { "tool": "sanitise", "message": "…", "reason": "known-gaps G7" } ] }
+  ```
+
+  `scan` takes the same file per entry (`"expect": "path.json"`), because a fleet's servers do
+  not share false positives.
+
+  A suppression mechanism is, structurally, a check that reports success when it stops
+  working — which is the defect this project exists to catch. So: the finding is **not
+  removed** (it stays in the report at its real severity, labelled, carrying your reason, and
+  only stops deciding the exit code); every run **says** how many matched; an entry that
+  matches nothing is **reported by name**, so the file cannot rot into a blind spot; `reason`
+  is required; and matching is **exact**, never a substring, because an entry that stops
+  matching turns the build red while an entry that matches too much hides real findings
+  silently.
+
+  The grade is unaffected on purpose. A capped C is a fact about what the server publishes,
+  not about your gate.
+
+### Changed
+
+- `docs/known-gaps.md` **G7 and G13 said "there is no allowlist"**, which is no longer true.
+  G7 also understated its own scope: the capped set includes documentation servers and servers
+  that merely describe their own injection defence, neither of which quotes an attack.
+
 ## [0.9.4] — 2026-08-03
 
 **Upgrade if you are on 0.9.3.** A fourth round of black-box testing found two ways the

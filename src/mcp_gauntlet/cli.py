@@ -71,8 +71,9 @@ _use_utf8_stdio()
 app = typer.Typer(
     add_completion=False,
     help=(
-        "A regression suite for your MCP server. "
-        "Catches tool poisoning, definition drift and schema rot in CI."
+        "A CI linter for what your MCP server publishes. Catches tool poisoning and prompt "
+        "injection across every surface an agent sees, definition drift between runs, and "
+        "schema rot."
     ),
     no_args_is_help=True,
 )
@@ -106,9 +107,10 @@ def main(
         help="Show the installed mcp-gauntlet version and exit.",
     ),
 ) -> None:
-    """A regression suite for your MCP server.
+    """A CI linter for what your MCP server publishes.
 
-    Catches tool poisoning, definition drift and schema rot in CI.
+    Catches tool poisoning and prompt injection across every surface an agent sees,
+    definition drift between runs, and schema rot.
     """
     load_env()
 

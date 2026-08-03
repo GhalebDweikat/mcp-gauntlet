@@ -1,7 +1,7 @@
 [project]
 name = "mcp-gauntlet"
 version = "0.9.4"
-description = "A regression suite for your MCP server — catches tool poisoning, definition drift and schema rot in CI, including things a static scan cannot see."
+description = "A CI linter for what your MCP server publishes: tool poisoning and prompt injection across every surface an agent sees, definition drift between runs, and schema rot."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

@@ -35,6 +35,18 @@ All notable changes to mcp-gauntlet are documented here. This project adheres to
 
 ### Changed
 
+- **Repositioned, because four testers independently bounced off the old pitch.** The README
+  said *"Static scanners read your code. This runs your server"* — and in the CI
+  configuration these docs recommend, the only thing executed is a malformed-input probe and
+  one well-formed call per candidate tool. One tester's summary: *"I'd adopt it as a
+  poisoning and schema linter, not as the regression suite it says it is."* They were right.
+
+  It is now described as **a CI linter for what your MCP server publishes**, plus a live
+  probe and a change detector, with an explicit *What it is not* — it does not exercise your
+  server's behaviour and does not replace your integration tests. The two things that
+  actually distinguish it are stated instead of implied: it reads surfaces other scanners do
+  not open (`title`, `$ref` output schemas, `enum`, prompt messages, `_meta`, `instructions`),
+  and it compares your server against itself, twice within a session and once across runs.
 - `docs/known-gaps.md` **G7 and G13 said "there is no allowlist"**, which is no longer true.
   G7 also understated its own scope: the capped set includes documentation servers and servers
   that merely describe their own injection defence, neither of which quotes an attack.

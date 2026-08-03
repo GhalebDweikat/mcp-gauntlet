@@ -156,8 +156,16 @@ Response Safety findings as being about *that data* rather than about the server
 
 ## What this does and does not claim
 
-mcp-gauntlet is a regression suite for a server **you maintain**. Every claim below is
-scoped to that.
+mcp-gauntlet is a CI linter for what a server **you maintain** publishes, plus a live probe
+and a change detector. Every claim below is scoped to that.
+
+**It does not exercise your server's behaviour.** In the configuration these docs recommend
+for CI (`--no-agentic`), the only things executed are one well-formed call per candidate
+read-only tool and one malformed one — enough to establish that the server answers and that
+it rejects what it declared invalid, and nothing like a test of what it *does*. A tester put
+it plainly: "I'd adopt it as a poisoning and schema linter, not as the regression suite it
+says it is." They were right, and the docs say so now. It sits beside your integration tests;
+it does not replace them.
 
 **A finding is the product.** Each one names a tool, a field and what is wrong with it, and
 is meant to be acted on. That is the part that has held up under adversarial testing: on a
@@ -193,7 +201,8 @@ published row, and a disclosure process exercised before naming anyone. That bar
 a tool that ranked other people's servers, and it was a hard problem — cross-server
 comparability was never achieved and, on the evidence, was not going to be.
 
-For a regression suite the bar is different, weaker, and actually reachable:
+For a linter you point at your own server the bar is different, weaker, and actually
+reachable:
 
 1. **Stable for one server across two consecutive releases.** Upgrading the tool must not
    change the verdict on an unchanged server. Enforced by a recorded snapshot of every

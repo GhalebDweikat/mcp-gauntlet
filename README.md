@@ -2,13 +2,35 @@
 
 [![CI](https://github.com/GhalebDweikat/mcp-gauntlet/actions/workflows/ci.yml/badge.svg)](https://github.com/GhalebDweikat/mcp-gauntlet/actions/workflows/ci.yml)
 
-**A regression suite for your MCP server.** Run it in CI and it catches what you cannot
-catch by reading your own code: a payload that only appears when a tool is *called*, a
-definition that changes between two `tools/list` calls, a tool that silently accepts
-malformed input, a description no agent can act on.
+**A linter for the text and schemas your MCP server publishes**, plus a live probe and a
+change detector, for CI.
+
+Concretely, and in the order it does them:
+
+1. **Scans every server-authored string an agent will actually see** for tool-poisoning and
+   prompt-injection markers, hidden characters and lookalike alphabets — including the
+   surfaces most tools do not read: display `title`s, output schemas behind a `$ref`, `enum`
+   and `default` values, prompt messages, resource metadata, `_meta`, and the server's own
+   `instructions`.
+2. **Asks `tools/list` twice** and re-scans anything that changed, so a definition that
+   differs between the two answers raises its own finding — and a tool that turns destructive
+   in the second listing is not executed on the strength of the first.
+3. **Calls what it can safely call**: a well-formed call to check the server answers at all,
+   then malformed input to check it rejects what it said was invalid. Read-only tools only,
+   unless you pass `--allow-writes`.
+4. **Compares all of that against the last run**, so a server that redefines its tools after
+   you approved them is caught.
+5. **With an API key**, drives a live agent through generated tasks — the only way to find out
+   whether your descriptions are good enough to act on.
 
 It fails your build on what it **found** — a finding with a name and a location — not on a
-score.
+score. And when the gate is wrong, `--expect` lets you say so without deleting it.
+
+**What it is not.** Steps 3 and 5 are the only ones that execute anything, and in the CI
+configuration these docs recommend (`--no-agentic`), step 3 is all you get: a malformed-input
+probe and one well-formed call per candidate tool. It does not exercise your server's actual
+behaviour, and it will not tell you your code is correct. It is not a substitute for your
+integration tests — it sits beside them and reads what your server *says*.
 
 What it does **not** catch is written down too: the security checks are pattern-based, and
 [docs/known-gaps.md](docs/known-gaps.md) lists, by class, what has been demonstrated to slip
@@ -129,18 +151,24 @@ Academic benchmarks (MCP-Universe, MCPMark, MCP-Bench) do run live agents — bu
 over fixed, hand-picked server sets, not as something you can point at *your*
 server.
 
-mcp-gauntlet is for the person who **maintains** the server, and its distinguishing
-checks are the *dynamic* ones — the things you cannot learn by reading a file:
+mcp-gauntlet is for the person who **maintains** the server. Two things separate it from
+that list, and neither is "it runs your server" — plenty of them connect to a server too:
 
-- it **calls** your tools and scans what came back, so a server that is clean at list-time
-  and poisons at call-time is caught;
-- it asks `tools/list` **twice** and re-scans anything that changed, so a definition that
-  differs between the two answers raises its own finding;
-- it feeds each tool **malformed input** and checks that the tool rejects it;
-- with an API key it drives a **live agent** through generated tasks, which is the only way
-  to find out whether your descriptions are good enough to act on.
+**It reads surfaces the others do not.** A payload does not have to sit in a tool
+description. It can sit in a display `title`, an output schema behind a `$ref`, an `enum`
+member, a prompt message, a resource's metadata, `_meta`, or the server's `instructions` —
+all of which a function-calling API serializes into the model's context, and most of which a
+description scanner never opens. The bundled malicious fixture puts one in each; four are
+caught with no API key.
 
-Static scanners read your code. This runs your server.
+**It compares your server against itself.** Twice within one session (`tools/list` asked
+twice, anything that moved re-scanned in its own right) and once across runs, against a
+stored fingerprint. That is the rug-pull case registry signing cannot address — the package
+is unchanged and correctly signed, and only the text it serves at runtime differs.
+
+The live-agent stage needs an API key and is genuinely dynamic. Without one, what you get is
+a very thorough read plus a malformed-input probe, and this README says so at the top rather
+than implying otherwise.
 
 **What it is not:** a ranking. It does not tell you whether someone else's server is better
 than yours, and it deliberately publishes no leaderboard — scores move when a stage is
@@ -305,8 +333,8 @@ you are comparing them — a tester mis-attributed one release's numbers to anot
 
 ## Use it in CI
 
-This is where the tool earns its keep: a regression suite for your own MCP server, run on
-every pull request. Copy [`examples/gauntlet-ci.yml`](examples/gauntlet-ci.yml) into your
+This is where the tool earns its keep: pointed at your own MCP server, on every pull
+request. Copy [`examples/gauntlet-ci.yml`](examples/gauntlet-ci.yml) into your
 repo as `.github/workflows/gauntlet.yml`, point it at your server, and the build fails on
 what it **found**:
 

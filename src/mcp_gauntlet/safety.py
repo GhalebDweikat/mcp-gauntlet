@@ -313,6 +313,19 @@ def mutating_trigger(tool: ToolInfo) -> str:
         return "the server declared destructiveHint: true"
     if tool.read_only_hint is False:
         return "the server declared readOnlyHint: false"
+    # The hints that mean "readOnlyHint is false" by their mere presence. Without this the
+    # `false` branch fell through to the vocabulary fallback and reported "matched the
+    # write-verb vocabulary" when nothing had matched at all — the same tool with no
+    # annotation is probed. A reader would spend an afternoon renaming `lookup`.
+    for label, value in (
+        ("destructiveHint", tool.destructive_hint),
+        ("idempotentHint", tool.idempotent_hint),
+    ):
+        if value is not None:
+            return (
+                f"the server declared {label}: {str(value).lower()}, which the MCP spec "
+                "defines as meaningful only when readOnlyHint is false"
+            )
     for label, text in (
         ("name", tool.name),
         ("title", tool.title),

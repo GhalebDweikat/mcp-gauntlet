@@ -218,6 +218,56 @@ def test_the_file_is_validated_by_name_like_every_other_config(tmp_path: Path) -
         load_expectations(tmp_path / "absent.json")
 
 
+def test_the_string_a_user_can_SEE_is_the_one_that_matches(tmp_path: Path) -> None:
+    """Redaction rewrites finding text; matching ran against the raw text.
+
+    `--env PGDATABASE=greet` against a server with a tool called `greet` prints
+    `HIGH ***REDACTED***: …`. An expectation copied from that line could never match, and the
+    line that WOULD match is printed nowhere — while the stale warning blamed a wording
+    change. Both forms are accepted now.
+    """
+    report = _report()
+    secrets = frozenset({"sanitise"})
+    applied = apply_expectations(
+        report,
+        load_expectations(
+            _file(
+                tmp_path,
+                {
+                    "tool": "***REDACTED***",  # what the console showed
+                    "message": "description attempts to override prior instructions",
+                    "reason": "G7",
+                },
+            )
+        ),
+        secrets,
+    )
+    assert applied.matched == 1
+    assert applied.unused == []
+
+
+def test_what_expect_did_is_recorded_on_the_report(tmp_path: Path) -> None:
+    """The console is not what a reviewer opens three days later, and the shipped CI workflow
+    uploads these files as the build artifact."""
+    report = _report()
+    apply_expectations(
+        report,
+        load_expectations(
+            _file(
+                tmp_path,
+                {
+                    "tool": "sanitise",
+                    "message": "description attempts to override prior instructions",
+                    "reason": "G7",
+                },
+                {"tool": "sanitise", "message": "wording that moved", "reason": "stale"},
+            )
+        ),
+    )
+    assert report.expected_suppressed == 1
+    assert report.expectations_unused == ["sanitise: wording that moved"]
+
+
 def test_no_expectations_means_no_output_and_no_change() -> None:
     report = _report()
     applied = apply_expectations(report, [])

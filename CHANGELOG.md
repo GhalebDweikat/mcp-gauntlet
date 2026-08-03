@@ -33,6 +33,45 @@ All notable changes to mcp-gauntlet are documented here. This project adheres to
   The grade is unaffected on purpose. A capped C is a fact about what the server publishes,
   not about your gate.
 
+### Fixed
+
+- **`tools.listChanged` let the audited server pick the severity of the rug-pull signal.** A
+  tool served as `readOnlyHint: true` / *"List every tag"* on the first `tools/list` and as
+  `destructiveHint: true` / *"Permanently deletes every row in the production ledger"* on the
+  second was reported at **INFO** — `A 100.0`, exit 0 at every gate but `--fail-on info` —
+  because the server declared one capability in `initialize`, which an attacker gets for
+  free. The bundled malicious fixture does not declare it, so nothing in the suite exercised
+  the path.
+
+  `listChanged` says the tool *list* is dynamic: tools appear, disappear, text is edited. It
+  does not say a read-only tool may become a delete. That one transition is now MEDIUM
+  regardless, and says so in its own words; ordinary edits are excused exactly as before.
+- **The README's own honesty paragraph carried a wrong number** — "one well-formed call per
+  candidate tool" is one call *total*, which stops at the first tool that answers. Its own
+  numbered list seven lines earlier was right.
+- **`--expect` could not match the text a user was shown.** Redaction rewrites finding text,
+  and matching ran against the raw form — so `--env PGDATABASE=greet` against a tool called
+  `greet` printed `HIGH ***REDACTED***: …`, an entry copied from that line never matched, and
+  the stale warning blamed a wording change. Both forms are accepted now.
+- **`--expect` left no trace in `report.md` or `report.html`**, and the console printed an
+  expected finding identically to a gating one. The shipped CI workflow uploads those files
+  as the build artifact, so a reviewer saw findings beside a green build with nothing joining
+  the two. Findings are labelled in all three renderers now, and both the suppressed count
+  and any stale entry are recorded on the report itself.
+- **The exclusion invented a cause for `destructiveHint: false`**: it said *"matched the
+  write-verb vocabulary"* when nothing had matched — the same tool with no annotation is
+  probed. Someone would have spent an afternoon renaming `lookup`.
+- **A server that refused every call still printed `A 100.0`.** Exit 3 and *Not scored* were
+  right; the panel underneath said A, which is the number a reader repeats. It grades `N/A`
+  now, exactly as a zero-tool server has since 0.9.0.
+- **A bare HTTP 403 at connect was diagnosed as a credential problem**, contradicting
+  known-gaps G13 — a server behind an IP allowlist says 403 to an unlisted CI runner, and the
+  per-call check already required a `WWW-Authenticate` challenge before blaming the caller.
+- **`scan` had no `--no-track-drift` or `--allow-writes`**, so the README's own advice —
+  "pass `--no-track-drift` alongside `medium`" — was `No such option` there. Fifth instance
+  of a fix reaching one command and not the other. `--fail-under` stays absent from `scan`
+  deliberately: scores are not comparable across servers, which is that command's premise.
+
 ### Changed
 
 - **Repositioned, because four testers independently bounced off the old pitch.** The README

@@ -104,6 +104,20 @@ def _body(report: GauntletReport) -> str:
             f'<div class="banner">Not measured: {omitted} — the overall is a weighted mean '
             "over the dimensions that ran, so these raise it rather than lower it.</div>"
         )
+    # `--expect` belongs on the page a reviewer actually opens. This file is what the shipped
+    # CI workflow uploads as the build artifact, and it carried no trace that a suppression
+    # file existed — findings beside a green build with nothing joining the two.
+    if report.expected_suppressed:
+        p.append(
+            f'<div class="banner">{report.expected_suppressed} expected finding(s) — named in '
+            "an --expect file, so they did not fail the gate. They are listed below with "
+            "their real severity.</div>"
+        )
+    for stale in report.expectations_unused:
+        p.append(
+            f'<div class="banner">Stale --expect entry: {_esc(stale)} — it matched nothing, '
+            "so it is no longer suppressing what it was written for.</div>"
+        )
 
     if report.security_critical:
         # Only claim a cap when one was actually applied — see `cap_note`.
@@ -205,7 +219,15 @@ def _body(report: GauntletReport) -> str:
             p.append(
                 f'<div class="finding"><span class="sev" style="background:{_SEV_COLORS[f.severity]}">'
                 f"{_esc(f.severity.value)}</span><div>"
-                f'<span class="scope">{scope}</span>: {_esc(f.message)}{detail}</div></div>'
+                f'<span class="scope">{scope}</span>: {_esc(f.message)}{detail}'
+                + (
+                    '<div class="detail">expected — does not fail the gate'
+                    + (f": {_esc(f.expected_reason)}" if f.expected_reason else "")
+                    + "</div>"
+                    if f.expected
+                    else ""
+                )
+                + "</div></div>"
             )
 
     p.append(f"<footer>Generated {_esc(report.generated_at)} · mcp-gauntlet</footer>")

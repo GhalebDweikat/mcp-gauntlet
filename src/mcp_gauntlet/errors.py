@@ -90,6 +90,17 @@ def http_status(exc: BaseException) -> tuple[int, Any] | None:
     return None
 
 
+def _challenged(response: Any) -> bool:
+    """Whether a response carried a `WWW-Authenticate` challenge."""
+    headers = getattr(response, "headers", None)
+    if headers is None:
+        return False
+    try:
+        return bool(headers.get("www-authenticate") or headers.get("WWW-Authenticate"))
+    except Exception:  # noqa: BLE001 - a header mapping we do not recognise tells us nothing
+        return False
+
+
 def explain_remote_failure(url: str, exc: BaseException) -> str:
     """A remote connection failure that names the URL and what went wrong.
 
@@ -109,7 +120,13 @@ def explain_remote_failure(url: str, exc: BaseException) -> str:
     detail = describe(exc, 200)
     lowered = detail.lower()
     status = http_status(exc)
-    if status is not None and status[0] in (401, 403, 407):
+    # 403 needs a challenge beside it, exactly as the per-call check does. A bare 403 is what
+    # a server behind an IP allowlist says to an unlisted CI runner, and telling that reader
+    # their token is wrong is the same wrong debugging lead this function was written to
+    # remove — `docs/known-gaps.md` G13 says a bare 403 is excluded, and here it was not.
+    if status is not None and (
+        status[0] in (401, 407) or (status[0] == 403 and _challenged(status[1]))
+    ):
         # Read from the status rather than from the wording, because this is the one remote
         # failure whose *cause is the caller* — and a reader told "the transport did not come
         # up" goes and checks their firewall. It is also the commonest way a wrong credential

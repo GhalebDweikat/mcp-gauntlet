@@ -346,7 +346,13 @@ def _render_report(report: GauntletReport, secrets: frozenset[str] = frozenset()
         for finding in notable[:15]:
             tag = f"[{_SEVERITY_COLOR[finding.severity]}]{finding.severity.upper():<6}[/]"
             scope = finding.tool or "server"
-            console.print(f"  {tag} [cyan]{escape(r(scope))}[/]: {escape(r(finding.message))}")
+            # An expected finding printed identically to a gating one is the design's own
+            # promise broken on the surface a reader looks at first — "still on the console,
+            # labelled" was true of `report.json` and not of this.
+            mark = "[dim] (expected)[/dim]" if finding.expected else ""
+            console.print(
+                f"  {tag} [cyan]{escape(r(scope))}[/]: {escape(r(finding.message))}{mark}"
+            )
         if len(notable) > 15:
             console.print(f"  [dim]… and {len(notable) - 15} more (see report.md)[/dim]")
     else:
@@ -579,7 +585,7 @@ def run(
     # Mark the expected findings BEFORE the report is written, so `report.json` records which
     # ones an operator had already decided about and why. A suppression that exists only in
     # the invocation is invisible to whoever reads the artifact later.
-    applied = apply_expectations(report, expectations)
+    applied = apply_expectations(report, expectations, secrets)
 
     # Persist BEFORE rendering: a console-rendering glitch (unencodable glyph on a legacy
     # code page, stray markup from a hostile server name) must never discard the report of
@@ -714,6 +720,18 @@ def scan(
     probe: bool = typer.Option(
         True, "--probe/--no-probe", help="Send malformed input to each tool (Robustness)."
     ),
+    track_drift: bool = typer.Option(
+        True,
+        "--track-drift/--no-track-drift",
+        help="Compare each server against the LAST run's definitions. The README tells you "
+        "to pass --no-track-drift alongside --fail-on medium; on this command that was "
+        "'No such option'.",
+    ),
+    allow_writes: bool = typer.Option(
+        False,
+        "--allow-writes",
+        help="Expose possibly-mutating tools to the probes (default: read-only tools only).",
+    ),
     tasks: int = typer.Option(3, "--tasks", min=1, help="Generated tasks per server."),
     repeats: int = typer.Option(2, "--repeats", min=1, help="Repeats per task."),
     max_turns: int = typer.Option(8, "--max-turns", min=1, help="Agent turns per task."),
@@ -796,6 +814,8 @@ def scan(
             n_tasks=tasks,
             repeats=repeats,
             probe=probe,
+            track_drift=track_drift,
+            allow_writes=allow_writes,
             max_turns=max_turns,
             timeout_s=timeout,
             tool_timeout_s=tool_timeout,

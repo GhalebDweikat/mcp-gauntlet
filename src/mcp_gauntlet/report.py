@@ -245,8 +245,11 @@ def cap_note(report: GauntletReport) -> str:
     answer was "nothing", which is not what the banner said.
     """
     if report.grade == "N/A":
-        # Kept its security findings but, exposing no tools, was never scored at all.
-        return "this server exposes no tools, so it was never scored"
+        # Kept its security findings but was never scored at all — no tools to score, or
+        # every call refused. Either way there is no number for a cap to have moved.
+        if report.tool_count == 0:
+            return "this server exposes no tools, so it was never scored"
+        return "this server was never scored — see the reason above"
     if report.grade_capped:
         return f"overall grade capped at {GRADE_CAP_ON_CRITICAL:g}"
     return f"the {GRADE_CAP_ON_CRITICAL:g} cap did not apply — it already scored below it"
@@ -330,6 +333,14 @@ class GauntletReport(BaseModel):
     # The agentic dimensions were the only absence the report ever disclosed. Everything else
     # was silent, and silence always moved the score the same direction: up.
     not_measured: list[str] = Field(default_factory=list)
+    # What `--expect` did to this run. NOT in `not_measured`, whose every entry means "this
+    # did not run" — a suppressed finding ran and was read. Here because the CI example
+    # uploads these files as the build artifact, and a reviewer opening one saw findings
+    # beside a green build with nothing saying a suppression file existed.
+    expected_suppressed: int = 0
+    # Entries that matched nothing. A suppression file that has silently stopped applying is
+    # the blind spot `--expect` exists to prevent, so it is recorded, not only printed.
+    expectations_unused: list[str] = Field(default_factory=list)
     # Whether the cap actually LOWERED the score, as opposed to merely being eligible to.
     #
     # `security_critical` says a HIGH security finding exists. It does not say the cap did
@@ -453,14 +464,22 @@ class GauntletReport(BaseModel):
         if security_critical:
             overall = min(overall, GRADE_CAP_ON_CRITICAL)
 
+        # A server that refused every call was never scored either, and printed `A 100.0` on
+        # the strength of its own definitions. The exit code says 3 and `Not scored:` sits
+        # above the panel — and then the panel says A, which is the number a reader repeats.
+        # The zero-tool path has rendered N/A for this reason since 0.9.0; this is the same
+        # situation with a different cause, and the static dimensions stay exactly as they
+        # are so nothing measured is discarded.
+        scored = not unevaluated_reason
+
         return _encodable(
             cls(
                 spec=spec,
                 server=server,
                 tool_count=tool_count,
                 dimensions=dimensions,
-                overall_score=overall,
-                grade=grade_for(overall),
+                overall_score=overall if scored else 0.0,
+                grade=grade_for(overall) if scored else "N/A",
                 generated_at=datetime.now(UTC).isoformat(timespec="seconds"),
                 security_critical=security_critical,
                 agentic=agentic,
@@ -646,6 +665,14 @@ def to_markdown(report: GauntletReport) -> str:
     # credential-gated server that failed every call shipped a report headed "A (98.8)".
     if report.unevaluated_reason:
         lines.append(f"- **Not scored:** {_md(report.unevaluated_reason)}")
+    if report.expected_suppressed:
+        lines.append(
+            f"- **Expected findings:** {report.expected_suppressed} finding(s) named in an "
+            "`--expect` file did not fail the gate. They are listed below with their real "
+            "severity."
+        )
+    for stale in report.expectations_unused:
+        lines.append(f"- **Stale `--expect` entry:** {_md(stale)} — it matched nothing.")
     if report.not_measured:
         lines.append(
             "- **Not measured:** "
@@ -680,8 +707,16 @@ def to_markdown(report: GauntletReport) -> str:
         for finding in findings:
             scope = f"`{_md_code(finding.tool)}`" if finding.tool else "_server_"
             detail = f" — {_md(finding.detail)}" if finding.detail else ""
+            # `expected` has to appear HERE too. The CI example uploads this file as the build
+            # artifact, so a reviewer opening it saw two HIGH findings beside a green build
+            # with nothing saying a suppression file existed — the blind spot `--expect` is
+            # built to prevent, one surface over.
+            mark = ""
+            if finding.expected:
+                why = f" — {_md(finding.expected_reason)}" if finding.expected_reason else ""
+                mark = f" _(expected, does not fail the gate{why})_"
             lines.append(
-                f"- **[{finding.severity.upper()}]** {scope}: {_md(finding.message)}{detail}"
+                f"- **[{finding.severity.upper()}]** {scope}: {_md(finding.message)}{detail}{mark}"
             )
         lines.append("")
 

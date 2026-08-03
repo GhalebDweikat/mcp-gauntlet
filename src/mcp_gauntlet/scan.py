@@ -249,6 +249,10 @@ async def run_scan(
     timeout_s: float = 240.0,
     tool_timeout_s: float = 60.0,
     probe: bool = True,
+    # Both reached `run` and not this command, which is how the README's own advice --
+    # "pass --no-track-drift alongside medium" -- was `No such option` here.
+    track_drift: bool = True,
+    allow_writes: bool = False,
     log: Callable[[str], None] = print,
 ) -> list[ScanResult]:
     """Evaluate each server, write its report, and record what would fail the gate."""
@@ -272,6 +276,8 @@ async def run_scan(
                     max_turns=max_turns,
                     tool_timeout_s=tool_timeout_s,
                     probe=probe,
+                    track_drift=track_drift,
+                    allow_writes=allow_writes,
                 )
         except TimeoutError:
             error = f"timed out after {timeout_s:.0f}s"
@@ -303,7 +309,7 @@ async def run_scan(
             # exactly what `run` has always scrubbed.
             # Mark before writing, so `report.json` records which findings this fleet had
             # already decided about — and say so, per server, for the same reason `run` does.
-            applied = apply_expectations(report, entry.expectations)
+            applied = apply_expectations(report, entry.expectations, secrets)
             for line in summarize(applied):
                 log(f"  {line}")
             write_report(report, out_dir / slugify(entry.name), secrets)

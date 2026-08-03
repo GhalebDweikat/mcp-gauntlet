@@ -27,10 +27,11 @@ It fails your build on what it **found** — a finding with a name and a locatio
 score. And when the gate is wrong, `--expect` lets you say so without deleting it.
 
 **What it is not.** Steps 3 and 5 are the only ones that execute anything, and in the CI
-configuration these docs recommend (`--no-agentic`), step 3 is all you get: a malformed-input
-probe and one well-formed call per candidate tool. It does not exercise your server's actual
-behaviour, and it will not tell you your code is correct. It is not a substitute for your
-integration tests — it sits beside them and reads what your server *says*.
+configuration these docs recommend (`--no-agentic`), step 3 is all you get: **one** well-formed
+call, which stops at the first tool that answers, plus one malformed call per probeable tool.
+It does not exercise your server's actual behaviour, and it will not tell you your code is
+correct. It is not a substitute for your integration tests — it sits beside them and reads
+what your server *says*.
 
 What it does **not** catch is written down too: the security checks are pattern-based, and
 [docs/known-gaps.md](docs/known-gaps.md) lists, by class, what has been demonstrated to slip

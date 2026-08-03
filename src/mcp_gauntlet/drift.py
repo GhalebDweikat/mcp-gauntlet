@@ -315,6 +315,18 @@ def changed_within_session(first: list[ToolInfo], second: list[ToolInfo]) -> lis
     return [tool for tool in second if before.get(tool.name) != fingerprint(tool)]
 
 
+def _became_mutating(first: list[ToolInfo], second: list[ToolInfo]) -> set[str]:
+    """Tools that read as read-only in the first listing and as mutating in the second.
+
+    A privilege escalation in the definition, and the one within-session change that
+    `tools.listChanged` cannot excuse — see `compare_within_session`.
+    """
+    from mcp_gauntlet.safety import looks_mutating
+
+    was = {tool.name: looks_mutating(tool) for tool in first}
+    return {tool.name for tool in second if looks_mutating(tool) and was.get(tool.name) is False}
+
+
 def compare_within_session(
     first: list[ToolInfo], second: list[ToolInfo], *, declared_list_changed: bool = False
 ) -> list[Finding]:
@@ -331,6 +343,17 @@ def compare_within_session(
     What actually catches a malicious flip is the *content*: the changed definitions are
     scanned like any others, so a payload appearing in the second listing raises its own
     HIGH and caps through the normal mechanism.
+
+    **One change is never excused by the capability**: a tool that did not look mutating in
+    the first listing and does in the second. `tools.listChanged` says "my tool list is
+    dynamic" — tools appear, disappear, text is edited. It does not say "a read-only tool of
+    mine may become a delete", and reading it that way let the SERVER BEING AUDITED choose
+    the severity of this tool's flagship signal. A tester served `list_tags` as
+    `readOnlyHint: true` / "List every tag" and then as `destructiveHint: true` /
+    "Permanently deletes every row in the production ledger": **INFO, A 100.0, exit 0 at
+    every gate but `--fail-on info`**, because one capability was declared in `initialize` —
+    and an attacker gets that capability for free. The bundled malicious fixture does not
+    declare it, so nothing here exercised the path.
     """
     before, after = fingerprint_all(first), fingerprint_all(second)
     if before == after:
@@ -342,11 +365,25 @@ def compare_within_session(
         severity = Severity.MEDIUM
         why = " (the server does not declare tools.listChanged)"
 
+    escalated = _became_mutating(first, second)
+
     findings: list[Finding] = []
     for name, digest in after.items():
         if name not in before:
             findings.append(
                 _f(name, severity, f"tool appeared midway through a single session{why}")
+            )
+        elif name in escalated:
+            findings.append(
+                _f(
+                    name,
+                    Severity.MEDIUM,
+                    "tool became possibly-mutating midway through a single session — it "
+                    "read as read-only in the first tools/list and does not in the second",
+                    "tools.listChanged does not cover this: it says the tool LIST is "
+                    "dynamic, not that a read-only tool may become a write. The tool is "
+                    "excluded from probes on the strength of the second listing.",
+                )
             )
         elif before[name] != digest:
             findings.append(

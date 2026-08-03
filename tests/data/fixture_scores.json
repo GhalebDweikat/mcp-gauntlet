@@ -118,6 +118,8 @@
           "weight": 2.0
         }
       ],
+      "expectations_unused": [],
+      "expected_suppressed": 0,
       "grade": "C",
       "grade_capped": true,
       "not_measured": [],
@@ -185,6 +187,8 @@
           "weight": 2.0
         }
       ],
+      "expectations_unused": [],
+      "expected_suppressed": 0,
       "grade": "A",
       "grade_capped": false,
       "not_measured": [],
@@ -268,6 +272,8 @@
           "weight": 2.0
         }
       ],
+      "expectations_unused": [],
+      "expected_suppressed": 0,
       "grade": "A",
       "grade_capped": false,
       "not_measured": [],
@@ -400,6 +406,8 @@
           "weight": 2.0
         }
       ],
+      "expectations_unused": [],
+      "expected_suppressed": 0,
       "grade": "C",
       "grade_capped": true,
       "not_measured": [],
@@ -466,6 +474,8 @@
           "weight": 2.0
         }
       ],
+      "expectations_unused": [],
+      "expected_suppressed": 0,
       "grade": "A",
       "grade_capped": false,
       "not_measured": [],

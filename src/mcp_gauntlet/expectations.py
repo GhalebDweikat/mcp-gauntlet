@@ -51,7 +51,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from mcp_gauntlet.jsonio import read_json_text
-from mcp_gauntlet.report import DimensionResult, Finding, GauntletReport
+from mcp_gauntlet.report import DimensionResult, Finding, GauntletReport, redact
 
 _ENTRY_KEYS = {"tool", "message", "reason"}
 _TOP_LEVEL_KEYS = {"expected"}
@@ -133,11 +133,21 @@ def load_expectations(path: Path) -> list[Expectation]:
     return out
 
 
-def apply_expectations(report: GauntletReport, expectations: list[Expectation]) -> Applied:
+def apply_expectations(
+    report: GauntletReport,
+    expectations: list[Expectation],
+    secrets: frozenset[str] = frozenset(),
+) -> Applied:
     """Mark the findings an operator has already decided about. Returns what it did.
 
     Mutates the report's findings in place — they are marked, never removed. The caller is
     responsible for saying what happened; `Applied` carries everything needed to say it.
+
+    `secrets` exists because the text a user can SEE is redacted and the text matched here is
+    not. Passing `--env PGDATABASE=greet` against a server with a tool called `greet` prints
+    `HIGH ***REDACTED***: description contains hidden characters` — and an expectation copied
+    from that line could never match, while the line that would match is printed nowhere.
+    Both forms are accepted, so whichever string the user copied works.
     """
     if not expectations:
         return Applied()
@@ -149,7 +159,7 @@ def apply_expectations(report: GauntletReport, expectations: list[Expectation]) 
     for dimension in report.dimensions:
         updated: list[Finding] = []
         for finding in dimension.findings:
-            expectation = by_key.get((finding.tool, finding.message))
+            expectation = _match(by_key, finding, secrets)
             if expectation is None:
                 updated.append(finding)
                 continue
@@ -160,7 +170,32 @@ def apply_expectations(report: GauntletReport, expectations: list[Expectation]) 
             )
         _replace_findings(dimension, updated)
 
-    return Applied(matched=matched, unused=[e for e in expectations if e.key not in used])
+    applied = Applied(matched=matched, unused=[e for e in expectations if e.key not in used])
+    # Onto the report, so the Markdown and HTML renderers carry it too. The console was the
+    # only place this appeared, and the console is not what a reviewer opens three days later.
+    report.expected_suppressed = applied.matched
+    report.expectations_unused = [e.describe() for e in applied.unused]
+    return applied
+
+
+def _match(
+    by_key: dict[tuple[str | None, str], Expectation],
+    finding: Finding,
+    secrets: frozenset[str],
+) -> Expectation | None:
+    """The expectation for this finding, matched against the raw OR the redacted text.
+
+    Never a substring, in either form — see rule 5. The redacted form is a second exact key,
+    not a loosening: it is the string the operator was actually shown.
+    """
+    direct = by_key.get((finding.tool, finding.message))
+    if direct is not None or not secrets:
+        return direct
+    shown = (
+        redact(finding.tool, secrets) if finding.tool else None,
+        redact(finding.message, secrets),
+    )
+    return by_key.get(shown)
 
 
 def _replace_findings(dimension: DimensionResult, findings: list[Finding]) -> None:

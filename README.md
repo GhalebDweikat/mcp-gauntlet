@@ -408,7 +408,8 @@ place to build the failure this tool exists to catch:
   the run says so by name — otherwise the file rots into a blind spot.
 - **`reason` is required, and matching is exact.** A substring match would quietly excuse
   more than you meant; an exact match that stops matching turns the build red, which is loud
-  and fixable in a minute.
+  and fixable in a minute. Leading and trailing whitespace in `message` is stripped, so a
+  copied line with a stray newline still works; nothing inside the message is normalised.
 
 `--fail-under` still exists, and is the weaker choice. A HIGH security finding caps the
 overall score at 75, so a `--fail-under 60` gate — which this README used to recommend —

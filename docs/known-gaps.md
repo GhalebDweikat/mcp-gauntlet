@@ -197,6 +197,14 @@ currently has no way to make the first without the second.
 `--no-probe` still silences this check and the real one together. A false positive can now be
 excused with `--expect`, which keeps the finding in the report and stops it failing the gate.
 
+**The residual changes the exit code, not just the finding.** Same server, same missing
+credential, two outcomes: a refusal carrying a machine-readable auth code is recognised, so
+the run is *unevaluable* — **exit 3**, no verdict. A refusal in prose the vocabulary does not
+cover is not recognised as an auth wall at all, so it lands as "every probed tool failed" —
+a real HIGH, and **exit 1**. Both are defensible in isolation; a reader seeing one server
+produce each is entitled to find that arbitrary, and it is the same gap wearing a different
+hat.
+
 ## Scoring
 
 ### G9. A dimension where every subject fails still scores 88

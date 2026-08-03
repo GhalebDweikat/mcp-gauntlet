@@ -208,6 +208,13 @@ reachable:
    change the verdict on an unchanged server. Enforced by a recorded snapshot of every
    bundled fixture's full report and per-tool drift fingerprints, which fails on any
    movement rather than on a threshold.
+
+   **The clock is at zero as of 0.9.5.** It had reached three consecutive clean releases, and
+   then 0.9.5 deliberately moved one: `gated_server`, which refuses every call because no
+   credential was supplied, went from `A 99.2` to `N/A`. Nothing it actually measured changed
+   — the correction is that a server nothing could be called on no longer gets a letter
+   grade. Counting that as "stable" would make this bar mean nothing, so it counts as a
+   break, and two clean releases have to follow it.
 2. **Every check documented** — what it looks at, what a finding means, and what to do about
    it. A finding you cannot act on is a false positive with extra steps.
 3. **No new false-positive class** found in that window. Adversarial testing against honest

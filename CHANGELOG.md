@@ -3,7 +3,22 @@
 All notable changes to mcp-gauntlet are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.9.5] — 2026-08-03
+
+A fifth black-box round, run **before** tagging this time. The tester's one-sentence summary
+of what the tool is for finally matched the README's — the check that had failed four rounds
+running — and it found eight things behind that, including one where the server being audited
+chose the severity of its own rug-pull finding.
+
+Also adds `--expect`, so a gate that is wrong about your server can be told so instead of
+deleted.
+
+**One fixture's verdict moved, deliberately.** `gated_server` — which refuses every call
+because no credential was supplied — went from `A 99.2` to `N/A`. Every dimension it actually
+measured is unchanged (schema health 96.7, description quality 100.0, security 100.0); what
+changed is that a server nothing could be called on no longer gets a letter grade. That is
+the point of the fix, and it resets the `METHODOLOGY.md` v1.0 stability clock to zero. The
+other four fixtures are identical to published 0.9.4, dimension by dimension.
 
 ### Added
 

@@ -1,7 +1,7 @@
 [project]
 name = "mcp-gauntlet"
 version = "0.9.5"
-description = "A CI linter for what your MCP server publishes: tool poisoning and prompt injection across every surface an agent sees, definition drift between runs, and schema rot."
+description = "Lint what your MCP server publishes — tool poisoning across every surface an agent sees, definition drift, schema rot — then drive a real agent through generated tasks to find out whether an agent can actually use it."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

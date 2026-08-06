@@ -3,6 +3,28 @@
 All notable changes to mcp-gauntlet are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **Put the live-agent evaluation back on the front page.** 0.9.5 rewrote the positioning
+  around what five rounds of black-box testers reported — and every one of those rounds was
+  briefed to run *without* an API key, because that is what the CI examples recommend. They
+  measured the keyless path, correctly called it a linter, and the docs then described the
+  whole tool as one. Those are different claims and they got collapsed.
+
+  Four of the eight dimensions exist only with a key, including the heaviest: Agent Task
+  Success (weight 3.0), Tool-Selection Accuracy (1.5), Tool Reliability, Response Safety. It
+  generates tasks from your definitions, drives a real agent through them against your running
+  server, and judges what happened. Nothing else in the comparable set does that pointed at a
+  server *you* are about to ship — the academic benchmarks do it over server sets somebody
+  else chose.
+
+  The README, METHODOLOGY, CLI help and package description now carry both halves, with the
+  split stated rather than implied: **linter on every commit** (deterministic, free,
+  `--no-agentic`), **agent before a release** (needs a key, not deterministic, which is
+  precisely why it is not the CI default).
+
 ## [0.9.5] — 2026-08-03
 
 A fifth black-box round, run **before** tagging this time. The tester's one-sentence summary

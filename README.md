@@ -2,10 +2,10 @@
 
 [![CI](https://github.com/GhalebDweikat/mcp-gauntlet/actions/workflows/ci.yml/badge.svg)](https://github.com/GhalebDweikat/mcp-gauntlet/actions/workflows/ci.yml)
 
-**A linter for the text and schemas your MCP server publishes**, plus a live probe and a
-change detector, for CI.
+**Two tools in one, for a server you maintain.** A deterministic linter you gate every commit
+on, and a live-agent evaluation you run before a release.
 
-Concretely, and in the order it does them:
+### The linter — every commit, free, no API key
 
 1. **Scans every server-authored string an agent will actually see** for tool-poisoning and
    prompt-injection markers, hidden characters and lookalike alphabets — including the
@@ -20,18 +20,39 @@ Concretely, and in the order it does them:
    unless you pass `--allow-writes`.
 4. **Compares all of that against the last run**, so a server that redefines its tools after
    you approved them is caught.
-5. **With an API key**, drives a live agent through generated tasks — the only way to find out
-   whether your descriptions are good enough to act on.
 
-It fails your build on what it **found** — a finding with a name and a location — not on a
-score. And when the gate is wrong, `--expect` lets you say so without deleting it.
+That is `--no-agentic`. It is deterministic, costs nothing, and fails your build on what it
+**found** — a finding with a name and a location — not on a score. When the gate is wrong,
+`--expect` lets you say so without deleting it.
 
-**What it is not.** Steps 3 and 5 are the only ones that execute anything, and in the CI
-configuration these docs recommend (`--no-agentic`), step 3 is all you get: **one** well-formed
-call, which stops at the first tool that answers, plus one malformed call per probeable tool.
-It does not exercise your server's actual behaviour, and it will not tell you your code is
-correct. It is not a substitute for your integration tests — it sits beside them and reads
-what your server *says*.
+### The agent — before a release, needs an API key
+
+```bash
+export GEMINI_API_KEY=...   # or GROQ_API_KEY, or any OpenAI-compatible endpoint
+mcp-gauntlet run "python -m my_server" --agentic
+```
+
+It generates tasks from your tool definitions, drives a real LLM agent through them against
+your running server, and judges what happened. That is four more dimensions, including the
+heaviest one in the whole score:
+
+- **Agent Task Success** (weight 3.0) — did the agent finish the job
+- **Tool-Selection Accuracy** (1.5) — did it reach for the tool you would have
+- **Tool Reliability** — did the calls it made actually work
+- **Response Safety** — was what came back safe to hand a model
+
+This is the part no static scanner can do, and it answers a question nothing else here asks:
+*can an agent that has never seen your server work out how to use it from what you wrote?*
+Reading your own descriptions will not tell you. They always look clear to their author.
+
+**Run it deliberately, not on every commit.** An LLM judge is not deterministic, and a gate
+whose answer moves run to run is a bad gate — which is exactly why `--no-agentic` is what the
+CI examples use. Treat the agentic run the way you treat a load test: before a release, after
+you rewrite descriptions, when you add a tool.
+
+**What neither of them is.** Not a substitute for your integration tests. The linter reads
+what your server *says*; the agent checks whether that text is usable, not whether your code
+is correct. Nothing here will tell you your business logic is right.
 
 What it does **not** catch is written down too: the security checks are pattern-based, and
 [docs/known-gaps.md](docs/known-gaps.md) lists, by class, what has been demonstrated to slip
@@ -152,8 +173,14 @@ Academic benchmarks (MCP-Universe, MCPMark, MCP-Bench) do run live agents — bu
 over fixed, hand-picked server sets, not as something you can point at *your*
 server.
 
-mcp-gauntlet is for the person who **maintains** the server. Two things separate it from
-that list, and neither is "it runs your server" — plenty of them connect to a server too:
+mcp-gauntlet is for the person who **maintains** the server. Three things separate it from
+that list:
+
+**It drives a real agent through generated tasks against YOUR server.** The academic
+benchmarks do this, over server sets somebody else chose. Nothing on that list does it for the
+server you are about to ship. It is the only way to answer "can an agent that has never seen
+this work out how to use it", and it is why four of the eight dimensions — including the
+weight-3.0 one — exist only when an API key is present.
 
 **It reads surfaces the others do not.** A payload does not have to sit in a tool
 description. It can sit in a display `title`, an output schema behind a `$ref`, an `enum`
@@ -167,9 +194,9 @@ twice, anything that moved re-scanned in its own right) and once across runs, ag
 stored fingerprint. That is the rug-pull case registry signing cannot address — the package
 is unchanged and correctly signed, and only the text it serves at runtime differs.
 
-The live-agent stage needs an API key and is genuinely dynamic. Without one, what you get is
-a very thorough read plus a malformed-input probe, and this README says so at the top rather
-than implying otherwise.
+Without a key you get the first two of those, which is a very thorough read plus a
+malformed-input probe. That is a real tool and it is what the CI examples use, deliberately.
+It is not the whole tool, and this README stopped implying it was.
 
 **What it is not:** a ranking. It does not tell you whether someone else's server is better
 than yours, and it deliberately publishes no leaderboard — scores move when a stage is

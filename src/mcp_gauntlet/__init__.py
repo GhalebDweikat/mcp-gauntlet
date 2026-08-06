@@ -1,4 +1,4 @@
-"""mcp-gauntlet: a CI linter for what your MCP server publishes."""
+"""mcp-gauntlet: a CI linter for an MCP server, plus a live-agent evaluation of it."""
 
 from importlib.metadata import PackageNotFoundError, version
 

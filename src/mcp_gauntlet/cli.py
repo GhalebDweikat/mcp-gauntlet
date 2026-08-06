@@ -71,9 +71,9 @@ _use_utf8_stdio()
 app = typer.Typer(
     add_completion=False,
     help=(
-        "A CI linter for what your MCP server publishes. Catches tool poisoning and prompt "
-        "injection across every surface an agent sees, definition drift between runs, and "
-        "schema rot."
+        "Lint what your MCP server publishes: tool poisoning across every surface an agent "
+        "sees, definition drift between runs, schema rot. With an API key, also drives a "
+        "real agent through generated tasks to find out whether an agent can use it."
     ),
     no_args_is_help=True,
 )
@@ -107,10 +107,11 @@ def main(
         help="Show the installed mcp-gauntlet version and exit.",
     ),
 ) -> None:
-    """A CI linter for what your MCP server publishes.
+    """Lint what your MCP server publishes, then let an agent try to use it.
 
-    Catches tool poisoning and prompt injection across every surface an agent sees,
-    definition drift between runs, and schema rot.
+    The linter is deterministic and free: tool poisoning across every surface an agent
+    sees, definition drift between runs, schema rot. With an API key, --agentic drives a
+    real agent through generated tasks against your running server.
     """
     load_env()
 

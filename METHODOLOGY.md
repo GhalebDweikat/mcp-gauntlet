@@ -156,16 +156,29 @@ Response Safety findings as being about *that data* rather than about the server
 
 ## What this does and does not claim
 
-mcp-gauntlet is a CI linter for what a server **you maintain** publishes, plus a live probe
-and a change detector. Every claim below is scoped to that.
+mcp-gauntlet is two things pointed at a server **you maintain**, and the claims below are
+scoped separately because the two are not interchangeable.
 
-**It does not exercise your server's behaviour.** In the configuration these docs recommend
-for CI (`--no-agentic`), the only things executed are one well-formed call per candidate
-read-only tool and one malformed one — enough to establish that the server answers and that
-it rejects what it declared invalid, and nothing like a test of what it *does*. A tester put
-it plainly: "I'd adopt it as a poisoning and schema linter, not as the regression suite it
-says it is." They were right, and the docs say so now. It sits beside your integration tests;
-it does not replace them.
+**The linter (`--no-agentic`) does not exercise your server's behaviour.** The only things
+executed are one well-formed call and one malformed call per candidate read-only tool —
+enough to establish that the server answers and rejects what it declared invalid, and nothing
+like a test of what it *does*. A tester put it plainly: "I'd adopt it as a poisoning and
+schema linter, not as the regression suite it says it is." They were right about that
+configuration, and it is the configuration the CI examples use, on purpose: it is
+deterministic and free.
+
+**The agentic stage (`--agentic`) is the part that does exercise it**, and it is the only
+thing here no static tool can do. It generates tasks from your definitions, drives a real LLM
+agent through them against your running server, and judges what happened — four dimensions,
+including the heaviest in the score. What it measures is whether an agent that has never seen
+your server can work out how to use it from what you wrote. Reading your own descriptions
+cannot tell you that; they always look clear to the person who wrote them.
+
+**Why it is not the CI default.** An LLM judge is not deterministic. A gate whose answer
+moves between runs of an unchanged server is a bad gate, and `--repeats` exists because that
+variance is real and measurable. So the recommendation is: linter on every commit, agent
+before a release. Neither replaces your integration tests — the linter reads what your server
+says, and the agent checks whether that text is usable, not whether your code is correct.
 
 **A finding is the product.** Each one names a tool, a field and what is wrong with it, and
 is meant to be acted on. That is the part that has held up under adversarial testing: on a
